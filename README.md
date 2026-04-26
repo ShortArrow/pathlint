@@ -4,10 +4,11 @@
 [![CI](https://github.com/ShortArrow/pathlint/actions/workflows/ci.yml/badge.svg)](https://github.com/ShortArrow/pathlint/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/pathlint.svg)](#license)
 
-> Lint the `PATH` environment variable against declarative ordering rules.
+> Verify that each command on `PATH` resolves from the installer you expect.
 
-> **⚠ Pre-alpha (0.0.x).** Schema and CLI surface are still moving; not
-> ready for production wiring. Skeleton only — no working binary yet.
+> **⚠ Pre-alpha (0.0.x).** Schema and CLI surface are still moving;
+> not ready for production wiring. Skeleton only — no working binary
+> yet.
 
 ---
 
@@ -16,20 +17,37 @@
 Most "PATH problems" come from one place: **the wrong copy of an
 executable resolves first.** Examples:
 
-- **Windows.** Microsoft Store `python.exe` shadows mise / conda /
-  manual installs. Strawberry Perl `gcc` shadows MSYS / Rust toolchains.
-- **macOS.** `/usr/bin/python3` shadows Homebrew / pyenv. Intel
-  `/usr/local/bin` and arm `/opt/homebrew/bin` ordering is non-obvious.
-- **Linux.** Distro `node` shadows nvm / mise. `/snap/bin` shadows
-  `~/.cargo/bin`. `/usr/games` ahead of `~/bin` shadows local scripts.
-- **Termux.** `~/bin` after `$PREFIX/bin` means user scripts can't
-  override `pkg install`-supplied tools.
+- I `cargo install runex` on this machine, but the binary that runs
+  is the older one from `winget` — same name, different file.
+- `python` should come from `mise`, not from the Microsoft Store
+  `WindowsApps` stub.
+- `node` should come from `volta`, not from the system `apt` install.
+- macOS `gcc` should come from Homebrew, not from `/usr/bin/gcc`.
 
 `which python` will tell you what wins, but won't tell you whether
-that's what *should* win. `pathlint` makes that intent explicit:
-you write down "**A must come before B**" rules in a TOML file, tag
-each rule with the OSes it applies to, and the tool checks them
-against the actual `PATH`.
+that's what *should* win in a form you can commit to a dotfiles repo
+and check on every machine.
+
+`pathlint` makes that intent explicit: write down "**`runex` should
+come from `cargo`, not from `winget`**" once, and the tool checks it
+on every machine you own.
+
+## How it works
+
+Two TOML concepts:
+
+1. **`[[expect]]`** — per-command expectations. "command X should be
+   resolved from source S." This is what users actually write.
+2. **`[source.<name>]`** — how to recognize an installer on disk
+   ("`cargo` lives at `~/.cargo/bin`"). pathlint ships built-in
+   defaults for `cargo`, `mise`, `volta`, `aqua`, `winget`, `choco`,
+   `scoop`, `brew_arm`, `brew_intel`, `apt`, `pacman`, `dnf`, `pkg`,
+   `flatpak`, `snap`, `WindowsApps`, and more — users only override
+   when their layout is non-standard.
+
+For each `[[expect]]`, pathlint resolves the command against the real
+PATH, looks at where the winning binary lives, and matches that
+location to the source labels.
 
 ## Status
 
@@ -37,64 +55,72 @@ This crate currently ships only a project skeleton (Cargo manifest,
 license, docs). The implementation is being ported from a PowerShell
 prototype that lives at
 <https://github.com/ShortArrow/dotfiles/blob/develop/windows/Test-PathOrder.ps1>.
-See [docs/PRD.md](docs/PRD.md) for the planned scope.
+See [docs/PRD.md](docs/PRD.md) for the full design.
 
 ## Planned usage
 
 ```sh
 # Check the current process PATH against ./pathlint.toml
-pathlint check
+pathlint                          # = pathlint check
 
-# Same, but on the User-only or Machine-only PATH (Windows registry)
-pathlint check --target user
-pathlint check --target machine
+# Check the User-only or Machine-only PATH (Windows registry)
+pathlint --target user
+pathlint --target machine
 
-# Explain where a command resolves and which other shadowed copies exist
-pathlint which python
-
-# (planned) propose a reordered PATH that satisfies every rule
-pathlint sort --target user --dry-run
+# Verbose: also show n/a expectations and the resolved PATH
+pathlint --verbose
 ```
 
-## Planned `pathlint.toml` schema
+## Planned `pathlint.toml` (minimal example)
 
 ```toml
-# Untagged: applies on every OS.
-[[rule]]
-name   = "PowerShell 7 precedes legacy WindowsPowerShell"
-before = "PowerShell\\7"
-after  = ["WindowsPowerShell\\v1.0"]
+[[expect]]
+command = "runex"
+prefer  = ["cargo"]
+avoid   = ["winget"]
 
-# Windows-only.
-[[rule]]
-name   = "mise shims override system tools"
-os     = ["windows"]
-before = "mise\\shims"
-after  = ["chocolatey\\bin", "Strawberry\\c\\bin"]
+[[expect]]
+command = "python"
+prefer  = ["mise"]
+avoid   = ["WindowsApps", "choco"]
 
-# Multi-OS, opting out of Termux.
-[[rule]]
-name   = "user cargo bin precedes distro tools"
-os     = ["windows", "macos", "linux"]
-before = ".cargo/bin"
-after  = ["/usr/bin", "Strawberry"]
+[[expect]]
+command = "node"
+prefer  = ["mise", "volta"]
 
-# Termux-specific.
-[[rule]]
-name   = "user bin precedes pkg-installed binaries"
-os     = ["termux"]
-before = "/data/data/com.termux/files/home/bin"
-after  = ["/data/data/com.termux/files/usr/bin"]
+[[expect]]
+command = "gcc"
+prefer  = ["mingw", "msys"]
+avoid   = ["strawberry"]
+os      = ["windows"]
 ```
 
-Match is substring + case-insensitive, evaluated after env-var
-expansion. Slashes (`/` and `\`) are normalized so the same rule works
-across OSes. `os` accepts `windows | macos | linux | termux | unix`.
+No `[source.*]` section is needed for any of the names above —
+they're all in the built-in catalog. The whole file is the user's
+intent.
+
+To override a built-in (mise installed in a non-standard location):
+
+```toml
+[source.mise]
+windows = "D:/tools/mise"
+```
+
+To add a new source:
+
+```toml
+[source.my_dotfiles_bin]
+unix = "$HOME/dotfiles/bin"
+```
+
+`os = [...]` accepts `windows | macos | linux | termux | unix`.
+Match is substring + case-insensitive, after env-var expansion (both
+`%VAR%` and `$VAR` work everywhere) and slash normalization.
 
 ## Installation
 
 ```sh
-# From source (once published)
+# From crates.io (once published)
 cargo install pathlint
 
 # From source (latest main)
@@ -104,7 +130,8 @@ cargo install --git https://github.com/ShortArrow/pathlint
 ## Documentation
 
 - [日本語 README](docs/README.jp.md)
-- [PRD (English)](docs/PRD.md)
+- [PRD (English)](docs/PRD.md) — the full design, including the
+  built-in source catalog
 - [PRD (日本語)](docs/PRD.jp.md)
 - [Changelog](CHANGELOG.md)
 

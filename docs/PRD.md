@@ -7,105 +7,113 @@
 
 ## 1. Overview
 
-`pathlint` is a CLI that **verifies the `PATH` environment variable
-against declarative ordering rules** written in TOML. It answers:
+`pathlint` is a CLI that checks **"is each command being resolved
+from the installer I expect?"** against a TOML manifest.
 
-> "Is the right copy of this command being resolved first?"
+You declare:
 
-Rules look like "X must come before Y in PATH". The tool reports each
-rule as **OK / NG / skip** (skip = neither side present), with the
-exact indices of the offending entries when a rule fails.
+> "`runex` should come from `cargo`, not from `winget`."
 
-The MVP is read-only (lint mode). A later version may propose or apply
-a reordered PATH (sort/fix mode).
+`pathlint` then resolves `runex` against the actual `PATH`, looks up
+where the winning binary lives, and matches that location to the
+**source label** ("cargo" / "winget" / ...) you defined.
 
-A single `pathlint.toml` is intended to work across **Windows, macOS,
-Linux, and Termux** — rules can be tagged with `os = [...]` so that
-the same file can hold Windows-specific rules (WindowsApps stubs,
-chocolatey, Strawberry) alongside macOS-specific ones (Homebrew vs
-system) and Linux/Termux ones (mise vs distro pkg).
+The output is one line per expectation: **OK / NG / skip / n/a**.
+Failures show the actual resolved location and which source label it
+matched (or didn't).
+
+A single `pathlint.toml` works across **Windows, macOS, Linux, and
+Termux** — sources can declare their location per-OS, and each
+expectation can carry an `os = [...]` filter.
+
+`pathlint` ships with a built-in catalog of well-known sources
+(`cargo`, `mise`, `volta`, `winget`, `choco`, `scoop`, `brew_arm`,
+`brew_intel`, `apt`, `pacman`, `pkg`, `flatpak`, `WindowsApps`, ...).
+Users only have to write their **expectations**; sources are looked
+up by name.
 
 ## 2. Problem statement
 
-PATH ordering bugs are common and quietly painful. They look different
-on each platform but reduce to the same shape — "the wrong same-named
-binary wins":
+The same command name often comes from different installers, and you
+care which one wins:
 
-- **Windows.** A Microsoft Store stub for `python.exe` shadows the real
-  install (mise, conda, asdf, manual). Strawberry Perl's `gcc` shadows
-  a Rust/MSYS toolchain. A leftover `WindowsPowerShell\v1.0` entry
-  resolves to `pwsh.exe` instead of PowerShell 7.
-- **macOS.** `/usr/bin/python3` (the system Apple-provided one) shadows
-  Homebrew or pyenv. `/usr/local/bin` vs `/opt/homebrew/bin` ordering
-  matters when both intel and arm brews are present.
-- **Linux.** A distro-packaged `node` shadows nvm or mise. `/snap/bin`
-  shadows `~/.cargo/bin`. `/usr/games` ahead of `~/bin` shadows local
-  scripts.
-- **Termux.** `~/bin` after `$PREFIX/bin` means user scripts can't
-  override `pkg install`-supplied tools.
+- I ran `cargo install runex` on this machine, but the binary that
+  actually fires is the older one in `WinGet/Links` — same name,
+  different file.
+- `python` should come from `mise`, not from the Microsoft Store
+  `WindowsApps` stub.
+- `node` should come from `volta`, not the system `apt` install.
+- On macOS `gcc` should come from Homebrew, not from `/usr/bin/gcc`
+  (which used to be a clang shim).
 
-`which X` shows what wins but not what should win. There is no
-declarative way to encode "what should win" so that CI, dotfiles, or
-doctor scripts can check it. `pathlint` fills that gap.
+`which` tells you what wins; nothing tells you what *should* win in a
+form you can commit to a dotfiles repo and check on every machine.
+
+`pathlint` makes that intent explicit and verifiable.
 
 ## 3. Goals
 
-- **Declarative rules.** A `pathlint.toml` file with `[[rule]]` entries
-  expresses "X must precede Y" in plain TOML.
-- **One file, all OSes.** Rules can carry an `os = [...]` filter so a
-  single `pathlint.toml` works across Windows, macOS, Linux, and
-  Termux. Untagged rules apply everywhere.
-- **Substring + case-insensitive match.** Rule keys do not need to be
-  exact paths. Case-insensitive matching is consistent across OSes
-  (Windows is naturally case-insensitive; on Unix we trade strictness
-  for portability of the same rules file).
-- **OS-aware path sources.** `--target process|user|machine` selects
-  what `PATH` to read. On Windows `user` and `machine` come from the
-  registry; on Unix they fall back to `process` with a warning.
-- **Honest exit codes.** `0` = clean, `1` = at least one rule failed,
-  `2` = config / I/O error.
-- **Useful failure output.** Each failing rule prints the indices of
-  the offending entries and a brief reason ("'chocolatey\\bin' at #42
-  precedes 'mise\\shims' at #49").
+- **Declarative expectations.** A `pathlint.toml` file with `[[expect]]`
+  entries says "command X should resolve from source S".
+- **Source labels, not paths.** Users speak in installer names
+  (`cargo`, `mise`, `winget`, `brew_arm`, `apt`) instead of typing
+  raw paths. Path patterns are looked up from a catalog.
+- **Built-in catalog with override.** pathlint ships defaults for the
+  popular installers; users redefine `[source.X]` only when they want
+  to override or add a new one.
+- **One file, all OSes.** Each `[[expect]]` may have an `os = [...]`
+  filter, and each `[source.X]` may declare per-OS paths
+  (`windows = ...`, `unix = ...`, etc.). The same `pathlint.toml`
+  drives Windows, macOS, Linux, and Termux.
+- **Substring + case-insensitive match.** Source paths are matched
+  against the resolved binary path as substrings, after env-var
+  expansion and slash normalization.
+- **Honest exit codes.** `0` = clean, `1` = at least one expectation
+  failed, `2` = config / I/O error.
+- **Useful failure output.** Each failing expectation shows the
+  command, its resolved full path, and which source it matched (or
+  the `prefer` / `avoid` mismatch).
 - **No mutation in MVP.** Read-only; `--apply` / `sort` are deferred.
 
 ## 4. Non-goals (MVP)
 
 - **No PATH rewriting / persisting.** Sort/fix is later.
-- **No editing of `.bashrc`, `$PROFILE`, or registry.** The lint output
-  tells you *what* needs fixing; *how* is the user's call.
-- **No shell-completion installation.** `pathlint completions <shell>`
-  may land later.
-- **No package management.** `pathlint` does not install missing tools
-  to satisfy a rule.
-- **No deep launchd / PAM / `/etc/environment` parsing.** Read what the
-  process actually sees (`getenv("PATH")`) plus, on Windows, the two
-  registry locations. Other layers are out of scope.
+- **No editing of `.bashrc`, `$PROFILE`, or registry.** The output
+  tells you what is wrong; how to fix it is your call.
+- **No `which` clone.** `pathlint` does include resolve logic
+  internally, but it does not aim to replace `where` / `type -a` /
+  `Get-Command -All`. The interesting question pathlint answers is
+  "is the right one winning?", not "where does this resolve?".
+- **No package management.** `pathlint` does not install missing
+  tools to satisfy an expectation.
+- **No deep launchd / PAM / `/etc/environment` parsing.** Read what
+  the process actually sees (`getenv("PATH")`) plus, on Windows, the
+  two registry locations. Other layers are out of scope.
 
 ## 5. Target users
 
-- Dotfiles maintainers wanting their `doctor` step to catch PATH drift
-  on every machine they own — desktop Windows, work macOS, WSL, a
-  Termux phone.
-- Developers debugging "why does this Python run instead of that one"
-  in a way that survives reboots.
+- Dotfiles maintainers wanting their `doctor` step to catch source
+  drift on every machine they own — desktop Windows, work macOS,
+  WSL, a Termux phone.
+- Developers iterating on a tool they `cargo install` themselves who
+  want to be sure their build, not the released winget/brew copy, is
+  what runs.
 - CI pipelines that bootstrap a developer environment and want to
-  fail loudly on PATH ordering regressions.
+  fail loudly when a wrong installer wins.
 
 ## 6. User stories
 
-- I write `pathlint.toml` once with rules I care about — some tagged
-  `os = ["windows"]`, some `os = ["macos", "linux", "termux"]`, some
-  untagged — commit it to my dotfiles, and `pathlint check` evaluates
-  the right subset on each machine.
-- A linter run prints every rule and its status; failures show me
-  which entry beats which entry.
-- I can ask `pathlint check --target user` (Windows) to verify only my
-  user PATH before doing `setx PATH ...`.
-- On Termux I run `pathlint check` and it understands that
-  `$PREFIX/bin` is the system equivalent of `/usr/bin`.
+- I write `pathlint.toml` with five lines of `[[expect]]` for the
+  commands I actually care about — no source definitions, since the
+  built-ins cover them. `pathlint check` then runs the right subset
+  on each OS.
+- A linter run prints every expectation and its status; failures
+  show me the actual resolved path and which `prefer` / `avoid` rule
+  was violated.
+- I override `[source.mise]` in my `pathlint.toml` because I keep
+  mise in a non-standard directory.
 - (post-MVP) I run `pathlint sort --target user --dry-run` and see a
-  diff of what would change.
+  diff of how PATH would be reordered to satisfy every expectation.
 
 ## 7. Functional requirements (MVP)
 
@@ -117,7 +125,7 @@ doctor scripts can check it. `pathlint` fills that gap.
 pathlint                              # = pathlint check
 pathlint --target user                # explicit target
 pathlint --rules ./other.toml
-pathlint --verbose                    # also dump expanded PATH entries
+pathlint --verbose                    # also show n/a expectations and resolved PATH
 pathlint --quiet                      # only print failures
 ```
 
@@ -129,102 +137,137 @@ pathlint --quiet                      # only print failures
   2. `./pathlint.toml` if present.
   3. `$XDG_CONFIG_HOME/pathlint/pathlint.toml` (or
      `$HOME/.config/pathlint/pathlint.toml`).
-- For each loaded rule, evaluate against the resolved PATH. Rules
-  whose `os` filter excludes the current OS are silently skipped
-  (and counted as `n/a` in `--verbose`).
-- One status line per rule (`OK` / `NG` / `skip`). Failures get a
-  second indented line with the offender details.
-- Exit code: `0` if no rule has status `fail`, `1` otherwise.
+- For each `[[expect]]`:
+  1. If its `os` filter excludes the current OS → status `n/a`.
+  2. Resolve `command` against the chosen PATH (using `PATHEXT` on
+     Windows, executable-bit on Unix).
+  3. If not resolvable → status `not_found` (counts as failure
+     unless `optional = true`).
+  4. Look up the resolved full path against every defined `[source.X]`.
+     The matched source name(s), if any, are recorded.
+  5. **OK** if at least one matched source is in `prefer` and none of
+     the matched sources is in `avoid`.
+  6. **NG** otherwise — print the actual resolved path and the
+     mismatch reason.
+- One status line per expectation. Failures get a second indented
+  line with details.
+- Exit code: `0` if no expectation has status `NG` or `not_found`
+  (excluding `optional`), `1` otherwise.
 
-### 7.2 `pathlint which <command>` (MVP)
+### 7.2 Source catalog merge
 
-- Resolves the command across PATH using OS rules: `PATHEXT` on
-  Windows, the executable bit on Unix.
-- Prints the winning path first, then any shadowed copies further down
-  PATH, with a short `[shadowed]` annotation. The point is to make the
-  "first wins, the rest are reachable but unused" relationship visible.
-- Exit code: `0` if at least one match, `1` otherwise.
+- pathlint embeds a built-in source catalog (see §9).
+- The user's `pathlint.toml` may include any number of
+  `[source.<name>]` entries:
+  - Same `<name>` as a built-in → user overrides the per-OS paths
+    field-by-field.
+  - New `<name>` → added to the catalog.
+- An expectation may reference any source name from the merged
+  catalog. Referring to an undefined source is a config error.
 
 ### 7.3 `pathlint init` (planned, not MVP)
 
-- Emits a starter `pathlint.toml` in the current directory, populated
-  with a small set of OS-tagged example rules for the current OS plus
-  comments showing the others. Skipped for MVP; `pathlint init`
-  may also accept `--os <list>` to seed from a different OS's defaults.
+- Emits a starter `pathlint.toml` in the current directory with a
+  small set of example `[[expect]]` entries for the current OS.
+- `pathlint init --emit-defaults` writes the entire built-in source
+  catalog into the file as well, so the user can edit / remove any
+  entry. Off by default to keep the file short.
 
 ### 7.4 `pathlint sort` (post-MVP)
 
-- Computes the topological order of PATH entries that satisfies every
-  applicable rule, printing it (`--dry-run` default) or applying it
-  via OS-appropriate APIs (`--apply`, Windows registry / shell-rc
-  insertion). Out of scope for 0.0.x.
+- Computes a PATH order that satisfies every applicable expectation,
+  prints it (`--dry-run` default) or applies it via OS-appropriate
+  APIs (`--apply`, Windows registry / shell-rc insertion). Out of
+  scope for 0.0.x.
 
 ## 8. `pathlint.toml` schema
 
 ```toml
-# Each [[rule]] asserts: at least one entry containing `before` must come
-# earlier in PATH than every entry containing any of `after`.
+# ---- [[expect]]: per-command expectations ----
 
-# Untagged rule — applies on every OS.
-[[rule]]
-name   = "PowerShell 7 precedes legacy WindowsPowerShell"
-before = "PowerShell\\7"
-after  = ["WindowsPowerShell\\v1.0"]
+# Untagged: applies on every OS where the named sources are defined.
+[[expect]]
+command = "runex"
+prefer  = ["cargo"]            # at least one matched source must be in this list
+avoid   = ["winget"]           # no matched source may be in this list
+os      = ["windows", "macos", "linux", "termux"]   # optional; default = all
 
-# Windows-only rule.
-[[rule]]
-name   = "mise shims override system tools"
-os     = ["windows"]
-before = "mise\\shims"
-after  = ["chocolatey\\bin", "Strawberry\\c\\bin"]
+[[expect]]
+command = "python"
+prefer  = ["mise"]
+avoid   = ["WindowsApps", "choco"]
+os      = ["windows"]
 
-# Multi-OS rule, opting out of Termux.
-[[rule]]
-name   = "user cargo bin precedes distro tools"
-os     = ["windows", "macos", "linux"]
-before = ".cargo/bin"
-after  = ["/usr/bin", "Strawberry"]
+[[expect]]
+command = "python"
+prefer  = ["mise", "pkg"]
+os      = ["termux"]
 
-# Termux-specific rule.
-[[rule]]
-name   = "user bin precedes pkg-installed binaries"
-os     = ["termux"]
-before = "/data/data/com.termux/files/home/bin"
-after  = ["/data/data/com.termux/files/usr/bin"]
+[[expect]]
+command = "gcc"
+prefer  = ["mingw", "msys"]
+avoid   = ["strawberry"]
+os      = ["windows"]
+
+[[expect]]
+command = "git"
+optional = true                # if not on PATH at all, skip silently
+prefer  = ["winget", "apt", "brew_arm", "brew_intel"]
+
+
+# ---- [source.<name>]: how to recognize a source on disk ----
+
+# Override a built-in (mise installed under D:\tools\mise on this machine):
+[source.mise]
+windows = "D:/tools/mise"
+
+# Define a new source not in the built-in catalog:
+[source.my_dotfiles_bin]
+unix = "$HOME/dotfiles/bin"
 ```
 
 ### 8.1 Match semantics
 
-- Substring, case-insensitive, against each PATH entry **after**
-  environment-variable expansion (see §8.2).
-- Forward and back slashes are normalized to a single representation
-  (`\` -> `/`) before comparison, so `mise\shims` matches `mise/shims`
-  and vice versa. This lets one rules file work cross-OS.
-- A rule is **OK** if every `after` match comes after the first
-  `before` match.
-- A rule is **fail** if any `after` match comes before all `before`
-  matches, OR if `after` has matches but `before` has none.
-- A rule is **skip** if neither side is present in PATH.
-- A rule is **n/a** if its `os` filter excludes the current OS;
-  silently ignored unless `--verbose`.
+For each `[source.X]`, the per-OS path string (after env-var
+expansion and slash normalization) is checked against the resolved
+binary path. **Substring + case-insensitive** match.
+
+- A command is *matched against a source* iff the resolved binary's
+  full path contains the source's per-OS path as a substring.
+- A command may match **zero, one, or many** sources. Many is fine
+  (e.g. `mise/installs/python/3.x/bin/python.exe` matches both
+  `[source.mise]` and `[source.python_install]` if both are defined).
+- Status decision uses the **set** of matched source names:
+  - **OK**: at least one is in `prefer` AND none is in `avoid`.
+  - **NG (wrong source)**: matched at least one source, but it is
+    not in `prefer`, or it is in `avoid`.
+  - **NG (unknown source)**: resolved path matched zero sources, and
+    `prefer` is non-empty. (To allow "any source is fine, just exist",
+    leave `prefer` empty and use `avoid` only.)
+  - **NG (not found)**: command not on PATH, and `optional = false`
+    (default).
+  - **n/a**: `os` filter excludes the current OS.
 
 ### 8.2 Environment variable expansion
 
-PATH entries are expanded uniformly before matching:
+Source paths and PATH entries are expanded uniformly before matching:
 
 - `%VAR%` (Windows-style) is expanded.
 - `$VAR` and `${VAR}` (POSIX-style) are expanded.
 - Leading `~` is expanded to the home directory.
 - Unexpanded `%VAR%` / `$VAR` are kept verbatim (no error).
 
-Both styles are accepted on every OS. This means a rule can be
-written `before = "$HOME/bin"` and it still works under Windows pwsh
-where the entry is literally `%USERPROFILE%\bin`, because both
-expansions converge to the same absolute path.
+Both styles are accepted on every OS, so the same `pathlint.toml`
+works under Windows pwsh, macOS bash, and Termux fish.
+
+Slash normalization: `\` and `/` are converted to a single
+representation (`/`) before substring comparison. So
+`mise\\shims` (in a TOML literal) and `mise/shims` are equivalent.
 
 ### 8.3 OS identifiers
 
-The `os` field accepts these strings:
+The `os` field on `[[expect]]` and the per-OS keys on `[source.X]`
+accept these strings:
 
 | value | matches when |
 |---|---|
@@ -236,9 +279,148 @@ The `os` field accepts these strings:
 
 Termux is split out because its filesystem layout is fundamentally
 different from generic Linux (no `/usr/bin`; everything lives under
-`$PREFIX`). Rules that talk about `/usr/bin` should not fire on Termux.
+`$PREFIX`). A source like `apt` (which means `/usr/bin`) should not
+fire on Termux.
 
-## 9. Path sources
+## 9. Built-in source catalog
+
+pathlint embeds a default catalog, equivalent to the following TOML.
+Every entry can be overridden field-by-field in the user's
+`pathlint.toml`.
+
+```toml
+# ---- Cross-OS user-installed binaries ----
+
+[source.cargo]
+description = "binaries from `cargo install`"
+windows = "$UserProfile/.cargo/bin"
+unix    = "$HOME/.cargo/bin"
+
+[source.go]
+description = "binaries from `go install`"
+windows = "$UserProfile/go/bin"
+unix    = "$HOME/go/bin"
+
+[source.npm_global]
+windows = "$AppData/npm"
+unix    = "$HOME/.npm-global/bin"
+
+[source.pip_user]
+windows = "$AppData/Python"
+unix    = "$HOME/.local/bin"
+
+[source.user_bin]
+windows = "$UserProfile/bin"
+unix    = "$HOME/bin"
+
+[source.user_local_bin]
+unix    = "$HOME/.local/bin"
+
+# ---- Polyglot version managers ----
+
+[source.mise]
+windows = "$LocalAppData/mise"
+unix    = "$HOME/.local/share/mise"
+
+[source.volta]
+windows = "$LocalAppData/Volta"
+unix    = "$HOME/.volta/bin"
+
+[source.aqua]
+windows = "$LocalAppData/aquaproj-aqua"
+unix    = "$HOME/.local/share/aquaproj-aqua"
+
+[source.asdf]
+unix    = "$HOME/.asdf/shims"
+
+# ---- Windows-only package managers ----
+
+[source.winget]
+windows = "$LocalAppData/Microsoft/WinGet"
+
+[source.choco]
+windows = "$ProgramData/chocolatey"
+
+[source.scoop]
+windows = "$UserProfile/scoop"
+
+[source.WindowsApps]
+description = "Microsoft Store stub layer"
+windows = "Microsoft/WindowsApps"
+
+[source.strawberry]
+windows = "Strawberry"
+
+[source.mingw]
+windows = "mingw"
+
+[source.msys]
+windows = "msys"
+
+# ---- macOS-only package managers ----
+
+[source.brew_arm]
+description = "Homebrew on Apple Silicon"
+macos = "/opt/homebrew"
+
+[source.brew_intel]
+description = "Homebrew on Intel macOS"
+macos = "/usr/local"
+
+[source.macports]
+macos = "/opt/local"
+
+# ---- Linux-only package managers ----
+
+[source.apt]
+linux = "/usr/bin"
+
+[source.pacman]
+linux = "/usr/bin"
+
+[source.dnf]
+linux = "/usr/bin"
+
+[source.flatpak]
+linux = "/var/lib/flatpak/exports/bin"
+
+[source.snap]
+linux = "/snap/bin"
+
+# ---- Termux ----
+
+[source.pkg]
+description = "Termux pkg installs"
+termux = "$PREFIX/bin"
+
+[source.termux_user_bin]
+termux = "$PREFIX/../home/bin"
+
+# ---- OS baseline (catch-all "system PATH" sources) ----
+
+[source.system_windows]
+windows = "$SystemRoot/System32"
+
+[source.system_macos]
+macos = "/usr/bin"
+
+[source.system_linux]
+linux = "/usr/bin"
+```
+
+Notes:
+
+- `apt` / `pacman` / `dnf` all point at `/usr/bin` because that is
+  where their installed binaries land. They are aliases of "the
+  Linux distro" from pathlint's perspective; users typically pick
+  whichever name reads best in their `pathlint.toml`.
+- `brew_arm` and `brew_intel` are split because `/opt/homebrew/bin`
+  vs `/usr/local/bin` ordering on a single Mac is itself a typical
+  source of bugs.
+- `WindowsApps` and `strawberry` are listed primarily so they can
+  appear in `avoid = [...]` lists.
+
+## 10. Path sources (`--target`)
 
 | `--target` | Windows | macOS / Linux / Termux |
 |---|---|---|
@@ -248,45 +430,48 @@ different from generic Linux (no `/usr/bin`; everything lives under
 
 `process` is the union of Machine and User on Windows. On Unix the
 "Machine vs User" distinction does not exist at the registry level —
-`pathlint` does not parse `~/.bashrc`, `~/.zshrc`, `/etc/environment`,
-launchd plists, or PAM in MVP. (`shellrc` source could be added later
-if there is demand.)
+`pathlint` does not parse `~/.bashrc`, `~/.zshrc`,
+`/etc/environment`, launchd plists, or PAM in MVP.
 
-## 10. CLI surface
+## 11. CLI surface
 
 ```
 pathlint [OPTIONS] [COMMAND]
 
 Commands:
-  check    Lint PATH against rules (default)
-  which    Resolve a command across PATH and list shadowed copies
+  check    Lint PATH against expectations (default)
   help     Print help
 
 Options (global):
       --target <process|user|machine>  default: process
       --rules <path>                   default: search ./, then $XDG_CONFIG_HOME/pathlint/
-  -v, --verbose                        print every rule, including n/a, plus expanded PATH
+  -v, --verbose                        print every expectation incl. n/a, plus the resolved PATH
   -q, --quiet                          only print failures
       --color <auto|always|never>      default: auto
-      --no-glyphs                      ASCII-only output (default is ASCII anyway; opt-in glyphs come later)
+      --no-glyphs                      ASCII-only output
   -h, --help
   -V, --version
 ```
 
-## 11. Non-functional requirements
+`pathlint init` and `pathlint sort` are reserved for post-MVP.
+
+## 12. Non-functional requirements
 
 - **Single Rust binary.** No runtime deps beyond the OS itself.
 - **Cross-platform first-class.** Windows, macOS, Linux all run in CI.
   Termux runs from `cargo install` on the device — no prebuilt
   Termux binary, mirroring `dotfm`'s policy.
 - **Startup time.** `pathlint check` < 50 ms on a warm cache for a
-  PATH of ~100 entries and ~20 rules.
-- **Stable exit codes.** `0` clean, `1` rule failure, `2` config /
-  I/O error.
+  PATH of ~100 entries and ~20 expectations.
+- **Stable exit codes.** `0` clean, `1` expectation failure, `2`
+  config / I/O error.
 - **Encoding.** All paths are treated as UTF-8 strings on every OS;
   rare non-UTF-8 PATH entries are reported with a warning and skipped.
+- **Built-in catalog versioning.** The catalog is embedded at compile
+  time; bumps to it are noted in the changelog so users know when
+  defaults change.
 
-## 12. Distribution
+## 13. Distribution
 
 - crates.io publish once 0.0.1 ships.
 - GitHub Releases workflow shipping `x86_64-{linux,windows,darwin}`
@@ -294,59 +479,58 @@ Options (global):
   build from source.
 - (post-MVP) Homebrew formula, scoop manifest, AUR PKGBUILD.
 
-## 13. Out of scope
+## 14. Out of scope
 
 - PATH editing / persistence (deferred to post-MVP `sort` mode).
 - `which` over function/alias resolution — only file-on-PATH lookup.
 - Shell-config patching (`.bashrc`, `$PROFILE` rewriting).
-- Detecting *missing* commands beyond what rule evaluation produces as
-  a side effect.
+- Detecting *which package* a binary belongs to (we look at the path
+  prefix only; no `dpkg -S` / `rpm -qf` / `brew which-formula`).
 - Parsing of `/etc/environment`, PAM, launchd plists, systemd unit
   `Environment=`, etc.
 
-## 14. Success metrics
+## 15. Success metrics
 
 - The reference dotfiles (`ShortArrow/dotfiles`) replaces its
   `windows/Test-PathOrder.ps1` with a `pathlint check` invocation in
-  `windows/doctor.ps1`, and the rules-file lives in the same repo
-  (working on every OS the user owns, not just Windows).
-- A user can write a 5-rule `pathlint.toml` in under a minute by
-  copy/edit from the README — including at least one OS-tagged rule.
-- A failing run names every offending pair clearly enough to fix
-  without further debugging tools.
+  `windows/doctor.ps1`, with a 5-line `pathlint.toml` of just
+  `[[expect]]` entries (no `[source.*]` overrides).
+- A user can write a useful `pathlint.toml` in under a minute by
+  copy/edit from the README — including at least one OS-tagged
+  expectation.
+- A failing run names the command, the actual resolved path, and
+  the mismatched source clearly enough to fix without further
+  debugging tools.
 
-## 15. Open questions
+## 16. Open questions
 
-- **`before_not` (negative match).** Needed when "user `go/bin`" must
-  precede "system `Go/bin`" but both contain `go/bin`. Not in MVP;
-  revisit when a real second-rule conflict hits.
-- **`shellrc` source.** Should `--target shellrc` parse `.bashrc` /
-  `.zshrc` for `export PATH=...` lines? Useful for "I committed a
-  PATH change to shellrc but a fresh shell hasn't picked it up yet".
-  Out of MVP.
-- **Termux PATH conventions.** Should `os = ["termux"]` rules
-  automatically rewrite `/usr/bin` -> `$PREFIX/bin` for the user, or
-  is that surprising? Current preference: no rewriting; rules say
-  literally what they mean.
-- **macOS launchd.** `launchctl getenv PATH` may differ from
-  `process` PATH in some apps. Out of MVP.
-- **`pathlint sort` semantics.** If two rules conflict, which wins?
-  Topological-sort cycle handling needs design before implementation.
-- **Shell completions** via `clap_complete`. Cheap but post-MVP.
+- **Multiple installs of the same source.** `mise` puts binaries in
+  both `mise/shims/` and `mise/installs/<lang>/<ver>/bin/`. The
+  current rule treats both as "from mise". Is that good enough, or
+  should sources be split into `mise_shims` / `mise_installs`?
+- **Catalog distribution.** Should the embedded catalog be exposed
+  via `pathlint catalog list` for discovery? Trivial to add but adds
+  a subcommand.
+- **`prefer` ordering.** Currently `prefer = ["mise", "volta"]` is
+  treated as a set ("any of these is OK"). Should the order
+  additionally express preference for `sort`? Out of MVP.
+- **Catalog versioning.** When pathlint updates a built-in source
+  path (e.g. winget changes its layout), users on an old binary may
+  silently get wrong matches. A `catalog_version = N` in the embedded
+  catalog and a `--require-catalog >= N` flag could help.
+- **macOS launchd / `eval $(brew shellenv)`.** PATH set by these
+  paths may differ from `process`. Out of MVP.
 
-## 16. Relationship to other tools
+## 17. Relationship to other tools
 
-- **`which` / `where.exe`**: same domain (find where a command
-  resolves) but no notion of "should". `pathlint which` complements
-  rather than replaces them.
+- **`which` / `where.exe` / `type -a` / `Get-Command -All`**: tell
+  you what wins. `pathlint` tells you whether the right one wins.
 - **`dotfm doctor`**: `pathlint check` is intended to be invoked from
-  a `dotfm.toml` `[tools.<name>.doctor]` script, not to replace
-  `dotfm`. The recommended layout: a single `pathlint.toml` lives in
-  the dotfiles repo and is referenced by both Windows and Unix doctor
-  scripts.
+  a `dotfm.toml` `[tools.<name>.doctor]` script.
 - **`PATH.txt` / `DiffPath.ps1` (in `ShortArrow/dotfiles`)**: those
-  check *whether expected entries exist*; `pathlint` checks *whether
-  the order is right*. The two are complementary.
-- **Package managers (mise, brew, choco, pkg)**: `pathlint` does not
-  manage installations; it tells you whether the order they produced
-  is what you wanted.
+  check *whether expected entries exist* in `PATH`; `pathlint` checks
+  *which installer the resolved binary actually came from*. The two
+  are complementary.
+- **Package managers (mise, brew, choco, pkg, ...)**: `pathlint` does
+  not manage installations; it tells you whether the order they
+  produced is what you wanted.

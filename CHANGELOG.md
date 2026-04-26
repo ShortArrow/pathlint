@@ -19,17 +19,35 @@ regular semver rules apply.
   `ShortArrow/dotfiles:windows/Test-PathOrder.ps1` and will be ported
   to Rust in a future release.
 
-### Designed (still pre-implementation)
+### Designed (pre-implementation)
 
-- Cross-platform plan: a single `pathlint.toml` with optional
-  `os = ["windows" | "macos" | "linux" | "termux" | "unix"]` filters
-  on each rule. Termux is split out from `linux` because its
-  filesystem layout is fundamentally different.
-- Path normalization: `\` and `/` are normalized for matching, and
-  `%VAR%` / `$VAR` / `${VAR}` / `~` are all expanded uniformly so the
-  same rules file works across OSes.
-- Subcommands: `check` (default, lint), `which` (resolve + show
-  shadowed copies). Post-MVP: `init`, `sort`.
-- See [docs/PRD.md](docs/PRD.md) §3, §8, §10 for the full surface.
+The schema is now centered on **`[[expect]]` plus a `[source.<name>]`
+catalog**, replacing the earlier "PATH-entry-order rules" sketch:
+
+- **`[[expect]]`** declares per-command expectations:
+  ```toml
+  [[expect]]
+  command = "runex"
+  prefer  = ["cargo"]
+  avoid   = ["winget"]
+  ```
+- **`[source.<name>]`** declares how to recognize an installer on
+  disk via per-OS path substrings.
+- **Built-in source catalog** ships in the binary: `cargo`, `go`,
+  `npm_global`, `pip_user`, `mise`, `volta`, `aqua`, `asdf`,
+  `winget`, `choco`, `scoop`, `brew_arm`, `brew_intel`, `macports`,
+  `apt`, `pacman`, `dnf`, `flatpak`, `snap`, `pkg` (Termux),
+  `WindowsApps`, `strawberry`, `mingw`, `msys`, plus `system_*`
+  baselines per OS. Users override field-by-field or add new sources
+  in their own `pathlint.toml`.
+- **Single file, all OSes.** Expectations carry `os = [...]`
+  (`windows | macos | linux | termux | unix`); sources carry per-OS
+  keys. Slashes and env vars are normalized so the same file works
+  cross-platform.
+- **`which` subcommand dropped.** It overlapped too much with `where`
+  / `type -a` / `Get-Command -All`. The interesting question is "is
+  the right one winning?", which `check` answers directly.
+
+See [docs/PRD.md](docs/PRD.md) §3, §7, §8, §9 for the full design.
 
 [Unreleased]: https://github.com/ShortArrow/pathlint/commits/main
