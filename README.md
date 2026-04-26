@@ -16,15 +16,20 @@
 Most "PATH problems" come from one place: **the wrong copy of an
 executable resolves first.** Examples:
 
-- `python.exe` from a Microsoft Store stub shadows your `mise` install.
-- `gcc` from Strawberry Perl shadows the toolchain you actually want.
-- `pwsh` from a stale `WindowsPowerShell\v1.0` entry runs instead of
-  PowerShell 7.
+- **Windows.** Microsoft Store `python.exe` shadows mise / conda /
+  manual installs. Strawberry Perl `gcc` shadows MSYS / Rust toolchains.
+- **macOS.** `/usr/bin/python3` shadows Homebrew / pyenv. Intel
+  `/usr/local/bin` and arm `/opt/homebrew/bin` ordering is non-obvious.
+- **Linux.** Distro `node` shadows nvm / mise. `/snap/bin` shadows
+  `~/.cargo/bin`. `/usr/games` ahead of `~/bin` shadows local scripts.
+- **Termux.** `~/bin` after `$PREFIX/bin` means user scripts can't
+  override `pkg install`-supplied tools.
 
 `which python` will tell you what wins, but won't tell you whether
 that's what *should* win. `pathlint` makes that intent explicit:
-you write down "**A must come before B**" rules in a TOML file, and
-the tool checks them against the actual `PATH`.
+you write down "**A must come before B**" rules in a TOML file, tag
+each rule with the OSes it applies to, and the tool checks them
+against the actual `PATH`.
 
 ## Status
 
@@ -54,19 +59,37 @@ pathlint sort --target user --dry-run
 ## Planned `pathlint.toml` schema
 
 ```toml
-[[rule]]
-name   = "mise shims override system tools"
-before = "mise\\shims"
-after  = ["chocolatey\\bin", "Strawberry\\c\\bin"]
-
+# Untagged: applies on every OS.
 [[rule]]
 name   = "PowerShell 7 precedes legacy WindowsPowerShell"
 before = "PowerShell\\7"
 after  = ["WindowsPowerShell\\v1.0"]
+
+# Windows-only.
+[[rule]]
+name   = "mise shims override system tools"
+os     = ["windows"]
+before = "mise\\shims"
+after  = ["chocolatey\\bin", "Strawberry\\c\\bin"]
+
+# Multi-OS, opting out of Termux.
+[[rule]]
+name   = "user cargo bin precedes distro tools"
+os     = ["windows", "macos", "linux"]
+before = ".cargo/bin"
+after  = ["/usr/bin", "Strawberry"]
+
+# Termux-specific.
+[[rule]]
+name   = "user bin precedes pkg-installed binaries"
+os     = ["termux"]
+before = "/data/data/com.termux/files/home/bin"
+after  = ["/data/data/com.termux/files/usr/bin"]
 ```
 
 Match is substring + case-insensitive, evaluated after env-var
-expansion.
+expansion. Slashes (`/` and `\`) are normalized so the same rule works
+across OSes. `os` accepts `windows | macos | linux | termux | unix`.
 
 ## Installation
 

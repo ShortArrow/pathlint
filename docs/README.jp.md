@@ -15,18 +15,23 @@
 ## なぜ必要か
 
 「PATH 関連の不具合」のほとんどは結局 **間違った実体のコマンドが先に
-解決される** ことに帰着します。例：
+解決される** ことに帰着します。OS ごとに見た目は違いますが本質は同じ：
 
-- Microsoft Store 経由の `python.exe` スタブが mise でインストールした
-  `python` を覆い隠す。
-- Strawberry Perl の `gcc` が、本来使いたいツールチェインを覆い隠す。
-- 残骸の `WindowsPowerShell\v1.0` エントリが PowerShell 7 ではなく
-  古い `pwsh.exe` を走らせる。
+- **Windows.** Microsoft Store の `python.exe` スタブが mise / conda
+  / 手動インストールを覆う。Strawberry Perl の `gcc` が MSYS / Rust
+  のツールチェインを覆う。
+- **macOS.** `/usr/bin/python3` が Homebrew や pyenv を覆う。Intel の
+  `/usr/local/bin` と arm の `/opt/homebrew/bin` の順序が問題に。
+- **Linux.** distro の `node` が nvm / mise を覆う。`/snap/bin` が
+  `~/.cargo/bin` を覆う。`/usr/games` が `~/bin` より先でローカル
+  スクリプトを覆う。
+- **Termux.** `~/bin` が `$PREFIX/bin` の後ろに来ると、ユーザー作成
+  スクリプトで `pkg install` 提供のツールを上書きできない。
 
 `which python` は何が勝つかを教えてくれますが、それが**勝つべきもの
 なのか**は教えてくれません。`pathlint` はその意図を明示します：
-「**A は B より先に来るべき**」のルールを TOML に書き、実 PATH に対して
-チェックします。
+「**A は B より先に来るべき**」のルールを TOML に書き、各ルールに
+適用 OS タグを付け、実 PATH に対してチェックします。
 
 ## ステータス
 
@@ -55,18 +60,38 @@ pathlint sort --target user --dry-run
 ## 想定する `pathlint.toml` スキーマ
 
 ```toml
-[[rule]]
-name   = "mise shims override system tools"
-before = "mise\\shims"
-after  = ["chocolatey\\bin", "Strawberry\\c\\bin"]
-
+# タグ無し: 全 OS で適用。
 [[rule]]
 name   = "PowerShell 7 precedes legacy WindowsPowerShell"
 before = "PowerShell\\7"
 after  = ["WindowsPowerShell\\v1.0"]
+
+# Windows 専用。
+[[rule]]
+name   = "mise shims override system tools"
+os     = ["windows"]
+before = "mise\\shims"
+after  = ["chocolatey\\bin", "Strawberry\\c\\bin"]
+
+# 複数 OS（Termux は除外）。
+[[rule]]
+name   = "user cargo bin precedes distro tools"
+os     = ["windows", "macos", "linux"]
+before = ".cargo/bin"
+after  = ["/usr/bin", "Strawberry"]
+
+# Termux 専用。
+[[rule]]
+name   = "user bin precedes pkg-installed binaries"
+os     = ["termux"]
+before = "/data/data/com.termux/files/home/bin"
+after  = ["/data/data/com.termux/files/usr/bin"]
 ```
 
 マッチは部分一致 + 大文字小文字無視、環境変数展開後に評価されます。
+slash と backslash（`/` と `\`）は正規化されるので、同じルールが OS
+横断で動きます。`os` は `windows | macos | linux | termux | unix` を
+受け付けます。
 
 ## インストール
 
