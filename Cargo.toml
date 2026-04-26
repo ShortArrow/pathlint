@@ -1,0 +1,24 @@
+[package]
+name = "pathlint"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+authors = ["ShortArrow <bamboogeneral@shortarrow.jp>"]
+description = "Lint the PATH environment variable against declarative ordering rules."
+readme = "README.md"
+homepage = "https://github.com/ShortArrow/pathlint"
+repository = "https://github.com/ShortArrow/pathlint"
+documentation = "https://docs.rs/pathlint"
+license = "MIT OR Apache-2.0"
+keywords = ["path", "lint", "shell", "cli", "doctor"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = [
+  "/.github/",
+  "/docs/",
+  "/tests/fixtures/",
+]
+
+[dependencies]
+# Filled in once the implementation lands. Likely:
+#   anyhow, clap (derive), serde (derive), toml, thiserror, tracing,
+#   tracing-subscriber, shellexpand

@@ -1,0 +1,19 @@
+# Rust build artifacts
+/target/
+
+# IDE / editor
+/.idea/
+/.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude / Serena workspace state
+/.claude/.gitignore
+/.serena/cache
+
+# Local environment overrides
+.env
+.env.local
