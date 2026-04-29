@@ -11,7 +11,7 @@ regular semver rules apply.
 
 ## [Unreleased]
 
-## [0.0.2] - 2026-04-29
+## [0.0.2] - 2026-04-30
 
 The first release that does anything. `0.0.1` was a skeleton and
 was never published — `0.0.2` is what `cargo install pathlint` will
