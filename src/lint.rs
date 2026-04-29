@@ -324,4 +324,81 @@ mod tests {
         });
         assert_eq!(out[0].status, Status::Ok);
     }
+
+    #[test]
+    fn lazygit_any_of_three_preferred_is_ok() {
+        // PRD §8.1: prefer is a set; matching any one is OK.
+        let sources = cat(&[
+            ("cargo", src("/home/u/.cargo/bin")),
+            ("winget", src_win("WinGet")),
+            ("mise", src("/home/u/.local/share/mise")),
+        ]);
+        let expectations = vec![Expectation {
+            command: "lazygit".into(),
+            prefer: vec!["cargo".into(), "winget".into(), "mise".into()],
+            avoid: vec![],
+            os: None,
+            optional: false,
+        }];
+        // Only the mise install path matches; cargo and winget do not.
+        let out = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved(
+                "/home/u/.local/share/mise/installs/lazygit/0.42/bin/lazygit",
+            ))
+        });
+        assert_eq!(out[0].status, Status::Ok);
+        assert_eq!(out[0].matched_sources, vec!["mise".to_string()]);
+    }
+
+    #[test]
+    fn multiple_sources_match_same_path_all_recorded() {
+        // PRD §8.1 explicitly: a path may match many sources.
+        let sources = cat(&[
+            ("mise", src("/home/u/.local/share/mise")),
+            ("python_install", src("/installs/python/")),
+        ]);
+        let expectations = vec![Expectation {
+            command: "python".into(),
+            prefer: vec!["mise".into()],
+            avoid: vec![],
+            os: None,
+            optional: false,
+        }];
+        let out = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved(
+                "/home/u/.local/share/mise/installs/python/3.12/bin/python",
+            ))
+        });
+        assert_eq!(out[0].status, Status::Ok);
+        assert_eq!(out[0].matched_sources.len(), 2);
+        assert!(out[0].matched_sources.contains(&"mise".to_string()));
+        assert!(
+            out[0]
+                .matched_sources
+                .contains(&"python_install".to_string())
+        );
+    }
+
+    #[test]
+    fn avoid_overrides_prefer_when_both_match() {
+        // If the resolved path matches both a prefer source and an
+        // avoid source, avoid wins (status NG).
+        let sources = cat(&[
+            ("mise", src("/home/u/.local/share/mise")),
+            ("dangerous_subdir", src("/installs/python/3.10/")),
+        ]);
+        let expectations = vec![Expectation {
+            command: "python".into(),
+            prefer: vec!["mise".into()],
+            avoid: vec!["dangerous_subdir".into()],
+            os: None,
+            optional: false,
+        }];
+        let out = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved(
+                "/home/u/.local/share/mise/installs/python/3.10/bin/python",
+            ))
+        });
+        assert_eq!(out[0].status, Status::NgWrongSource);
+    }
 }

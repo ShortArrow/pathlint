@@ -81,4 +81,33 @@ mod tests {
         let merged = merge_with_user(&user);
         assert!(merged.contains_key("my_dotfiles_bin"));
     }
+
+    #[test]
+    fn linux_only_source_is_none_on_windows() {
+        let cat = builtin();
+        let apt = &cat["apt"];
+        assert!(apt.path_for(Os::Linux).is_some());
+        assert!(apt.path_for(Os::Windows).is_none());
+        assert!(apt.path_for(Os::Macos).is_none());
+        assert!(apt.path_for(Os::Termux).is_none());
+    }
+
+    #[test]
+    fn user_override_can_replace_all_known_fields() {
+        let mut user = BTreeMap::new();
+        user.insert(
+            "cargo".to_string(),
+            SourceDef {
+                description: Some("user-overridden".into()),
+                windows: Some("X:/cargo".into()),
+                unix: Some("/x/cargo".into()),
+                ..Default::default()
+            },
+        );
+        let merged = merge_with_user(&user);
+        let cargo = &merged["cargo"];
+        assert_eq!(cargo.description.as_deref(), Some("user-overridden"));
+        assert_eq!(cargo.path_for(Os::Windows), Some("X:/cargo"));
+        assert_eq!(cargo.path_for(Os::Linux), Some("/x/cargo"));
+    }
 }

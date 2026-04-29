@@ -166,4 +166,45 @@ mod tests {
     fn lone_dollar_is_literal() {
         assert_eq!(expand_env("a$/b"), "a$/b");
     }
+
+    #[test]
+    fn mixed_percent_and_dollar_in_one_string() {
+        with_var("PATHLINT_TEST_MIX_A", "AA", || {
+            with_var("PATHLINT_TEST_MIX_B", "BB", || {
+                let s = "%PATHLINT_TEST_MIX_A%/$PATHLINT_TEST_MIX_B/x";
+                assert_eq!(expand_env(s), "AA/BB/x");
+            });
+        });
+    }
+
+    #[test]
+    fn empty_input_is_empty() {
+        assert_eq!(expand_env(""), "");
+        assert_eq!(normalize(""), "");
+    }
+
+    #[test]
+    fn unclosed_brace_is_kept_verbatim() {
+        // `${FOO` (no closing brace) must not crash and must be left
+        // alone.
+        let s = "abc/${FOO/def";
+        assert_eq!(expand_env(s), s);
+    }
+
+    #[test]
+    fn percent_with_non_ident_inside_is_left_alone() {
+        // `%not an ident%` is not a valid env-var name, must stay literal.
+        let s = "50% off";
+        assert_eq!(expand_env(s), s);
+    }
+
+    #[test]
+    fn expand_and_normalize_combines_both_steps() {
+        with_var("PATHLINT_TEST_COMBO", "C:/Users/U", || {
+            assert_eq!(
+                expand_and_normalize("$PATHLINT_TEST_COMBO\\.cargo\\bin"),
+                "c:/users/u/.cargo/bin",
+            );
+        });
+    }
 }
