@@ -167,6 +167,7 @@ cargo install --git https://github.com/ShortArrow/pathlint
 - [PRD (English)](docs/PRD.md) — the full design, including the
   built-in source catalog
 - [PRD (日本語)](docs/PRD.jp.md)
+- [Release process](docs/RELEASE.md) — how to cut a new version
 - [Changelog](CHANGELOG.md)
 
 ## License
