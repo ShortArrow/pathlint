@@ -1,0 +1,119 @@
+# Built-in source catalog. See docs/PRD.md §9.
+
+# ---- Cross-OS user-installed binaries ----
+
+[source.cargo]
+description = "binaries from `cargo install`"
+windows = "$UserProfile/.cargo/bin"
+unix    = "$HOME/.cargo/bin"
+
+[source.go]
+description = "binaries from `go install`"
+windows = "$UserProfile/go/bin"
+unix    = "$HOME/go/bin"
+
+[source.npm_global]
+windows = "$AppData/npm"
+unix    = "$HOME/.npm-global/bin"
+
+[source.pip_user]
+windows = "$AppData/Python"
+unix    = "$HOME/.local/bin"
+
+[source.user_bin]
+windows = "$UserProfile/bin"
+unix    = "$HOME/bin"
+
+[source.user_local_bin]
+unix    = "$HOME/.local/bin"
+
+# ---- Polyglot version managers ----
+
+[source.mise]
+windows = "$LocalAppData/mise"
+unix    = "$HOME/.local/share/mise"
+
+[source.volta]
+windows = "$LocalAppData/Volta"
+unix    = "$HOME/.volta/bin"
+
+[source.aqua]
+windows = "$LocalAppData/aquaproj-aqua"
+unix    = "$HOME/.local/share/aquaproj-aqua"
+
+[source.asdf]
+unix    = "$HOME/.asdf/shims"
+
+# ---- Windows-only package managers ----
+
+[source.winget]
+windows = "$LocalAppData/Microsoft/WinGet"
+
+[source.choco]
+windows = "$ProgramData/chocolatey"
+
+[source.scoop]
+windows = "$UserProfile/scoop"
+
+[source.WindowsApps]
+description = "Microsoft Store stub layer"
+windows = "Microsoft/WindowsApps"
+
+[source.strawberry]
+windows = "Strawberry"
+
+[source.mingw]
+windows = "mingw"
+
+[source.msys]
+windows = "msys"
+
+# ---- macOS-only package managers ----
+
+[source.brew_arm]
+description = "Homebrew on Apple Silicon"
+macos = "/opt/homebrew"
+
+[source.brew_intel]
+description = "Homebrew on Intel macOS"
+macos = "/usr/local"
+
+[source.macports]
+macos = "/opt/local"
+
+# ---- Linux-only package managers ----
+
+[source.apt]
+linux = "/usr/bin"
+
+[source.pacman]
+linux = "/usr/bin"
+
+[source.dnf]
+linux = "/usr/bin"
+
+[source.flatpak]
+linux = "/var/lib/flatpak/exports/bin"
+
+[source.snap]
+linux = "/snap/bin"
+
+# ---- Termux ----
+
+[source.pkg]
+description = "Termux pkg installs"
+termux = "$PREFIX/bin"
+
+[source.termux_user_bin]
+termux = "$PREFIX/../home/bin"
+
+# ---- OS baseline ----
+
+[source.system_windows]
+windows = "$SystemRoot/System32"
+
+[source.system_macos]
+macos = "/usr/bin"
+
+[source.system_linux]
+linux = "/usr/bin"

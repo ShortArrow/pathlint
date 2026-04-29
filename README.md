@@ -51,13 +51,38 @@ location to the source labels.
 
 ## Status
 
-This crate currently ships only a project skeleton (Cargo manifest,
-license, docs). The implementation is being ported from a PowerShell
-prototype that lives at
-<https://github.com/ShortArrow/dotfiles/blob/develop/windows/Test-PathOrder.ps1>.
-See [docs/PRD.md](docs/PRD.md) for the full design.
+The 0.0.x line ships a working `pathlint` / `pathlint init` /
+`pathlint catalog list`. The TOML schema and CLI surface are still
+moving, but the resolve / match / report pipeline is in place and
+covered by tests. See [docs/PRD.md](docs/PRD.md) for the full design.
 
-## Planned usage
+## What pathlint *won't* tell you
+
+`pathlint` is **path-prefix based**: it resolves the command, looks at
+the resolved binary's full path, and asks "does any defined source's
+per-OS path appear in it as a substring?". That makes it fast (no
+package-manager calls, no network), but it leaves blind spots you
+should know about:
+
+- **AUR / Homebrew tap / `make install` / any custom prefix.** If a
+  binary lands somewhere not listed in your `[source.<name>]` entries,
+  `pathlint` reports `NG (unknown source)` even when the install is
+  legitimate. Add a `[source.my_prefix]` for it, or accept that
+  pathlint can't tell that case apart from a real misordering.
+- **Symlinked system dirs.** On Arch / openSUSE TW / Solus,
+  `/usr/sbin → /usr/bin`. `which ls` reports `/usr/sbin/ls`, so the
+  built-in `apt` / `pacman` / `dnf` source (`/usr/bin`) doesn't match.
+  Add `[source.usr_sbin] linux = "/usr/sbin"` to your `pathlint.toml`
+  if you hit this.
+- **Which package owns this binary.** `pathlint` does not call
+  `dpkg -S` / `rpm -qf` / `pacman -Qo` / `brew which-formula`. That's
+  intentional in 0.0.x for speed and offline correctness; revisiting
+  is on the 0.2 list.
+
+The full set of known limitations and future trade-offs lives in
+[docs/PRD.md §14, §16](docs/PRD.md).
+
+## Usage
 
 ```sh
 # Check the current process PATH against ./pathlint.toml
@@ -69,9 +94,18 @@ pathlint --target machine
 
 # Verbose: also show n/a expectations and the resolved PATH
 pathlint --verbose
+
+# Drop a starter pathlint.toml in the current directory
+pathlint init
+pathlint init --emit-defaults     # also embeds the full source catalog
+
+# Inspect every known source (built-in + user-defined)
+pathlint catalog list             # paths for the running OS
+pathlint catalog list --all       # every per-OS field
+pathlint catalog list --names-only
 ```
 
-## Planned `pathlint.toml` (minimal example)
+## `pathlint.toml` (minimal example)
 
 ```toml
 [[expect]]

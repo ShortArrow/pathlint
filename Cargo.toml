@@ -19,6 +19,14 @@ exclude = [
 ]
 
 [dependencies]
-# Filled in once the implementation lands. Likely:
-#   anyhow, clap (derive), serde (derive), toml, thiserror, tracing,
-#   tracing-subscriber, shellexpand
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+toml = "0.9"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[dev-dependencies]
+tempfile = "3"
