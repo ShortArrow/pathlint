@@ -1,6 +1,7 @@
 //! pathlint library — verifies that commands on PATH resolve from the expected installer.
 
 pub mod catalog;
+pub mod catalog_view;
 pub mod cli;
 pub mod config;
 pub mod expand;

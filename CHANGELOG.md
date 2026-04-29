@@ -39,6 +39,11 @@ regular semver rules apply.
   overwrite an existing file unless `--force` is passed; the
   `--emit-defaults` flag also embeds the entire built-in source
   catalog so users can edit per-OS paths field by field.
+- `pathlint catalog list` prints every known source — built-in plus
+  any defined or overridden in the user's `pathlint.toml`. Default
+  output shows the path for the running OS; `--all` shows every
+  per-OS field; `--names-only` strips paths and descriptions for
+  scripting.
 
 ### Designed (pre-implementation)
 

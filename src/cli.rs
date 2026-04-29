@@ -23,6 +23,31 @@ pub enum Command {
 
     /// Write a starter `pathlint.toml` in the current directory.
     Init(InitArgs),
+
+    /// Inspect the source catalog.
+    Catalog {
+        #[command(subcommand)]
+        action: CatalogCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CatalogCommand {
+    /// List every known source — built-in plus any defined in
+    /// `pathlint.toml` — with its description and per-OS path.
+    List(CatalogListArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct CatalogListArgs {
+    /// Show every per-OS path of each source, not just the one for
+    /// the running OS.
+    #[arg(long)]
+    pub all: bool,
+
+    /// Print only source names, one per line.
+    #[arg(long)]
+    pub names_only: bool,
 }
 
 #[derive(Debug, clap::Args)]

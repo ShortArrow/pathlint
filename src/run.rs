@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::catalog;
-use crate::cli::{Cli, Command, InitArgs};
+use crate::catalog_view::{self, ListStyle};
+use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, InitArgs};
 use crate::config::Config;
 use crate::init::{self, InitOptions, InitOutcome};
 use crate::lint;
@@ -17,8 +18,12 @@ use crate::resolve;
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
-    if let Some(Command::Init(args)) = cli.command {
-        return execute_init(&args);
+    match cli.command {
+        Some(Command::Init(args)) => return execute_init(&args),
+        Some(Command::Catalog {
+            action: CatalogCommand::List(args),
+        }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
+        Some(Command::Check) | None => {}
     }
     let rules_path = locate_rules(cli.global.rules.as_deref())?;
     let cfg = match rules_path.as_ref() {
@@ -68,6 +73,20 @@ pub fn execute(cli: Cli) -> Result<u8> {
     } else {
         Ok(0)
     }
+}
+
+fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {
+    let cfg = match locate_rules(explicit_rules)? {
+        Some(p) => Config::from_path(&p)?,
+        None => Config::default(),
+    };
+    let merged = catalog::merge_with_user(&cfg.source);
+    let style = ListStyle {
+        all_os: args.all,
+        names_only: args.names_only,
+    };
+    print!("{}", catalog_view::render(&merged, Os::current(), style));
+    Ok(0)
 }
 
 fn execute_init(args: &InitArgs) -> Result<u8> {
