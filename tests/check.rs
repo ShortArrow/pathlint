@@ -185,7 +185,11 @@ fn os_filter_excludes_other_os() {
     let some_dir = tmp.path().join("d");
     fs::create_dir_all(&some_dir).unwrap();
 
-    let other = if os_tag() == "windows" { "linux" } else { "windows" };
+    let other = if os_tag() == "windows" {
+        "linux"
+    } else {
+        "windows"
+    };
     let body = format!(
         r#"
 [[expect]]
@@ -351,8 +355,7 @@ avoid   = ["bad"]
     );
     let rules = write_rules(tmp.path(), &body);
 
-    let (code, stdout, _) =
-        run_with_args(&rules, &join_path(&[&good_dir, &bad_dir]), &["--quiet"]);
+    let (code, stdout, _) = run_with_args(&rules, &join_path(&[&good_dir, &bad_dir]), &["--quiet"]);
     assert_eq!(code, 1, "stdout was: {stdout}");
     assert!(!stdout.contains("alpha"), "OK line leaked: {stdout}");
     assert!(stdout.contains("beta"), "NG line missing: {stdout}");

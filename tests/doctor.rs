@@ -84,7 +84,11 @@ fn doctor_warns_on_trailing_slash() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("slashy");
     fs::create_dir_all(&dir).unwrap();
-    let with_slash = format!("{}{}", dir.display(), if cfg!(windows) { "\\" } else { "/" });
+    let with_slash = format!(
+        "{}{}",
+        dir.display(),
+        if cfg!(windows) { "\\" } else { "/" }
+    );
     let (code, stdout, _) = run_doctor(&with_slash);
     assert_eq!(code, 0);
     assert!(stdout.contains("trailing slash"), "stdout: {stdout}");

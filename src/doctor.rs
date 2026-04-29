@@ -94,8 +94,8 @@ fn check_malformed(index: usize, entry: &str) -> Option<Diagnostic> {
         // PATH separator is ;, so ; cannot appear in an entry. Other
         // illegal-on-NTFS characters: <>"|?* and control chars.
         for c in entry.chars() {
-            let illegal = matches!(c, '<' | '>' | '"' | '|' | '?' | '*')
-                || (c.is_control() && c != '\t');
+            let illegal =
+                matches!(c, '<' | '>' | '"' | '|' | '?' | '*') || (c.is_control() && c != '\t');
             if illegal {
                 return Some(Diagnostic {
                     index,
@@ -249,11 +249,7 @@ fn candidate_vars(os: Os) -> &'static [(&'static str, VarStyle)] {
     }
 }
 
-fn add_duplicate_diagnostics(
-    normalized: &[String],
-    raw: &[String],
-    out: &mut Vec<Diagnostic>,
-) {
+fn add_duplicate_diagnostics(normalized: &[String], raw: &[String], out: &mut Vec<Diagnostic>) {
     let mut first_seen: BTreeMap<&str, usize> = BTreeMap::new();
     for (i, n) in normalized.iter().enumerate() {
         if n.is_empty() {
@@ -359,8 +355,7 @@ mod tests {
         assert!(
             diags
                 .iter()
-                .any(|d| d.severity == Severity::Error
-                    && matches!(d.kind, Kind::Malformed { .. }))
+                .any(|d| d.severity == Severity::Error && matches!(d.kind, Kind::Malformed { .. }))
         );
     }
 
@@ -402,7 +397,11 @@ mod tests {
         // we don't suggest anything when the entry already uses $.
         let e = entries(&["$HOME/bin"]);
         let diags = analyze(&e, Os::Linux);
-        assert!(!diags.iter().any(|d| matches!(d.kind, Kind::Shortenable { .. })));
+        assert!(
+            !diags
+                .iter()
+                .any(|d| matches!(d.kind, Kind::Shortenable { .. }))
+        );
     }
 
     #[test]

@@ -73,9 +73,8 @@ fn probe(dir: &Path, command: &str, exts: &[String]) -> Option<PathBuf> {
 
 #[cfg(windows)]
 fn pathext_list() -> Vec<String> {
-    let raw = std::env::var("PATHEXT").unwrap_or_else(|_| {
-        ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC".to_string()
-    });
+    let raw = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC".to_string());
     raw.split(';')
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())

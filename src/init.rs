@@ -192,11 +192,10 @@ mod tests {
         let body = render_starter(Os::Windows, false);
         let cfg = Config::parse_toml(&body).unwrap();
         assert!(
-            cfg.expectations
-                .iter()
-                .any(|e| e.os.as_ref().is_some_and(|tags| tags
-                    .iter()
-                    .any(|t| t.eq_ignore_ascii_case("windows")))),
+            cfg.expectations.iter().any(|e| e
+                .os
+                .as_ref()
+                .is_some_and(|tags| tags.iter().any(|t| t.eq_ignore_ascii_case("windows")))),
             "starter must reference its own OS"
         );
     }

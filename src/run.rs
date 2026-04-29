@@ -117,15 +117,17 @@ fn format_diagnostic(d: &Diagnostic, entries: &[String]) -> String {
         Kind::Missing => "directory does not exist".into(),
         Kind::Shortenable { suggestion } => format!("could be written as {suggestion}"),
         Kind::TrailingSlash => "trailing slash; some shells handle this oddly".into(),
-        Kind::CaseVariant { canonical } => format!(
-            "case / slash variant of {canonical}; OS treats them as one directory"
-        ),
-        Kind::ShortName => {
-            "Windows 8.3 short name in PATH; long-name form is more portable".into()
+        Kind::CaseVariant { canonical } => {
+            format!("case / slash variant of {canonical}; OS treats them as one directory")
         }
+        Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
         Kind::Malformed { reason } => format!("malformed entry: {reason}"),
     };
-    format!("{tag} #{idx:>3} {entry}\n      {detail}", idx = d.index, entry = d.entry)
+    format!(
+        "{tag} #{idx:>3} {entry}\n      {detail}",
+        idx = d.index,
+        entry = d.entry
+    )
 }
 
 fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {
