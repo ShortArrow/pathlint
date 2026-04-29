@@ -2,9 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -44,7 +44,22 @@ jobs:
       - run: cargo build --verbose
       - run: cargo test --verbose
 
+  # Confirm the project still compiles on its declared MSRV. Build only
+  # — running tests on MSRV would also pin every dev-dependency to MSRV
+  # and bloats the cache for little gain.
+  msrv:
+    name: build on MSRV
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - run: cargo build --verbose
+
   # Termux (aarch64-linux-android) target is intentionally not pre-built here.
   # cross-rs 0.2.x bundles an old NDK that fails to link libunwind, and the
   # cost of maintaining a custom NDK pipeline outweighs the benefit — Termux
-  # users can `pkg install rust && cargo install dotfm` to build locally.
+  # users can `pkg install rust && cargo install pathlint` to build locally.
