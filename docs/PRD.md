@@ -1,7 +1,8 @@
 # pathlint — Product Requirements Document
 
-**Status:** Draft (pre-implementation).
-**Target release:** 0.0.1 MVP.
+**Status:** 0.0.x in progress.
+**Target release:** 0.0.2 is the first working version. Schema and
+CLI surface remain in motion through 0.1.0.
 
 ---
 
@@ -165,15 +166,43 @@ pathlint --quiet                      # only print failures
 - An expectation may reference any source name from the merged
   catalog. Referring to an undefined source is a config error.
 
-### 7.3 `pathlint init` (planned, not MVP)
+### 7.3 `pathlint init` (implemented)
 
 - Emits a starter `pathlint.toml` in the current directory with a
   small set of example `[[expect]]` entries for the current OS.
 - `pathlint init --emit-defaults` writes the entire built-in source
   catalog into the file as well, so the user can edit / remove any
   entry. Off by default to keep the file short.
+- Refuses to overwrite an existing file (exit 1) unless `--force`
+  is passed.
 
-### 7.4 `pathlint sort` (post-MVP)
+### 7.4 `pathlint catalog list` (implemented)
+
+- Prints every source in the merged catalog (built-ins plus user
+  overrides / additions).
+- Default output is the path applicable to the running OS;
+  `--all` shows every per-OS field; `--names-only` strips paths and
+  descriptions for shell pipelines.
+
+### 7.5 `pathlint doctor` (implemented)
+
+- Lints the PATH itself, independent of `[[expect]]`.
+- **Error** (exits 1): malformed entries — embedded NUL, NTFS-
+  illegal chars on Windows. The OS cannot use these as directories
+  so they're escalated.
+- **Warn** (exits 0):
+  - Duplicate entries (after env-var expansion / slash normalize).
+  - Missing directories.
+  - Trailing slashes.
+  - Windows 8.3 short names (`PROGRA~1`).
+  - Case- / slash-variant duplicates (same normalized form,
+    different verbatim).
+  - Shortenable entries — could be written using a known env var
+    (`%LocalAppData%` / `%UserProfile%` / `$HOME` etc.); the
+    suggestion preserves the original case + slash style.
+- `--quiet` hides warns; errors always print.
+
+### 7.6 `pathlint sort` (post-MVP)
 
 - Computes a PATH order that satisfies every applicable expectation,
   prints it (`--dry-run` default) or applies it via OS-appropriate
@@ -440,6 +469,9 @@ pathlint [OPTIONS] [COMMAND]
 
 Commands:
   check    Lint PATH against expectations (default)
+  init     Write a starter pathlint.toml in the current directory
+  catalog  Inspect the source catalog
+  doctor   Lint the PATH itself
   help     Print help
 
 Options (global):
@@ -453,7 +485,7 @@ Options (global):
   -V, --version
 ```
 
-`pathlint init` and `pathlint sort` are reserved for post-MVP.
+`pathlint sort` is reserved for post-MVP.
 
 ## 12. Non-functional requirements
 
@@ -473,7 +505,7 @@ Options (global):
 
 ## 13. Distribution
 
-- crates.io publish once 0.0.1 ships.
+- crates.io publish from 0.0.2 onward.
 - GitHub Releases workflow shipping `x86_64-{linux,windows,darwin}`
   and `aarch64-darwin` archives, mirroring `dotfm`. Termux users
   build from source.

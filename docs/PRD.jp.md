@@ -1,7 +1,8 @@
 # pathlint — プロダクト要件定義書（PRD）
 
-**ステータス:** ドラフト（実装前）。
-**対象リリース:** 0.0.1 MVP。
+**ステータス:** 0.0.x 進行中。
+**対象リリース:** 0.0.2 が初の動作版。スキーマと CLI 表面は引き続き
+動きうる（0.1.0 で安定化予定）。
 
 ---
 
@@ -157,15 +158,37 @@ pathlint --quiet                      # 失敗のみ
 - expectation は merged カタログ中の任意の source 名を参照可。未定義
   の source 名を参照したら config エラー。
 
-### 7.3 `pathlint init`（planned、MVP 外）
+### 7.3 `pathlint init`（実装ずみ）
 
 - 現ディレクトリに starter `pathlint.toml` を出力。現 OS 向けの少数
   の `[[expect]]` 例で埋める。
 - `pathlint init --emit-defaults` で組み込み source カタログ全体を
   ファイルに書き出すこともできる（編集・削除しやすくするため）。
   デフォルトはオフ（ファイルを短く保つため）。
+- 既存ファイルがあれば exit 1 で書き換えを拒否。`--force` で許可。
 
-### 7.4 `pathlint sort`（post-MVP）
+### 7.4 `pathlint catalog list`（実装ずみ）
+
+- 組み込み + ユーザー定義 source 一覧を表示。
+- デフォルトは現 OS のパスのみ。`--all` で全 OS のフィールドを縦
+  展開。`--names-only` で名前だけ（シェル連携用）。
+
+### 7.5 `pathlint doctor`（実装ずみ）
+
+- `[[expect]]` とは独立に PATH 自体を lint。
+- **Error**（exit 1）: 形式破損（NUL 埋め込み、Windows の NTFS 非合
+  法文字）。OS が directory として扱えないので escalate。
+- **Warn**（exit 0）:
+  - 重複エントリ（環境変数展開と slash 正規化のあとで同一）。
+  - ディレクトリ不在。
+  - 末尾スラッシュ。
+  - Windows 8.3 短縮名（`PROGRA~1`）。
+  - ケース／slash 違い重複（同じ正規化形だが verbatim が違う）。
+  - 環境変数で短縮できる候補（`%LocalAppData%` / `%UserProfile%` /
+    `$HOME` 系）。提案文字列は元のケースと slash 向きを保つ。
+- `--quiet` で warn 抑制、error は常に表示。
+
+### 7.6 `pathlint sort`（post-MVP）
 
 - 全 expectation を満たす PATH 順序を計算し、表示
   （`--dry-run` がデフォルト）または OS に応じた API で適用
@@ -432,6 +455,9 @@ pathlint [OPTIONS] [COMMAND]
 
 Commands:
   check    expectation に照らして PATH を lint（デフォルト）
+  init     starter pathlint.toml を生成
+  catalog  source カタログを inspect
+  doctor   PATH 自体を lint
   help     ヘルプ表示
 
 Options（global）:
@@ -445,7 +471,7 @@ Options（global）:
   -V, --version
 ```
 
-`pathlint init` と `pathlint sort` は post-MVP に予約。
+`pathlint sort` は post-MVP に予約。
 
 ## 12. 非機能要件
 
@@ -464,7 +490,7 @@ Options（global）:
 
 ## 13. 配布
 
-- 0.0.1 ship 後に crates.io publish。
+- 0.0.2 以降に crates.io publish 予定。
 - GitHub Releases workflow で `x86_64-{linux,windows,darwin}` と
   `aarch64-darwin` のアーカイブを配布。`dotfm` と同じ流れ。Termux
   ユーザーはソースからビルド。
@@ -477,7 +503,11 @@ Options（global）:
 - シェル設定パッチ（`.bashrc`、`$PROFILE` の書き換え）。
 - バイナリがどの **パッケージ** に属するかの厳密判定。pathlint は
   パスプレフィックスしか見ない（`dpkg -S` / `rpm -qf` /
-  `brew which-formula` のようなことはしない）。
+  `brew which-formula` / `pacman -Qo` / `paru -Qo` のようなことは
+  しない）。これは正しさのもっとも大きなトレードオフ：AUR /
+  `make install` / 任意 prefix は、ユーザーが該当 prefix を
+  `[source.<name>]` で書くまで pathlint からは透明。0.2 で再考予定
+  （§16 参照）。
 - `/etc/environment`、PAM、launchd plist、systemd unit
   `Environment=` のパース。
 
@@ -500,7 +530,25 @@ Options（global）:
   `mise_shims` / `mise_installs` に分けるべきか。
 - **カタログの可視化。** 組み込みカタログを `pathlint catalog list`
   で参照できるようにすべきか。実装は trivial だがサブコマンドが増
-  える。
+  える。*(0.0.x で解決済み — `pathlint catalog list` を提供。)*
+- **パッケージマネージャ問い合わせ（0.2 候補）。** path ベースの
+  マッチでは AUR / Homebrew tap / `make install` / `[source.<name>]`
+  に書かれていない prefix のすべてが取りこぼされる。将来のノブと
+  して、`[source.X] owner_query = ["pacman", "-Qo"]` のような source
+  単位、または `[[expect]] via = "command"` の opt-in 形式が考え
+  られる。トレードオフ: 1 回 50–100 ms のオーバーヘッド、OS 別の
+  パーサ実装、信頼の循環依存（問い合わせ先のバイナリそのものが信
+  頼できる必要）。0.1.x では不採用。path-based がどれだけ取りこぼ
+  すかのフィールドデータが集まってから再検討。
+- **シンボリックリンクされたシステムディレクトリ。** Arch / Solus /
+  openSUSE TW などで `/usr/sbin → /usr/bin`。`which` は
+  `/usr/sbin/<cmd>` を返すので、組み込みの `apt` / `pacman` /
+  `dnf` / `system_linux`（`linux = "/usr/bin"` のみ）に substring
+  マッチしない → ユーザー側で `[source.usr_sbin] linux =
+  "/usr/sbin"` を追加するか、カタログに合成エントリを足すか。path
+  canonicalize は採用しない方針：レポート上に出る source ラベルを
+  silent に変える上、mise / volta / asdf の shim ベースマッチを
+  壊す。
 - **`prefer` の順序。** 現状 `prefer = ["mise", "volta"]` は集合
   扱い（「どれか満たせば OK」）。`sort` のとき優先順位として使う
   か。MVP 外。

@@ -6,9 +6,9 @@
 
 > 各コマンドが、自分が期待するインストーラから resolve されているかを検証する。
 
-> **⚠ Pre-alpha (0.0.x)。** スキーマと CLI の表面はまだ動きます。
-> 本番に組み込むには時期尚早です。現状は **スケルトンのみ** で、動く
-> バイナリはまだありません。
+> **⚠ Pre-alpha (0.0.x)。** スキーマと CLI 表面はまだ動きます。
+> 0.1.0 が出るまで、minor / patch 双方が schema や CLI の互換を
+> 壊しうる前提でお使いください。
 
 ---
 
@@ -52,12 +52,38 @@ TOML の 2 つの概念：
 
 ## ステータス
 
-このクレートには現状プロジェクトのスケルトンしかありません（Cargo
-manifest、ライセンス、ドキュメント）。実装は PowerShell プロトタイプ
-<https://github.com/ShortArrow/dotfiles/blob/develop/windows/Test-PathOrder.ps1>
-から Rust に移植中です。詳細設計は [docs/PRD.jp.md](PRD.jp.md) を参照。
+0.0.x ラインで `pathlint` / `pathlint init` / `pathlint catalog list`
+/ `pathlint doctor` が動きます。TOML スキーマと CLI 表面は引き続き
+動きますが、解決 / マッチ / レポートの一連は実装済みでテストもあります。
+詳細設計は [docs/PRD.jp.md](PRD.jp.md) を参照。
 
-## 想定する使い方
+## pathlint が **教えてくれない** こと
+
+`pathlint` は **パスの prefix ベース**のツールです：コマンドを resolve
+して、勝者バイナリのフルパスを見て、定義済み source の OS ごとのパスが
+**substring として含まれているか**だけを判定します。これによって速く
+（パッケージマネージャ呼び出しなし、ネット不要）動きますが、知って
+おくべき盲点があります：
+
+- **AUR / Homebrew tap / `make install` / 任意の prefix。** 定義済みの
+  `[source.<name>]` のいずれにも含まれない場所に install されたバイナリ
+  は、たとえ正規 install であっても `NG (unknown source)` と報告され
+  ます。`[source.my_prefix]` を追加するか、pathlint がその違いを区別
+  できないことを受け入れてください。
+- **シンボリックリンクされたシステムディレクトリ。** Arch / openSUSE
+  TW / Solus などでは `/usr/sbin → /usr/bin` です。`which ls` は
+  `/usr/sbin/ls` を返すので、組み込みの `apt` / `pacman` / `dnf`
+  source（`/usr/bin`）には部分一致しません。`[source.usr_sbin]
+  linux = "/usr/sbin"` を `pathlint.toml` に足してください。
+- **どのパッケージがそのバイナリを所有しているか。** `pathlint` は
+  `dpkg -S` / `rpm -qf` / `pacman -Qo` / `brew which-formula` を呼び
+  ません。0.0.x では速度とオフライン正しさを優先しての判断で、再考
+  は 0.2 議題です。
+
+既知の制約と将来のトレードオフは [docs/PRD.jp.md §14, §16](PRD.jp.md)
+にすべて書いてあります。
+
+## 使い方
 
 ```sh
 # 現在のプロセス PATH を ./pathlint.toml で検証
@@ -69,9 +95,22 @@ pathlint --target machine
 
 # 詳細：n/a の expectation や解決後 PATH も表示
 pathlint --verbose
+
+# starter pathlint.toml をカレントに作る
+pathlint init
+pathlint init --emit-defaults     # 組み込みカタログ全体も書き出す
+
+# 認識できる source 一覧を表示
+pathlint catalog list             # 現在 OS の path のみ
+pathlint catalog list --all       # 全 OS のフィールドを縦展開
+pathlint catalog list --names-only
+
+# PATH 自体の衛生チェック（重複、不在ディレクトリ、env-var 短縮候補、
+# Windows 8.3 短縮、形式破損エントリなど）
+pathlint doctor
 ```
 
-## 想定する `pathlint.toml`（最小例）
+## `pathlint.toml`（最小例）
 
 ```toml
 [[expect]]
@@ -130,8 +169,10 @@ cargo install --git https://github.com/ShortArrow/pathlint
 ## ドキュメント
 
 - [PRD（日本語）](PRD.jp.md) — 詳細設計（組み込み source カタログ含む）
+- [リリース手順（日本語）](RELEASE.jp.md)
 - [README（英語）](../README.md)
 - [PRD（英語）](PRD.md)
+- [リリース手順（英語）](RELEASE.md)
 - [Changelog](../CHANGELOG.md)
 
 ## ライセンス
