@@ -34,6 +34,11 @@ regular semver rules apply.
   - Honors `PATHEXT` on Windows and the executable bit on Unix.
   - 27 unit tests + 7 end-to-end CLI tests, clippy clean under
     `-D warnings`.
+- `pathlint init` writes a starter `pathlint.toml` in the current
+  directory with examples appropriate to the current OS. Refuses to
+  overwrite an existing file unless `--force` is passed; the
+  `--emit-defaults` flag also embeds the entire built-in source
+  catalog so users can edit per-OS paths field by field.
 
 ### Designed (pre-implementation)
 

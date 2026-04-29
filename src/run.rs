@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::catalog;
-use crate::cli::Cli;
+use crate::cli::{Cli, Command, InitArgs};
 use crate::config::Config;
+use crate::init::{self, InitOptions, InitOutcome};
 use crate::lint;
 use crate::os_detect::Os;
 use crate::path_source::{self, Target};
@@ -16,6 +17,9 @@ use crate::resolve;
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
+    if let Some(Command::Init(args)) = cli.command {
+        return execute_init(&args);
+    }
     let rules_path = locate_rules(cli.global.rules.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
@@ -63,6 +67,27 @@ pub fn execute(cli: Cli) -> Result<u8> {
         Ok(1)
     } else {
         Ok(0)
+    }
+}
+
+fn execute_init(args: &InitArgs) -> Result<u8> {
+    let cwd = std::env::current_dir()?;
+    let opts = InitOptions {
+        emit_defaults: args.emit_defaults,
+        force: args.force,
+    };
+    match init::run(&cwd, &opts, Os::current())? {
+        InitOutcome::Wrote(p) => {
+            println!("pathlint: wrote {}", p.display());
+            Ok(0)
+        }
+        InitOutcome::AlreadyExists(p) => {
+            eprintln!(
+                "pathlint: {} already exists; pass --force to overwrite",
+                p.display()
+            );
+            Ok(1)
+        }
     }
 }
 

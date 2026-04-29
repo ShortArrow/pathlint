@@ -20,6 +20,22 @@ pub struct Cli {
 pub enum Command {
     /// Lint PATH against expectations (default).
     Check,
+
+    /// Write a starter `pathlint.toml` in the current directory.
+    Init(InitArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct InitArgs {
+    /// Also embed the entire built-in source catalog so users can
+    /// edit per-OS paths field by field. Off by default to keep the
+    /// starter file short.
+    #[arg(long)]
+    pub emit_defaults: bool,
+
+    /// Overwrite an existing `pathlint.toml` if one is already present.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, clap::Args)]

@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod cli;
 pub mod config;
 pub mod expand;
+pub mod init;
 pub mod lint;
 pub mod os_detect;
 pub mod path_source;
