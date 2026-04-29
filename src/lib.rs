@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod catalog_view;
 pub mod cli;
 pub mod config;
+pub mod doctor;
 pub mod expand;
 pub mod init;
 pub mod lint;

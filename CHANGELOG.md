@@ -55,6 +55,18 @@ regular semver rules apply.
   `[source.usr_sbin] linux = "/usr/sbin"` and references both `apt`
   and `pacman` in `prefer`, so it works out of the box on
   Debian/Ubuntu and Arch alike.
+- `pathlint doctor` lints the PATH itself, independent of any
+  `[[expect]]` rules. Diagnostics:
+  - **Error** (exits 1): malformed entries — embedded NUL, NTFS-
+    illegal characters on Windows. The OS cannot use these as
+    directories.
+  - **Warn** (exits 0): duplicate entries (after env-var expansion
+    and slash normalization), missing directories, trailing
+    slashes, Windows 8.3 short names (`PROGRA~1`), case- /
+    slash-variant duplicates, and entries that could be written
+    using a known env var (`%LocalAppData%` / `%UserProfile%` /
+    `$HOME` and friends — case and slash style preserved).
+  - `--quiet` hides warns; errors always print.
 
 ### Designed (pre-implementation)
 

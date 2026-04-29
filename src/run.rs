@@ -8,6 +8,7 @@ use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
 use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, InitArgs};
 use crate::config::Config;
+use crate::doctor::{self, Diagnostic, Kind, Severity};
 use crate::init::{self, InitOptions, InitOutcome};
 use crate::lint;
 use crate::os_detect::Os;
@@ -23,6 +24,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
         }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
+        Some(Command::Doctor) => return execute_doctor(&cli.global),
         Some(Command::Check) | None => {}
     }
     let rules_path = locate_rules(cli.global.rules.as_deref())?;
@@ -73,6 +75,57 @@ pub fn execute(cli: Cli) -> Result<u8> {
     } else {
         Ok(0)
     }
+}
+
+fn execute_doctor(global: &crate::cli::GlobalOpts) -> Result<u8> {
+    let target: Target = global.target.into();
+    let path_read = path_source::read_path(target);
+    if let Some(w) = &path_read.warning {
+        eprintln!("pathlint: warning: {w}");
+    }
+    let entries = resolve::split_path(&path_read.value);
+    let diags = doctor::analyze(&entries, Os::current());
+
+    let printable: Vec<&Diagnostic> = if global.quiet {
+        diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect()
+    } else {
+        diags.iter().collect()
+    };
+
+    for d in &printable {
+        println!("{}", format_diagnostic(d, &entries));
+    }
+
+    let has_error = diags.iter().any(|d| d.severity == Severity::Error);
+    Ok(if has_error { 1 } else { 0 })
+}
+
+fn format_diagnostic(d: &Diagnostic, entries: &[String]) -> String {
+    let tag = match d.severity {
+        Severity::Error => "[ERR] ",
+        Severity::Warn => "[warn]",
+    };
+    let detail = match &d.kind {
+        Kind::Duplicate { first_index } => format!(
+            "duplicate of entry #{first} ({first_path})",
+            first = first_index,
+            first_path = entries.get(*first_index).cloned().unwrap_or_default(),
+        ),
+        Kind::Missing => "directory does not exist".into(),
+        Kind::Shortenable { suggestion } => format!("could be written as {suggestion}"),
+        Kind::TrailingSlash => "trailing slash; some shells handle this oddly".into(),
+        Kind::CaseVariant { canonical } => format!(
+            "case / slash variant of {canonical}; OS treats them as one directory"
+        ),
+        Kind::ShortName => {
+            "Windows 8.3 short name in PATH; long-name form is more portable".into()
+        }
+        Kind::Malformed { reason } => format!("malformed entry: {reason}"),
+    };
+    format!("{tag} #{idx:>3} {entry}\n      {detail}", idx = d.index, entry = d.entry)
 }
 
 fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {

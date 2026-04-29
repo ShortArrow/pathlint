@@ -29,6 +29,11 @@ pub enum Command {
         #[command(subcommand)]
         action: CatalogCommand,
     },
+
+    /// Lint the PATH itself (duplicates, missing dirs, env-var
+    /// shortening candidates, Windows 8.3 short names, malformed
+    /// entries). Independent of `[[expect]]` rules.
+    Doctor,
 }
 
 #[derive(Debug, Subcommand)]
