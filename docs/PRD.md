@@ -485,7 +485,11 @@ Options (global):
 - `which` over function/alias resolution — only file-on-PATH lookup.
 - Shell-config patching (`.bashrc`, `$PROFILE` rewriting).
 - Detecting *which package* a binary belongs to (we look at the path
-  prefix only; no `dpkg -S` / `rpm -qf` / `brew which-formula`).
+  prefix only; no `dpkg -S` / `rpm -qf` / `brew which-formula` /
+  `pacman -Qo` / `paru -Qo`). This is the dominant correctness
+  trade-off: AUR / `make install` / any custom prefix is invisible to
+  pathlint until the user adds a `[source.<name>]` for that prefix.
+  See §16 for revisiting in 0.2.
 - Parsing of `/etc/environment`, PAM, launchd plists, systemd unit
   `Environment=`, etc.
 
@@ -510,7 +514,26 @@ Options (global):
   should sources be split into `mise_shims` / `mise_installs`?
 - **Catalog distribution.** Should the embedded catalog be exposed
   via `pathlint catalog list` for discovery? Trivial to add but adds
-  a subcommand.
+  a subcommand. *(Resolved in 0.0.x — `pathlint catalog list` ships.)*
+- **Package-manager queries (0.2 candidate).** path-based matching
+  misses AUR, Homebrew tap, `make install`, and anything else that
+  lands outside the prefixes listed in `[source.<name>]`. A future
+  knob — perhaps `[source.X] owner_query = ["pacman", "-Qo"]` or an
+  `[[expect]] via = "command"` opt-in — would let pathlint ask the
+  package manager directly. Trade-off: ~50–100 ms per query, OS-
+  specific output parsers, and a ring-of-trust issue (the queried
+  binary must itself be trustworthy). Not for 0.1.x; revisit once we
+  have field data on how often path-based matching falls short.
+- **Symlinked system dirs.** On Arch, Solus, openSUSE TW etc.,
+  `/usr/sbin` is a symlink to `/usr/bin`, and `which` reports
+  `/usr/sbin/<cmd>`. The built-in `apt` / `pacman` / `dnf` /
+  `system_linux` sources declare `linux = "/usr/bin"` only, so the
+  substring miss makes pathlint report `NG (unknown source)` even
+  though the binary is the distro one. Either the user adds
+  `[source.usr_sbin] linux = "/usr/sbin"`, or the catalog grows a
+  combined entry. Path-canonicalize is rejected for now because it
+  silently changes which source label appears in the output and
+  breaks shim-aware matching for mise / volta / asdf.
 - **`prefer` ordering.** Currently `prefer = ["mise", "volta"]` is
   treated as a set ("any of these is OK"). Should the order
   additionally express preference for `sort`? Out of MVP.

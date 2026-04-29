@@ -44,6 +44,17 @@ regular semver rules apply.
   output shows the path for the running OS; `--all` shows every
   per-OS field; `--names-only` strips paths and descriptions for
   scripting.
+- README and PRD now document the path-based matching boundary:
+  AUR / `make install` / custom-prefix installs are not visible to
+  pathlint until the user adds a `[source.<name>]` for that prefix,
+  and `/usr/sbin → /usr/bin` symlink distros (Arch, openSUSE TW,
+  Solus) need an explicit `[source.usr_sbin]` to recognize the
+  distro install. Package-manager queries (`pacman -Qo` / `dpkg -S`
+  / `rpm -qf` / `brew which-formula`) are deferred to 0.2.
+- Linux starter emitted by `pathlint init` now declares
+  `[source.usr_sbin] linux = "/usr/sbin"` and references both `apt`
+  and `pacman` in `prefer`, so it works out of the box on
+  Debian/Ubuntu and Arch alike.
 
 ### Designed (pre-implementation)
 

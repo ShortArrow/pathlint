@@ -123,10 +123,17 @@ command = "cargo"
 prefer  = ["cargo"]
 
 # ---- Linux-specific examples ----
+#
+# On Arch / openSUSE TW / Solus, /usr/sbin is a symlink to /usr/bin
+# and `which` reports /usr/sbin/<cmd>. The built-in apt / pacman /
+# dnf sources cover /usr/bin only, so `prefer = ["pacman"]` would
+# miss on those distros. Either reference both `pacman` and
+# `usr_sbin` here, or add `[source.usr_sbin] linux = "/usr/sbin"`
+# in your own [source.*] section below.
 
 [[expect]]
 command = "python"
-prefer  = ["mise", "asdf", "apt"]
+prefer  = ["mise", "asdf", "apt", "pacman"]
 os      = ["linux"]
 
 [[expect]]
@@ -134,6 +141,9 @@ command = "node"
 prefer  = ["mise", "volta"]
 avoid   = ["snap"]
 os      = ["linux"]
+
+[source.usr_sbin]
+linux = "/usr/sbin"
 "#;
 
 const TERMUX_STARTER: &str = r#"# ---- Cross-OS examples ----
