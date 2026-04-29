@@ -11,6 +11,12 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-04-29
+
+The first release that does anything. `0.0.1` was a skeleton and
+was never published — `0.0.2` is what `cargo install pathlint` will
+actually fetch.
+
 ### Added
 
 - Initial repository skeleton: Cargo manifest with crates.io metadata,
@@ -68,35 +74,5 @@ regular semver rules apply.
     `$HOME` and friends — case and slash style preserved).
   - `--quiet` hides warns; errors always print.
 
-### Designed (pre-implementation)
-
-The schema is now centered on **`[[expect]]` plus a `[source.<name>]`
-catalog**, replacing the earlier "PATH-entry-order rules" sketch:
-
-- **`[[expect]]`** declares per-command expectations:
-  ```toml
-  [[expect]]
-  command = "runex"
-  prefer  = ["cargo"]
-  avoid   = ["winget"]
-  ```
-- **`[source.<name>]`** declares how to recognize an installer on
-  disk via per-OS path substrings.
-- **Built-in source catalog** ships in the binary: `cargo`, `go`,
-  `npm_global`, `pip_user`, `mise`, `volta`, `aqua`, `asdf`,
-  `winget`, `choco`, `scoop`, `brew_arm`, `brew_intel`, `macports`,
-  `apt`, `pacman`, `dnf`, `flatpak`, `snap`, `pkg` (Termux),
-  `WindowsApps`, `strawberry`, `mingw`, `msys`, plus `system_*`
-  baselines per OS. Users override field-by-field or add new sources
-  in their own `pathlint.toml`.
-- **Single file, all OSes.** Expectations carry `os = [...]`
-  (`windows | macos | linux | termux | unix`); sources carry per-OS
-  keys. Slashes and env vars are normalized so the same file works
-  cross-platform.
-- **`which` subcommand dropped.** It overlapped too much with `where`
-  / `type -a` / `Get-Command -All`. The interesting question is "is
-  the right one winning?", which `check` answers directly.
-
-See [docs/PRD.md](docs/PRD.md) §3, §7, §8, §9 for the full design.
-
-[Unreleased]: https://github.com/ShortArrow/pathlint/commits/main
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.2
