@@ -1,7 +1,7 @@
 //! `pathlint doctor` end-to-end tests.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_pathlint");
@@ -57,10 +57,17 @@ fn doctor_clean_path_emits_nothing() {
     // The temp dir on Windows lives under %LocalAppData%, which would
     // trigger the "shortenable" warning even on an otherwise clean
     // PATH. Wipe the obvious env vars so the run is genuinely empty.
+    //
+    // Also canonicalize the path: GitHub's `windows-latest` runner
+    // resolves $TEMP via `C:\Users\RUNNER~1\...` (8.3 short name for
+    // `runneradmin`), which would otherwise trip the doctor's
+    // ShortName check. canonicalize expands that to the long name.
     let tmp = tempfile::tempdir().unwrap();
     let only = tmp.path().join("clean");
     fs::create_dir_all(&only).unwrap();
-    let path = join_path(&[&only]);
+    let only_canonical = fs::canonicalize(&only).unwrap();
+    let only_clean = strip_unc_prefix(&only_canonical);
+    let path = join_path(&[&only_clean]);
     let mut cmd = Command::new(BIN);
     cmd.arg("doctor")
         .env("PATH", &path)
@@ -77,6 +84,18 @@ fn doctor_clean_path_emits_nothing() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(out.status.code().unwrap_or(-1), 0);
     assert!(stdout.is_empty(), "expected silence, got: {stdout}");
+}
+
+/// On Windows, `fs::canonicalize` returns paths prefixed with `\\?\`
+/// (the Win32 file-namespace prefix). PATH entries don't use that
+/// prefix in the wild, so strip it for tests that compare output.
+fn strip_unc_prefix(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        p.to_path_buf()
+    }
 }
 
 #[test]
