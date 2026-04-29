@@ -18,6 +18,22 @@ regular semver rules apply.
 - Reference PowerShell prototype lives at
   `ShortArrow/dotfiles:windows/Test-PathOrder.ps1` and will be ported
   to Rust in a future release.
+- First working binary covering PRD §7-§11:
+  - `pathlint` (= `pathlint check`) reads `pathlint.toml` from
+    `--rules`, then `./pathlint.toml`, then
+    `$XDG_CONFIG_HOME/pathlint/pathlint.toml`.
+  - Resolves each `[[expect]]` against the chosen PATH
+    (`--target process|user|machine`; `user` / `machine` read the
+    Windows registry, warn + fall back on Unix).
+  - Reports per-expectation `OK` / `NG` / `skip` / `n/a` / `ERR` and
+    exits `0` / `1` / `2` per spec.
+  - Embeds the built-in source catalog and merges user
+    `[source.<name>]` overrides field by field.
+  - Expands `%VAR%`, `$VAR`, `${VAR}`, leading `~`, normalizes `\`
+    to `/`, and matches case-insensitive substrings.
+  - Honors `PATHEXT` on Windows and the executable bit on Unix.
+  - 27 unit tests + 7 end-to-end CLI tests, clippy clean under
+    `-D warnings`.
 
 ### Designed (pre-implementation)
 
