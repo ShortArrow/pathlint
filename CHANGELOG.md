@@ -11,6 +11,8 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-05-01
+
 ### Added
 
 - **R4 — `pathlint where <command>`.** New subcommand surfaces
@@ -155,6 +157,7 @@ actually fetch.
     `$HOME` and friends — case and slash style preserved).
   - `--quiet` hides warns; errors always print.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.4
 [0.0.3]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.3
 [0.0.2]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.2
