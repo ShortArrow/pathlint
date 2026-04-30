@@ -594,8 +594,12 @@ Options（global）:
   か。MVP 外。
 - **カタログのバージョニング。** pathlint 側で組み込み source パス
   を更新（例：winget レイアウト変更）したとき、古いバイナリを使う
-  ユーザーは黙って間違ったマッチをする可能性。`catalog_version = N`
-  と `--require-catalog >= N` を入れるか検討。
+  ユーザーは黙って間違ったマッチをする可能性。*(0.0.3 で解決 —
+  組み込みカタログが `catalog_version` を宣言、ユーザーの
+  `pathlint.toml` は `require_catalog = N` で最低バージョンを要求
+  できる。不一致なら exit 2 でバージョン差を案内するメッセージ。
+  `catalog_version` を bump するのは path や意味の変更時のみ、
+  新規 source 追加では bump しない。)*
 - **macOS launchd / `eval $(brew shellenv)`。** これらが設定する
   PATH は `process` と違う場合あり。MVP 外。
 

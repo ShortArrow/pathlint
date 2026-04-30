@@ -195,6 +195,27 @@ unix = "/data/tools/mise/shims"
 unix = "/data/tools/mise/installs"
 ```
 
+## Pinning the catalog version
+
+The built-in source catalog evolves: a new pathlint version may
+change a source's per-OS path (because `winget` reshuffled its
+layout, say). If you want a guarantee that your `pathlint.toml`
+runs against a sufficiently fresh catalog, declare a minimum:
+
+```toml
+require_catalog = 1
+```
+
+When the running binary embeds an older catalog, pathlint exits
+with code 2 and a message naming the gap, instead of silently
+matching against stale rules. `pathlint catalog list` prints the
+embedded version on its first line so you can pick a value.
+
+The opposite direction is not enforced — running against a *newer*
+catalog is always fine. Bumping `catalog_version` is reserved for
+real path or semantics changes; adding a new source does not bump
+it, so old rules don't break.
+
 ## Installation
 
 ```sh

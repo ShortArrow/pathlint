@@ -611,8 +611,11 @@ Options (global):
   additionally express preference for `sort`? Out of MVP.
 - **Catalog versioning.** When pathlint updates a built-in source
   path (e.g. winget changes its layout), users on an old binary may
-  silently get wrong matches. A `catalog_version = N` in the embedded
-  catalog and a `--require-catalog >= N` flag could help.
+  silently get wrong matches. *(Resolved in 0.0.3 — embedded catalog
+  declares `catalog_version`, user `pathlint.toml` may pin
+  `require_catalog = N`. Mismatch triggers exit 2 with a message
+  pointing at the version gap. Bumping `catalog_version` is reserved
+  for path / semantics changes; new sources don't bump it.)*
 - **macOS launchd / `eval $(brew shellenv)`.** PATH set by these
   paths may differ from `process`. Out of MVP.
 

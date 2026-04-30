@@ -200,6 +200,26 @@ unix = "/data/tools/mise/shims"
 unix = "/data/tools/mise/installs"
 ```
 
+## カタログバージョンを固定する
+
+組み込みソースカタログは進化する。新しい pathlint がソースの
+OS 別パスを変更することもある（例：winget がレイアウトを変えた）。
+自分の `pathlint.toml` が十分に新しいカタログで実行されていることを
+保証したいなら、最低バージョンを書く：
+
+```toml
+require_catalog = 1
+```
+
+実行中のバイナリが古いカタログを埋め込んでいたら、pathlint は
+exit 2 とバージョン差を案内するメッセージで止まる。古いルールに
+黙ってマッチさせ続けるのを防げる。`pathlint catalog list` の
+1 行目に組み込みバージョンが出るので、それを参考に値を決める。
+
+逆方向（新しすぎるカタログ）は強制されない。`catalog_version` の
+bump は path / 意味の変更があったときに限られ、新規 source 追加
+では bump しないので、古いルールが壊れることはない。
+
 ## インストール
 
 ```sh

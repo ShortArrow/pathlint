@@ -33,6 +33,17 @@ regular semver rules apply.
 - PRD §16 refreshed: open question on shim/install split is now
   marked resolved; new questions added on mise plugin attribution
   (0.0.4 candidate) and `mise activate` mode handling.
+- **Catalog versioning.** The embedded source catalog now declares
+  `catalog_version`. A user `pathlint.toml` may pin a minimum via
+  `require_catalog = N` at the top level; if the running binary
+  embeds an older catalog, pathlint exits 2 with a message naming
+  the gap rather than silently matching against stale rules.
+  `pathlint catalog list` prints the embedded version on its first
+  line so users can pick a value.
+- PRD §16 catalog-versioning open question marked resolved.
+- The 0.0.3 catalog is `catalog_version = 1`. Bumping is reserved
+  for changes to existing source paths or semantics; new sources
+  alone don't bump the version.
 
 ## [0.0.2] - 2026-04-30
 
