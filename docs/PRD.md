@@ -175,9 +175,9 @@ Mapping subcommands to roles (see §1):
 | Role | Subcommand | Status |
 |---|---|---|
 | R1 — resolve order | `pathlint check` (default) | implemented (0.0.2) |
-| R2 — existence and shape | reuses `[[expect]]` with a `kind` field, exposed in `check` | planned (0.0.4+) |
+| R2 — existence and shape | reuses `[[expect]]` with a `kind` field, exposed in `check` | implemented (0.0.4) |
 | R3 — PATH hygiene | `pathlint doctor` | implemented (0.0.3) |
-| R4 — provenance | `pathlint where <command>` | planned (0.0.4+) |
+| R4 — provenance | `pathlint where <command>` | implemented (0.0.4) |
 
 `pathlint init` and `pathlint catalog list` are infrastructure
 subcommands (configuration scaffolding, catalog inspection); they
@@ -267,7 +267,7 @@ pathlint --quiet                      # only print failures
     suggestion preserves the original case + slash style.
 - `--quiet` hides warns; errors always print.
 
-### 7.6 `[[expect]] kind = "executable"` (R2, planned)
+### 7.6 `[[expect]] kind = "executable"` (R2, implemented in 0.0.4)
 
 Today an `[[expect]]` only checks that `command` resolves and the
 matched source is acceptable. The resolved path could still be:
@@ -289,7 +289,7 @@ Vocabulary stays minimal in 0.0.4: `executable` only. Distinguishing
 `.exe`, Unix shebangs) and would balloon the matrix without
 clear win.
 
-### 7.7 `pathlint where <command>` (R4, planned)
+### 7.7 `pathlint where <command>` (R4, implemented in 0.0.4)
 
 Surfaces what `check` already computes internally: for the named
 command, print

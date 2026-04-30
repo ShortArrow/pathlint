@@ -163,9 +163,9 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 | 役割 | サブコマンド | 状態 |
 |---|---|---|
 | R1 — 解決順 | `pathlint check`（デフォルト） | 実装ずみ（0.0.2） |
-| R2 — 存在と形状 | `[[expect]] kind = "..."` を `check` に拡張 | 計画中（0.0.4 以降） |
+| R2 — 存在と形状 | `[[expect]] kind = "..."` を `check` に拡張 | 実装ずみ（0.0.4） |
 | R3 — PATH 衛生 | `pathlint doctor` | 実装ずみ（0.0.3） |
-| R4 — 出自 | `pathlint where <command>` | 計画中（0.0.4 以降） |
+| R4 — 出自 | `pathlint where <command>` | 実装ずみ（0.0.4） |
 
 `pathlint init` と `pathlint catalog list` はインフラ系（設定の
 雛形、カタログの inspect）でどの役割にも属さない。
@@ -246,7 +246,7 @@ pathlint --quiet                      # 失敗のみ
     `$HOME` 系）。提案文字列は元のケースと slash 向きを保つ。
 - `--quiet` で warn 抑制、error は常に表示。
 
-### 7.6 `[[expect]] kind = "executable"`（R2、計画中）
+### 7.6 `[[expect]] kind = "executable"`（R2、0.0.4 で実装）
 
 現状の `[[expect]]` は「`command` が resolve すること」と「マッチ
 した source が prefer / avoid 的に妥当か」までしか見ない。解決
@@ -266,7 +266,7 @@ pathlint --quiet                      # 失敗のみ
 "script" の区別は OS 別の事情が多く（Windows `.cmd` vs `.exe`、
 Unix の shebang）見合うリターンが薄い。
 
-### 7.7 `pathlint where <command>`（R4、計画中）
+### 7.7 `pathlint where <command>`（R4、0.0.4 で実装）
 
 `check` が内部で計算している情報を表に出す：指定コマンドについて
 

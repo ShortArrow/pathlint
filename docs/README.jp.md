@@ -109,6 +109,9 @@ pathlint catalog list --names-only
 # PATH 自体の衛生チェック（重複、不在ディレクトリ、env-var 短縮候補、
 # Windows 8.3 短縮、形式破損エントリなど）
 pathlint doctor
+
+# コマンドがどこから来たか + uninstall コマンドのヒント
+pathlint where lazygit
 ```
 
 ## `pathlint.toml`（最小例）

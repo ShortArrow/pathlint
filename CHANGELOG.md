@@ -13,6 +13,25 @@ regular semver rules apply.
 
 ### Added
 
+- **R4 — `pathlint where <command>`.** New subcommand surfaces
+  what `check` already computed internally: the resolved full
+  path, the matched sources (most specific first; the catch-all
+  `mise` alias falls to the back when a more specific
+  `mise_shims` / `mise_installs` is also present), and a best-
+  guess uninstall hint derived from the catalog. When pathlint
+  cannot pick a command (the matched source has no template, or
+  no source matched at all) the output says so explicitly rather
+  than guessing.
+- **`[source.<name>]` gains an optional `uninstall_command`
+  field.** Rendered by `pathlint where`. The `{bin}` token is
+  substituted with the file stem of the resolved binary
+  (extension stripped on Windows). The embedded catalog now
+  declares templates for `cargo`, `npm_global`, `pip_user`,
+  `volta`, `winget`, `choco`, `scoop`, `brew_arm`, `brew_intel`,
+  `macports`, `apt`, `pacman`, `dnf`, `flatpak`, `snap`, `pkg`.
+  Sources without a clear single uninstall command (`mise_shims`,
+  `mise_installs`, `aqua`, `asdf`, `system_*`, etc.) leave it
+  unset on purpose.
 - **R2 — `[[expect]] kind = "executable"`.** Verifies the
   resolved path actually points at an executable file, in addition
   to the source check. Catches cases where a directory of the
@@ -31,6 +50,11 @@ regular semver rules apply.
 
 - (Schema) `[[expect]]` gains an optional `kind` field
   (`"executable"` only). Existing rules without `kind` keep working.
+- (Catalog) `catalog_version` bumped from `1` to `2` to mark the
+  arrival of `uninstall_command` on the built-in sources. Users
+  who pinned `require_catalog = 1` still match correctly because
+  the new field is purely additive; users who want the uninstall
+  hints to be present can pin `require_catalog = 2`.
 
 ## [0.0.3] - 2026-04-30
 

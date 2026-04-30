@@ -104,6 +104,9 @@ pathlint init --emit-defaults     # also embeds the full source catalog
 pathlint catalog list             # paths for the running OS
 pathlint catalog list --all       # every per-OS field
 pathlint catalog list --names-only
+
+# Find a command's provenance and uninstall hint
+pathlint where lazygit            # who installed this binary?
 ```
 
 ## `pathlint.toml` (minimal example)
