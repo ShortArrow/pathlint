@@ -401,4 +401,95 @@ mod tests {
         });
         assert_eq!(out[0].status, Status::NgWrongSource);
     }
+
+    #[test]
+    fn mise_layered_match_shim_path_hits_mise_and_mise_shims() {
+        // A binary served via mise's shim layer must match BOTH the
+        // catch-all `mise` source and the more specific `mise_shims`,
+        // never `mise_installs`. Tests rule co-existence after the
+        // 0.0.3 split.
+        let sources = cat(&[
+            ("mise", src("/home/u/.local/share/mise")),
+            ("mise_shims", src("/home/u/.local/share/mise/shims")),
+            ("mise_installs", src("/home/u/.local/share/mise/installs")),
+        ]);
+        let expectations = vec![Expectation {
+            command: "python".into(),
+            prefer: vec!["mise_shims".into()],
+            avoid: vec![],
+            os: None,
+            optional: false,
+        }];
+        let out = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved("/home/u/.local/share/mise/shims/python"))
+        });
+        assert_eq!(out[0].status, Status::Ok);
+        assert!(out[0].matched_sources.contains(&"mise".to_string()));
+        assert!(out[0].matched_sources.contains(&"mise_shims".to_string()));
+        assert!(
+            !out[0]
+                .matched_sources
+                .contains(&"mise_installs".to_string())
+        );
+    }
+
+    #[test]
+    fn mise_layered_match_install_path_hits_mise_and_mise_installs() {
+        // The install layer (per-runtime bin dirs). Used when mise is
+        // activated by PATH-rewriting, or when a plugin lives in
+        // `installs/<plugin>/<ver>/bin`.
+        let sources = cat(&[
+            ("mise", src("/home/u/.local/share/mise")),
+            ("mise_shims", src("/home/u/.local/share/mise/shims")),
+            ("mise_installs", src("/home/u/.local/share/mise/installs")),
+        ]);
+        let expectations = vec![Expectation {
+            command: "python".into(),
+            prefer: vec!["mise_installs".into()],
+            avoid: vec![],
+            os: None,
+            optional: false,
+        }];
+        let out = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved(
+                "/home/u/.local/share/mise/installs/python/3.14/bin/python",
+            ))
+        });
+        assert_eq!(out[0].status, Status::Ok);
+        assert!(out[0].matched_sources.contains(&"mise".to_string()));
+        assert!(
+            out[0]
+                .matched_sources
+                .contains(&"mise_installs".to_string())
+        );
+        assert!(!out[0].matched_sources.contains(&"mise_shims".to_string()));
+    }
+
+    #[test]
+    fn mise_alias_remains_for_backwards_compat() {
+        // Existing rules written with prefer = ["mise"] keep working
+        // even though they don't know about mise_shims / mise_installs.
+        let sources = cat(&[
+            ("mise", src("/home/u/.local/share/mise")),
+            ("mise_shims", src("/home/u/.local/share/mise/shims")),
+            ("mise_installs", src("/home/u/.local/share/mise/installs")),
+        ]);
+        let expectations = vec![Expectation {
+            command: "python".into(),
+            prefer: vec!["mise".into()],
+            avoid: vec![],
+            os: None,
+            optional: false,
+        }];
+        let out_shim = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved("/home/u/.local/share/mise/shims/python"))
+        });
+        let out_install = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved(
+                "/home/u/.local/share/mise/installs/python/3.14/bin/python",
+            ))
+        });
+        assert_eq!(out_shim[0].status, Status::Ok);
+        assert_eq!(out_install[0].status, Status::Ok);
+    }
 }

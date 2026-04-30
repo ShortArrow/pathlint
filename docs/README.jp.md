@@ -157,6 +157,69 @@ unix = "$HOME/dotfiles/bin"
 る。マッチは部分一致 + 大文字小文字無視、環境変数展開
 （`%VAR%` も `$VAR` もどの OS でも） + slash 正規化のあとで評価。
 
+## mise を使うとき
+
+mise はバイナリを 2 つの異なる場所から提供するので、pathlint は
+それぞれを別ソースとして提供している。ルールを精密に書ける：
+
+- **`mise_shims`** — Unix で `$HOME/.local/share/mise/shims/<bin>`、
+  Windows で `$LocalAppData/mise/shims/<bin>`。`mise activate` が
+  シェルから PATH 先頭に付ける層。多くのルールではこちらを
+  `prefer` に書くのが推奨。
+- **`mise_installs`** — `$HOME/.local/share/mise/installs/<tool>/<ver>/bin/<bin>`。
+  `mise activate` が PATH 書き換え方式（shim ではない）で動くとき
+  にここがマッチ。プラグイン (`cargo-*`、`npm-*`...) が
+  `installs/<plugin>/<ver>/bin` 配下にバイナリを置く場合も同様。
+- **`mise`** — 両者をまとめて引っかけるキャッチオール。「mise が
+  どのモードかは気にしない」ルール向け。0.0.3 以前に書かれた
+  ルールはこのまま動く。
+
+```toml
+# 厳しめ: mise の shim 層からだけ来てほしい
+[[expect]]
+command = "python"
+prefer  = ["mise_shims"]
+
+# 緩め: mise が出すものなら何でも OK
+[[expect]]
+command = "node"
+prefer  = ["mise"]
+```
+
+`MISE_DATA_DIR` や `XDG_DATA_HOME` で mise を非標準パスに置いて
+いる場合は、3 つのソースをまとめて `pathlint.toml` で上書きする：
+
+```toml
+[source.mise]
+unix = "/data/tools/mise"
+
+[source.mise_shims]
+unix = "/data/tools/mise/shims"
+
+[source.mise_installs]
+unix = "/data/tools/mise/installs"
+```
+
+## カタログバージョンを固定する
+
+組み込みソースカタログは進化する。新しい pathlint がソースの
+OS 別パスを変更することもある（例：winget がレイアウトを変えた）。
+自分の `pathlint.toml` が十分に新しいカタログで実行されていることを
+保証したいなら、最低バージョンを書く：
+
+```toml
+require_catalog = 1
+```
+
+実行中のバイナリが古いカタログを埋め込んでいたら、pathlint は
+exit 2 とバージョン差を案内するメッセージで止まる。古いルールに
+黙ってマッチさせ続けるのを防げる。`pathlint catalog list` の
+1 行目に組み込みバージョンが出るので、それを参考に値を決める。
+
+逆方向（新しすぎるカタログ）は強制されない。`catalog_version` の
+bump は path / 意味の変更があったときに限られ、新規 source 追加
+では bump しないので、古いルールが壊れることはない。
+
 ## インストール
 
 ```sh

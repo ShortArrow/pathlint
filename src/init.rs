@@ -45,10 +45,23 @@ pub fn render_starter(os: Os, emit_defaults: bool) -> String {
         buf.push_str("\n\n");
         buf.push_str(DEFAULTS_HEADER);
         buf.push('\n');
-        buf.push_str(EMBEDDED_CATALOG);
+        buf.push_str(&embedded_catalog_for_starter());
     }
 
     buf
+}
+
+/// The embedded catalog with the top-level `catalog_version` line
+/// stripped. The bare key is meaningful in the binary but parses as
+/// part of the preceding `[[expect]]` table when concatenated into
+/// a starter file, so we drop it here. (The starter has no use for
+/// the version anyway — users write `require_catalog` instead.)
+fn embedded_catalog_for_starter() -> String {
+    EMBEDDED_CATALOG
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("catalog_version"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 const HEADER: &str = "\
@@ -83,10 +96,15 @@ command = "cargo"
 prefer  = ["cargo", "scoop", "winget"]
 
 # ---- Windows-specific examples ----
+#
+# `mise_shims` is the recommended way to consume mise — it matches
+# binaries served via `mise/shims/`. `mise_installs` matches the
+# per-runtime install dirs. The catch-all `mise` source covers
+# either layer for backwards compatibility.
 
 [[expect]]
 command = "python"
-prefer  = ["mise", "scoop"]
+prefer  = ["mise_shims", "scoop"]
 avoid   = ["WindowsApps", "choco"]
 os      = ["windows"]
 
@@ -106,7 +124,7 @@ prefer  = ["cargo"]
 
 [[expect]]
 command = "python"
-prefer  = ["mise", "brew_arm", "brew_intel"]
+prefer  = ["mise_shims", "brew_arm", "brew_intel"]
 os      = ["macos"]
 
 [[expect]]
@@ -133,12 +151,12 @@ prefer  = ["cargo"]
 
 [[expect]]
 command = "python"
-prefer  = ["mise", "asdf", "apt", "pacman"]
+prefer  = ["mise_shims", "asdf", "apt", "pacman"]
 os      = ["linux"]
 
 [[expect]]
 command = "node"
-prefer  = ["mise", "volta"]
+prefer  = ["mise_shims", "volta"]
 avoid   = ["snap"]
 os      = ["linux"]
 

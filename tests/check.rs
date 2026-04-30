@@ -451,3 +451,35 @@ fn missing_rules_path_is_reported_with_exit_2() {
     assert_eq!(code, 2);
     assert!(stderr.contains("--rules"), "stderr was: {stderr}");
 }
+
+#[test]
+fn require_catalog_below_embedded_passes() {
+    // Embedded catalog_version is 1 in 0.0.3. A rules file requesting
+    // require_catalog = 1 should run normally, not error.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("d");
+    fs::create_dir_all(&dir).unwrap();
+    let body = r#"
+require_catalog = 1
+"#;
+    let rules = write_rules(tmp.path(), body);
+    let (code, _stdout, _) = run(&rules, &join_path(&[&dir]));
+    assert_eq!(code, 0, "require_catalog = embedded must succeed");
+}
+
+#[test]
+fn require_catalog_above_embedded_fails_with_exit_2() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("d");
+    fs::create_dir_all(&dir).unwrap();
+    let body = r#"
+require_catalog = 9999
+"#;
+    let rules = write_rules(tmp.path(), body);
+    let (code, _stdout, stderr) = run(&rules, &join_path(&[&dir]));
+    assert_eq!(code, 2);
+    assert!(
+        stderr.contains("catalog_version") && stderr.contains("9999"),
+        "stderr was: {stderr}"
+    );
+}

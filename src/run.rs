@@ -33,6 +33,16 @@ pub fn execute(cli: Cli) -> Result<u8> {
         None => Config::default(),
     };
 
+    if let Some(required) = cfg.require_catalog {
+        let embedded = catalog::embedded_version();
+        if embedded < required {
+            eprintln!(
+                "pathlint: rules require catalog_version >= {required}, but this binary embeds version {embedded}. Upgrade pathlint or lower require_catalog."
+            );
+            return Ok(2);
+        }
+    }
+
     let catalog = catalog::merge_with_user(&cfg.source);
     let os = Os::current();
     let target: Target = cli.global.target.into();
@@ -140,6 +150,9 @@ fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -
         all_os: args.all,
         names_only: args.names_only,
     };
+    if !args.names_only {
+        println!("# catalog_version = {}", catalog::embedded_version());
+    }
     print!("{}", catalog_view::render(&merged, Os::current(), style));
     Ok(0)
 }

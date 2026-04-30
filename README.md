@@ -152,6 +152,70 @@ unix = "$HOME/dotfiles/bin"
 Match is substring + case-insensitive, after env-var expansion (both
 `%VAR%` and `$VAR` work everywhere) and slash normalization.
 
+## Working with mise
+
+mise serves binaries from two distinct places, and pathlint exposes
+each as its own source so rules can be specific:
+
+- **`mise_shims`** — `$HOME/.local/share/mise/shims/<bin>` on Unix,
+  `$LocalAppData/mise/shims/<bin>` on Windows. This is the layer
+  shells front-load when you run `mise activate`. It's the
+  recommended source to reference in `prefer` for most rules.
+- **`mise_installs`** — `$HOME/.local/share/mise/installs/<tool>/<ver>/bin/<bin>`.
+  Hit when `mise activate` rewrites PATH directly (no shims), or
+  when a plugin (`cargo-*`, `npm-*`, ...) ships its bin under
+  `installs/<plugin>/<ver>/bin`.
+- **`mise`** — catch-all that matches both layers. Useful when you
+  don't care which mise mode is in use; rules written before 0.0.3
+  keep working unchanged.
+
+```toml
+# Strict: only accept mise's shim layer.
+[[expect]]
+command = "python"
+prefer  = ["mise_shims"]
+
+# Looser: anything mise serves is fine.
+[[expect]]
+command = "node"
+prefer  = ["mise"]
+```
+
+If you set `MISE_DATA_DIR` or `XDG_DATA_HOME` to a non-standard
+location, override the three sources in your `pathlint.toml`:
+
+```toml
+[source.mise]
+unix = "/data/tools/mise"
+
+[source.mise_shims]
+unix = "/data/tools/mise/shims"
+
+[source.mise_installs]
+unix = "/data/tools/mise/installs"
+```
+
+## Pinning the catalog version
+
+The built-in source catalog evolves: a new pathlint version may
+change a source's per-OS path (because `winget` reshuffled its
+layout, say). If you want a guarantee that your `pathlint.toml`
+runs against a sufficiently fresh catalog, declare a minimum:
+
+```toml
+require_catalog = 1
+```
+
+When the running binary embeds an older catalog, pathlint exits
+with code 2 and a message naming the gap, instead of silently
+matching against stale rules. `pathlint catalog list` prints the
+embedded version on its first line so you can pick a value.
+
+The opposite direction is not enforced — running against a *newer*
+catalog is always fine. Bumping `catalog_version` is reserved for
+real path or semantics changes; adding a new source does not bump
+it, so old rules don't break.
+
 ## Installation
 
 ```sh
