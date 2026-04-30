@@ -1,37 +1,45 @@
 # pathlint — プロダクト要件定義書（PRD）
 
 **ステータス:** 0.0.x 進行中。
-**対象リリース:** 0.0.2 が初の動作版。スキーマと CLI 表面は引き続き
+**対象リリース:** 0.0.3 が最新動作版。スキーマと CLI 表面は引き続き
 動きうる（0.1.0 で安定化予定）。
 
 ---
 
 ## 1. 概要
 
-`pathlint` は **「各コマンドが、自分が期待しているインストーラから
-解決されているか？」** を TOML マニフェストに照らして検証する CLI。
+`pathlint` は、いま手元にある PATH について 4 つの問いに答える CLI。
+理想の PATH ではなく、現実の PATH について。
 
-ユーザーは次のように宣言する：
+**R1 — 解決順。** あるコマンドについて、どのインストーラ由来のコピー
+が勝つか。`[[expect]] command = "x" prefer = ["cargo"]` と書けば
+pathlint がチェックする。元来の用途であり、ツールの背骨。
 
-> 「`runex` は `cargo` から来てほしい。`winget` ではなく。」
+**R2 — 存在と形状（計画中）。** pathlint が解決したファイルは本当に
+実行可能か、それとも誰かが同名のディレクトリで `runex` を覆い隠した
+のか。symlink は壊れていないか。今は `not_found` しか報告しない；
+より豊富な形状チェックは 0.0.4 以降。
 
-`pathlint` は実 `PATH` から `runex` を解決し、勝者バイナリの場所を
-見て、それが定義された **source ラベル**（"cargo" / "winget" など）
-のどれにマッチするかを判定する。
+**R3 — PATH 衛生。** expectation を 1 つも評価する前に、PATH 自体が
+散らかっている — 重複、不在ディレクトリ、8.3 短縮名、より簡潔に
+書ける エントリ。`pathlint doctor` が PATH 単体で lint する。
 
-出力は expectation 1 つにつき 1 行：**OK / NG / skip / n/a**。
-失敗時は実際の解決パスとマッチした source（あるいは無マッチ）を
-表示する。
+**R4 — 出自（計画中）。** 解決済みバイナリのフルパスを得たあと、
+これはどこから来たか — そしてアンインストールはどうやるか。今は
+match した source の一覧は内部データで、`check` 経由でしか露出
+しない。`pathlint where <command>` サブコマンド（0.0.4 以降）が
+これを直接出す。最も妥当な uninstall コマンド付き
+（`mise uninstall cargo:lazygit`、`cargo uninstall lazygit`...）。
 
-1 つの `pathlint.toml` が **Windows、macOS、Linux、Termux** すべて
-で動く — source は OS 別の場所を宣言でき、各 expectation には
-`os = [...]` フィルタを付けられる。
+1 つの `pathlint.toml` が 4 役割すべてを **Windows、macOS、Linux、
+Termux** 横断でカバーする。source は OS 別の場所を宣言、各
+`[[expect]]` は `os = [...]` フィルタを持てる。
 
 `pathlint` は well-known な source の **組み込みカタログ** を持つ
-（`cargo`、`mise`、`volta`、`winget`、`choco`、`scoop`、`brew_arm`、
-`brew_intel`、`apt`、`pacman`、`pkg`、`flatpak`、`WindowsApps` …）。
-ユーザーは **expectation を書くだけ** でよく、source は名前で参照
-されて自動解決される。
+（`cargo`、`mise`、`mise_shims`、`mise_installs`、`volta`、`winget`、
+`choco`、`scoop`、`brew_arm`、`brew_intel`、`apt`、`pacman`、`pkg`、
+`flatpak`、`WindowsApps` …）。ユーザーは **expectation を書くだけ** で
+よく、source は名前で参照されて自動解決される。
 
 ## 2. 課題定義
 
@@ -53,39 +61,77 @@
 
 ## 3. ゴール
 
-- **宣言的な expectation。** `pathlint.toml` に `[[expect]]` で
-  「コマンド X は source S から解決されるべき」を書ける。
+4 役割すべて（R1〜R4）に共通：
+
+- **宣言的。** pathlint が気にすることはすべて、dotfiles リポに置ける
+  `pathlint.toml` で表現できる。実行時フラグだけに隠れる挙動はない。
 - **パスではなく source ラベル。** ユーザーはインストーラ名
-  （`cargo`、`mise`、`winget`、`brew_arm`、`apt`）で書く。生のパスは
-  カタログから引かれる。
+  （`cargo`、`mise_shims`、`winget`、`brew_arm`、`apt`）で書く。
+  パスパターンはカタログから引かれるので同じ TOML が全マシンで動く。
 - **組み込みカタログ + 上書き。** pathlint がよく使われるインストーラ
-  のデフォルトを内蔵。ユーザーは上書きしたいとき、または新規追加した
-  いときだけ `[source.X]` を書く。
+  のデフォルトを内蔵。ユーザーは上書きしたい / 新規追加したいときだけ
+  `[source.X]` を書く。
 - **1 ファイル、全 OS。** 各 `[[expect]]` に `os = [...]` フィルタ、
-  各 `[source.X]` に OS 別パス（`windows = ...`、`unix = ...` など）。
-  同じ `pathlint.toml` が Windows / macOS / Linux / Termux を回す。
+  各 `[source.X]` に OS 別パス。同じ `pathlint.toml` が Windows /
+  macOS / Linux / Termux を回す。
 - **部分一致 + 大文字小文字無視。** 環境変数展開と slash 正規化の
   あとで、source パスを解決済みパスに対し substring 比較。
 - **正直な exit code。** `0` = クリーン、`1` = 1 つ以上失敗、`2` =
-  config / I/O エラー。
-- **役に立つ失敗出力。** 失敗 expectation はコマンド名、実解決パス、
-  マッチした source（または `prefer` / `avoid` 違反）を示す。
-- **MVP では非変更。** 読み取りのみ。`--apply` / `sort` は後回し。
+  config / I/O エラー。R3（doctor）と R4（where）も同じスケール。
+- **読み取り専用。** PATH、レジストリ、dotfiles、インストール済み
+  パッケージ、いずれも書き換えない。何があるかを伝えるのみ、行動は
+  ユーザーが取る。
 
-## 4. 非ゴール（MVP）
+役割別：
 
-- **PATH の書き換え／永続化はしない。** sort/fix は後回し。
-- **`.bashrc`、`$PROFILE`、レジストリの編集はしない。** 出力は何が
-  間違っているかを示す。どう直すかはユーザー判断。
-- **`which` クローンではない。** `pathlint` 内部に resolve ロジックは
-  あるが、`where` / `type -a` / `Get-Command -All` を置き換える意図は
-  ない。pathlint が答える面白い問いは「正しいやつが勝っているか？」で
-  あって、「これはどこから resolve されるか？」ではない。
+- **R1（解決順）。** 失敗 expectation はコマンド名、実解決パス、
+  マッチした source、`prefer` / `avoid` の違反内容を示す。他の
+  デバッグツール無しで直せる程度に。
+- **R2（存在と形状）。** コマンドが path に解決されるとき、その path
+  は本当に実行可能ファイルを指している必要がある。symlink は生き
+  ていて、「実行可能」が嘘でないこと。今は `not_found` しか報告
+  しないが、それ以外は 0.0.4 以降。
+- **R3（PATH 衛生）。** `[[expect]]` を書いていなくても、`pathlint
+  doctor` が重複、不在ディレクトリ、8.3 短縮名、env-var で短縮できる
+  エントリ、形式破損エントリ（resolve できないもの）を検出する。
+- **R4（出自）。** 解決済みバイナリについて、最も妥当なインストーラ
+  名と対応する uninstall コマンドを答える。半年前に
+  `cargo install` したのか `mise use cargo:tool` したのか思い出せ
+  ないときに役立つ。
+
+## 4. 非ゴール
+
+役割を絞ったぶん、明示的な非役割も決まる：
+
+- **PATH の書き換え／永続化はしない。** プロセス PATH、Windows
+  レジストリ、`.bashrc`、`$PROFILE`、その他のシェル設定、いずれも
+  pathlint は変更しない。何が間違っているかを伝える、どう直すかは
+  ユーザー判断。（post-MVP の `pathlint sort` は推奨順序を表示する
+  だけで、適用しない。）
+- **`which` クローンではない（R1 境界）。** pathlint 内部に resolve
+  ロジックはあるが、`where` / `type -a` / `Get-Command -All` を
+  置き換える意図はない。R1 が答える問いは「正しいインストーラが
+  勝っているか？」であって、「これはどこから resolve されるか？」
+  ではない。R4（`pathlint where`、計画中）は解決パスを前面に出すが、
+  generic な which クローンとしてではなく、出自情報付きで。
+- **将来のインストールのシミュレーションはしない。** pathlint は
+  *いま*ある PATH とバイナリについて答える。次の `cargo install` が
+  どこに着地するか、次の mise activate がどんな順序を作るか、計画
+  しているインストールが「安全」か、こうしたことは予測しない。
+  予測するためには各インストーラをモデル化する必要があり、信頼面が
+  膨れ上がる。
 - **パッケージ管理はしない。** expectation を満たすために不足ツール
-  を入れない。
-- **launchd / PAM / `/etc/environment` の深いパースはしない。**
-  プロセスが実際に見ている PATH（`getenv("PATH")`）と、Windows なら
-  レジストリ 2 ヶ所までを読む。それ以外の階層はスコープ外。
+  を入れない。R4 が uninstall コマンドを*提案*する（ユーザーが実行
+  する文字列として）ことはあっても、実行はしない。
+- **環境の深いパースはしない。** プロセスが実際に見る PATH
+  （`getenv("PATH")`）と、Windows ならレジストリ 2 ヶ所までを読む。
+  `/etc/environment`、PAM、launchd plist、systemd unit
+  `Environment=`、`eval "$(brew shellenv)"`、いずれもスコープ外。
+- **パッケージマネージャ問い合わせはしない（0.1.x）。** pathlint は
+  `dpkg -S` / `rpm -qf` / `pacman -Qo` / `brew which-formula` を
+  呼ばない。パスプレフィックスマッチは速くオフラインで動くが、
+  AUR / `make install` / 任意 prefix は不可視のまま（ユーザーが
+  `[source.<name>]` を足すまで）。0.2 で再考（§16 参照）。
 
 ## 5. ターゲットユーザー
 
@@ -111,6 +157,18 @@
   を満たすように PATH を並べ替える diff を見る。
 
 ## 7. 機能要件（MVP）
+
+サブコマンドと役割の対応表（§1 参照）：
+
+| 役割 | サブコマンド | 状態 |
+|---|---|---|
+| R1 — 解決順 | `pathlint check`（デフォルト） | 実装ずみ（0.0.2） |
+| R2 — 存在と形状 | `[[expect]] kind = "..."` を `check` に拡張 | 計画中（0.0.4 以降） |
+| R3 — PATH 衛生 | `pathlint doctor` | 実装ずみ（0.0.3） |
+| R4 — 出自 | `pathlint where <command>` | 計画中（0.0.4 以降） |
+
+`pathlint init` と `pathlint catalog list` はインフラ系（設定の
+雛形、カタログの inspect）でどの役割にも属さない。
 
 ### 7.1 `pathlint [OPTIONS]`（= `pathlint check`）
 
@@ -188,7 +246,49 @@ pathlint --quiet                      # 失敗のみ
     `$HOME` 系）。提案文字列は元のケースと slash 向きを保つ。
 - `--quiet` で warn 抑制、error は常に表示。
 
-### 7.6 `pathlint sort`（post-MVP）
+### 7.6 `[[expect]] kind = "executable"`（R2、計画中）
+
+現状の `[[expect]]` は「`command` が resolve すること」と「マッチ
+した source が prefer / avoid 的に妥当か」までしか見ない。解決
+パスの実体は次のいずれかでも検出されない：
+
+- ディレクトリ（誰かが同名フォルダで bin を覆い隠した）
+- 切れた symlink
+- 実行権限のない通常ファイル
+- 中途半端なインストールでサイズ 0 のファイル
+
+`kind = "executable"` を expectation に書けるようにすれば、resolve
+パスが実際に実行可能ファイルかを pathlint が検証する（symlink は
+追跡、Unix のモードビット / NTFS リパースを尊重）。失敗時は
+`NG (not_executable)` という新ステータスで形状不一致を名指しする。
+
+語彙は 0.0.4 では最小：`executable` のみ。"native binary" と
+"script" の区別は OS 別の事情が多く（Windows `.cmd` vs `.exe`、
+Unix の shebang）見合うリターンが薄い。
+
+### 7.7 `pathlint where <command>`（R4、計画中）
+
+`check` が内部で計算している情報を表に出す：指定コマンドについて
+
+- 解決済みフルパス（R1 が評価しているもの）
+- マッチした全 source、最も具体的なものから順に
+- 最も妥当な uninstall コマンド 1 つ。マッチした source の
+  カタログエントリから導出
+  （例: パスが `mise/installs/cargo-lazygit/...` なら
+  `mise uninstall cargo:lazygit`、`~/.cargo/bin/lazygit` なら
+  `cargo uninstall lazygit`）
+- PATH 順序が変わった場合の次候補 source（uninstall 後に何が
+  勝つか）
+
+uninstall ヒントはユーザーが自分で実行する文字列、pathlint は
+実行しない。カタログがコマンドを推測できないときは、推測ではなく
+明示的に「不明」と出す。
+
+命名: `where` は Windows の `where.exe` と被るが、pathlint の出力は
+出自情報中心でスタイルが明らかに違う。実用上の混乱が大きすぎたら
+0.1.0 までに改名を再検討する。
+
+### 7.8 `pathlint sort`（post-MVP）
 
 - 全 expectation を満たす PATH 順序を計算し、表示
   （`--dry-run` がデフォルト）または OS に応じた API で適用
@@ -543,45 +643,12 @@ Options（global）:
 
 ## 16. 未解決事項
 
-- **同じ source の複数インストール先。** `mise` はバイナリを
-  `mise/shims/` と `mise/installs/<lang>/<ver>/bin/` の両方に置く。
-  *(0.0.3 で解決 — `mise` / `mise_shims` / `mise_installs` の 3 層
-  に分割。0.0.3 以前のルールが壊れないよう、キャッチオールの
-  `mise` も残してある。)*
-- **mise プラグイン経由のバイナリの帰属。** mise のプラグイン経由
-  でインストールしたバイナリは `mise/installs/<plugin>/<ver>/bin/<bin>`
-  に置かれ、`<plugin>` が上流のインストーラ名（`cargo-foo`、
-  `npm-google-gemini-cli`）を含むことが多い。pathlint は現状これを
-  常に `mise_installs` とラベル付けし、`cargo` / `npm_global` には
-  しない。意味的にはユーザーが cargo 経由で入れた認識でも。0.0.4
-  以降の議題: プラグインのセグメントを解析して
-  `mise_installs[cargo]` のような複合ラベルにできるか。0.0.3 では
-  対象外。
-- **mise activate vs shims モード。** `mise activate` は PATH に
-  `mise/shims/` を前置する形と、`installs/<lang>/<ver>/bin/` を直接
-  PATH に書き換える形の 2 通りある。それぞれ resolve 結果は
-  `mise_shims` か `mise_installs` のどちらかに当たる。ユーザーが
-  どちらを使っているか expect 側で意識する（README のガイドを参照）。
-  pathlint がモードを自動判別することは目指さない。
-- **`MISE_DATA_DIR` / `XDG_DATA_HOME`.** mise はこれらの env var で
-  ツリーの場所を変えられる。組み込みカタログはデフォルトの
-  `$LocalAppData/mise` (Windows) / `$HOME/.local/share/mise` (Unix)
-  を埋め込んでいる。カスタム配置のユーザーは `pathlint.toml` 側
-  で `[source.mise]`（および兄弟 2 つ）を上書きする。
-- **カタログの可視化。** 組み込みカタログを `pathlint catalog list`
-  で参照できるようにすべきか。実装は trivial だがサブコマンドが増
-  える。*(0.0.x で解決済み — `pathlint catalog list` を提供。)*
-- **パッケージマネージャ問い合わせ（0.2 候補）。** path ベースの
-  マッチでは AUR / Homebrew tap / `make install` / `[source.<name>]`
-  に書かれていない prefix のすべてが取りこぼされる。将来のノブと
-  して、`[source.X] owner_query = ["pacman", "-Qo"]` のような source
-  単位、または `[[expect]] via = "command"` の opt-in 形式が考え
-  られる。トレードオフ: 1 回 50–100 ms のオーバーヘッド、OS 別の
-  パーサ実装、信頼の循環依存（問い合わせ先のバイナリそのものが信
-  頼できる必要）。0.1.x では不採用。path-based がどれだけ取りこぼ
-  すかのフィールドデータが集まってから再検討。
-- **シンボリックリンクされたシステムディレクトリ。** Arch / Solus /
-  openSUSE TW などで `/usr/sbin → /usr/bin`。`which` は
+各項目に該当する役割を [R1] / [R2] / [R3] / [R4] でタグ付け。
+
+### R1 — 解決順
+
+- **[R1] シンボリックリンクされたシステムディレクトリ。** Arch /
+  Solus / openSUSE TW などで `/usr/sbin → /usr/bin`。`which` は
   `/usr/sbin/<cmd>` を返すので、組み込みの `apt` / `pacman` /
   `dnf` / `system_linux`（`linux = "/usr/bin"` のみ）に substring
   マッチしない → ユーザー側で `[source.usr_sbin] linux =
@@ -589,19 +656,62 @@ Options（global）:
   canonicalize は採用しない方針：レポート上に出る source ラベルを
   silent に変える上、mise / volta / asdf の shim ベースマッチを
   壊す。
-- **`prefer` の順序。** 現状 `prefer = ["mise", "volta"]` は集合
-  扱い（「どれか満たせば OK」）。`sort` のとき優先順位として使う
-  か。MVP 外。
-- **カタログのバージョニング。** pathlint 側で組み込み source パス
-  を更新（例：winget レイアウト変更）したとき、古いバイナリを使う
-  ユーザーは黙って間違ったマッチをする可能性。*(0.0.3 で解決 —
-  組み込みカタログが `catalog_version` を宣言、ユーザーの
-  `pathlint.toml` は `require_catalog = N` で最低バージョンを要求
-  できる。不一致なら exit 2 でバージョン差を案内するメッセージ。
-  `catalog_version` を bump するのは path や意味の変更時のみ、
-  新規 source 追加では bump しない。)*
-- **macOS launchd / `eval $(brew shellenv)`。** これらが設定する
-  PATH は `process` と違う場合あり。MVP 外。
+- **[R1] `prefer` の順序。** 現状 `prefer = ["mise", "volta"]` は
+  集合扱い（「どれか満たせば OK」）。`sort` のとき優先順位として
+  使うか。post-MVP の `pathlint sort` 設計と一体。
+
+### R1 / R4 — インストーラ識別
+
+- **[R1, R4] パッケージマネージャ問い合わせ（0.2 候補）。** path
+  ベースのマッチでは AUR / Homebrew tap / `make install` /
+  `[source.<name>]` に書かれていない prefix のすべてが取りこぼされる。
+  将来のノブとして `[source.X] owner_query = ["pacman", "-Qo"]` か
+  `[[expect]] via = "command"` opt-in が考えられる。トレードオフ:
+  1 回 50–100 ms、OS 別パーサ、信頼の循環依存（問い合わせ先の
+  バイナリ自体が信頼できる必要）。0.1.x では不採用。path-based が
+  どれだけ取りこぼすかのフィールドデータ次第。R4 は特にここから
+  恩恵を受ける（パッケージマネージャが所有者を確認すれば
+  uninstall ヒントが鋭くなる）。
+- **[R1, R4] mise プラグイン経由のバイナリの帰属。** mise の
+  プラグイン経由のバイナリは `mise/installs/<plugin>/<ver>/bin/<bin>`
+  に置かれ、`<plugin>` が上流インストーラ名を含むことが多い
+  （`cargo-foo`、`npm-google-gemini-cli`）。pathlint は現状これを
+  常に `mise_installs` とラベル付けし、`cargo` / `npm_global` には
+  しない。これは「ファイルがどこにあるか」（カタログ）と「どう来たか」
+  （出自）を混ぜる議論で、初期検討としては R4 が居場所として正しい
+  ように見える、R1 のカタログではなく。R4 実装時に再考。
+
+### R3 — PATH 衛生
+
+- **[R3] mise activate vs shims モード。** `mise activate` は PATH
+  先頭に `mise/shims/` を前置する形と、`installs/<lang>/<ver>/bin/`
+  を直接 PATH 書き換えする形の 2 通り。それぞれ resolve 結果は
+  `mise_shims` / `mise_installs` の別 source に当たる。ユーザーが
+  どちら使ってるかを expect 側で意識する、pathlint がモード自動
+  判別はしない。R3 は将来、両層が PATH 上に同時存在したら警告
+  しても良い。
+- **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
+  する PATH は `process` と違うことがある。MVP 外。R3 では R1 と
+  違う形で出すかも：login services が見る PATH と、ユーザーが見る
+  PATH を比較して doctor が差分を提示する、など。
+
+### 横断 / インフラ
+
+- **`MISE_DATA_DIR` / `XDG_DATA_HOME`.** mise はこれらの env var で
+  ツリーの場所を変えられる。組み込みカタログはデフォルトの
+  `$LocalAppData/mise` (Windows) / `$HOME/.local/share/mise` (Unix)
+  を埋め込んでいる。カスタム配置のユーザーは `pathlint.toml` 側
+  で `[source.mise]`（および兄弟 2 つ）を上書きする。これが繰り返し
+  papercut になるなら 0.0.5 以降で自動検出に格上げ。
+
+### 解決済み
+
+- **[R1] 同じ source の複数インストール先。** *(0.0.3 で解決 —
+  `mise` / `mise_shims` / `mise_installs` の 3 層に分割。)*
+- **カタログの可視化。** *(0.0.x で解決 — `pathlint catalog list`
+  を提供。)*
+- **カタログのバージョニング。** *(0.0.3 で解決 — `catalog_version`
+  / `require_catalog`。)*
 
 ## 17. 他ツールとの関係
 

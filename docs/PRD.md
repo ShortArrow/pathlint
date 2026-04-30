@@ -1,37 +1,47 @@
 # pathlint — Product Requirements Document
 
 **Status:** 0.0.x in progress.
-**Target release:** 0.0.2 is the first working version. Schema and
+**Target release:** 0.0.3 is the latest working version. Schema and
 CLI surface remain in motion through 0.1.0.
 
 ---
 
 ## 1. Overview
 
-`pathlint` is a CLI that checks **"is each command being resolved
-from the installer I expect?"** against a TOML manifest.
+`pathlint` is a CLI that answers four questions about the `PATH` you
+actually have, not the one you wish you had.
 
-You declare:
+**R1 — Resolve order.** Given a command, which installer's copy
+wins? You declare `[[expect]] command = "x" prefer = ["cargo"]`, and
+pathlint checks. This is the original use case and the spine of the
+tool.
 
-> "`runex` should come from `cargo`, not from `winget`."
+**R2 — Existence and shape (planned).** Is the file pathlint
+resolved actually executable, or did something replace `runex` with
+a directory of the same name? Is the symlink broken? Today pathlint
+only reports `not_found`; richer shape checks live in 0.0.4+.
 
-`pathlint` then resolves `runex` against the actual `PATH`, looks up
-where the winning binary lives, and matches that location to the
-**source label** ("cargo" / "winget" / ...) you defined.
+**R3 — PATH hygiene.** Even before any expectation is evaluated,
+the `PATH` itself is often a mess: duplicates, dangling directories,
+8.3 short names, entries that could be written more concisely.
+`pathlint doctor` lints the PATH on its own.
 
-The output is one line per expectation: **OK / NG / skip / n/a**.
-Failures show the actual resolved location and which source label it
-matched (or didn't).
+**R4 — Provenance (planned).** Once the resolved binary's full path
+is in hand, where did it come from — and how would I uninstall it?
+Today the matched-source list is internal data exposed only via
+`check`. A `pathlint where <command>` subcommand (0.0.4+) will
+surface it directly, including the most plausible uninstall command
+(`mise uninstall cargo:lazygit`, `cargo uninstall lazygit`, ...).
 
-A single `pathlint.toml` works across **Windows, macOS, Linux, and
-Termux** — sources can declare their location per-OS, and each
-expectation can carry an `os = [...]` filter.
+A single `pathlint.toml` covers all four roles across **Windows,
+macOS, Linux, and Termux** — sources declare their location per-OS,
+and each `[[expect]]` may carry an `os = [...]` filter.
 
 `pathlint` ships with a built-in catalog of well-known sources
-(`cargo`, `mise`, `volta`, `winget`, `choco`, `scoop`, `brew_arm`,
-`brew_intel`, `apt`, `pacman`, `pkg`, `flatpak`, `WindowsApps`, ...).
-Users only have to write their **expectations**; sources are looked
-up by name.
+(`cargo`, `mise`, `mise_shims`, `mise_installs`, `volta`, `winget`,
+`choco`, `scoop`, `brew_arm`, `brew_intel`, `apt`, `pacman`, `pkg`,
+`flatpak`, `WindowsApps`, ...). Users only have to write their
+**expectations**; sources are looked up by name.
 
 ## 2. Problem statement
 
@@ -54,15 +64,19 @@ form you can commit to a dotfiles repo and check on every machine.
 
 ## 3. Goals
 
-- **Declarative expectations.** A `pathlint.toml` file with `[[expect]]`
-  entries says "command X should resolve from source S".
+Across all four roles (R1 – R4):
+
+- **Declarative.** Whatever pathlint cares about is expressible in a
+  `pathlint.toml` that lives in a dotfiles repo. Nothing is hidden
+  in invocation flags only.
 - **Source labels, not paths.** Users speak in installer names
-  (`cargo`, `mise`, `winget`, `brew_arm`, `apt`) instead of typing
-  raw paths. Path patterns are looked up from a catalog.
+  (`cargo`, `mise_shims`, `winget`, `brew_arm`, `apt`) — the path
+  patterns come from a catalog so the same TOML works on every
+  machine.
 - **Built-in catalog with override.** pathlint ships defaults for the
   popular installers; users redefine `[source.X]` only when they want
   to override or add a new one.
-- **One file, all OSes.** Each `[[expect]]` may have an `os = [...]`
+- **One file, all OSes.** Each `[[expect]]` may carry an `os = [...]`
   filter, and each `[source.X]` may declare per-OS paths
   (`windows = ...`, `unix = ...`, etc.). The same `pathlint.toml`
   drives Windows, macOS, Linux, and Termux.
@@ -70,26 +84,64 @@ form you can commit to a dotfiles repo and check on every machine.
   against the resolved binary path as substrings, after env-var
   expansion and slash normalization.
 - **Honest exit codes.** `0` = clean, `1` = at least one expectation
-  failed, `2` = config / I/O error.
-- **Useful failure output.** Each failing expectation shows the
-  command, its resolved full path, and which source it matched (or
-  the `prefer` / `avoid` mismatch).
-- **No mutation in MVP.** Read-only; `--apply` / `sort` are deferred.
+  failed, `2` = config / I/O error. R3 (`doctor`) and R4 (`where`)
+  follow the same scale.
+- **Read-only.** pathlint never mutates PATH, registry, dotfiles,
+  or installed packages. It tells you what's there; you act.
 
-## 4. Non-goals (MVP)
+Per-role:
 
-- **No PATH rewriting / persisting.** Sort/fix is later.
-- **No editing of `.bashrc`, `$PROFILE`, or registry.** The output
-  tells you what is wrong; how to fix it is your call.
-- **No `which` clone.** `pathlint` does include resolve logic
-  internally, but it does not aim to replace `where` / `type -a` /
-  `Get-Command -All`. The interesting question pathlint answers is
-  "is the right one winning?", not "where does this resolve?".
-- **No package management.** `pathlint` does not install missing
-  tools to satisfy an expectation.
-- **No deep launchd / PAM / `/etc/environment` parsing.** Read what
-  the process actually sees (`getenv("PATH")`) plus, on Windows, the
-  two registry locations. Other layers are out of scope.
+- **R1 (resolve order).** A failing expectation shows the command,
+  its resolved full path, the matched source(s), and the
+  `prefer` / `avoid` mismatch. It must be enough to fix without
+  another debugging tool.
+- **R2 (existence and shape).** When a command resolves to a path,
+  the path must point at an actually-executable file. Symlinks
+  must be alive; "executable" must mean it. Today only `not_found`
+  is reported; the rest is 0.0.4+.
+- **R3 (PATH hygiene).** Even with no `[[expect]]` written,
+  `pathlint doctor` flags duplicates, dangling directories,
+  8.3 short names, env-var-shortenable entries, and malformed
+  entries that would never resolve.
+- **R4 (provenance).** Given a resolved binary, name the installer
+  it most plausibly came from, and the corresponding uninstall
+  command. Useful when the user can't remember whether they ran
+  `cargo install` or `mise use cargo:tool` six months ago.
+
+## 4. Non-goals
+
+The roles above also imply specific *non-roles*:
+
+- **No PATH rewriting / persisting.** pathlint does not mutate the
+  process PATH, the Windows registry, `.bashrc`, `$PROFILE`, or
+  any other shell config. It tells you what's wrong; how to fix is
+  your call. (A `pathlint sort` post-MVP would print a recommended
+  order without applying it.)
+- **No `which` clone (R1 boundary).** pathlint does include resolve
+  logic internally, but it doesn't aim to replace `where` /
+  `type -a` / `Get-Command -All`. The R1 question is "is the right
+  installer winning?", not "where does this resolve?". R4
+  (`pathlint where`, planned) will surface the resolved path
+  prominently, but with provenance, not as a generic which-clone.
+- **No future install simulation.** pathlint answers about the
+  PATH and binaries you have *now*. It does not predict where a
+  future `cargo install` would land, what order the next mise
+  activate would produce, or whether a planned install is "safe".
+  This is intentional — predicting installer behaviour requires
+  modelling each installer, which would balloon the trust surface.
+- **No package management.** pathlint does not install or remove
+  packages to satisfy an expectation. R4 may *suggest* an
+  uninstall command (a string for the user to run); it never runs
+  one.
+- **No deep environment parsing.** Reads what the process actually
+  sees (`getenv("PATH")`) plus, on Windows, the two registry
+  locations. `/etc/environment`, PAM, launchd plists, systemd
+  unit `Environment=`, `eval "$(brew shellenv)"` — out of scope.
+- **No package-manager queries (0.1.x).** pathlint does not call
+  `dpkg -S` / `rpm -qf` / `pacman -Qo` / `brew which-formula`.
+  Path-prefix matching is fast and offline; the trade-off is that
+  AUR / `make install` / custom prefixes are invisible until the
+  user adds a `[source.<name>]`. Revisiting in 0.2 (see §16).
 
 ## 5. Target users
 
@@ -117,6 +169,19 @@ form you can commit to a dotfiles repo and check on every machine.
   diff of how PATH would be reordered to satisfy every expectation.
 
 ## 7. Functional requirements (MVP)
+
+Mapping subcommands to roles (see §1):
+
+| Role | Subcommand | Status |
+|---|---|---|
+| R1 — resolve order | `pathlint check` (default) | implemented (0.0.2) |
+| R2 — existence and shape | reuses `[[expect]]` with a `kind` field, exposed in `check` | planned (0.0.4+) |
+| R3 — PATH hygiene | `pathlint doctor` | implemented (0.0.3) |
+| R4 — provenance | `pathlint where <command>` | planned (0.0.4+) |
+
+`pathlint init` and `pathlint catalog list` are infrastructure
+subcommands (configuration scaffolding, catalog inspection); they
+serve every role but don't belong to any one of them.
 
 ### 7.1 `pathlint [OPTIONS]` (= `pathlint check`)
 
@@ -202,7 +267,52 @@ pathlint --quiet                      # only print failures
     suggestion preserves the original case + slash style.
 - `--quiet` hides warns; errors always print.
 
-### 7.6 `pathlint sort` (post-MVP)
+### 7.6 `[[expect]] kind = "executable"` (R2, planned)
+
+Today an `[[expect]]` only checks that `command` resolves and the
+matched source is acceptable. The resolved path could still be:
+
+- a directory (someone shadowed the binary with a folder of the
+  same name)
+- a broken symlink
+- a regular file without execute permission
+- a zero-byte file from a half-finished install
+
+Adding `kind = "executable"` to an expectation would make pathlint
+verify the resolved path actually points at an executable file
+(symlinks followed, mode bit / NTFS reparse honored). On failure
+the status becomes a new `NG (not_executable)` with the kind of
+shape mismatch named.
+
+Vocabulary stays minimal in 0.0.4: `executable` only. Distinguishing
+"native binary" from "script" is OS-specific (Windows `.cmd` vs
+`.exe`, Unix shebangs) and would balloon the matrix without
+clear win.
+
+### 7.7 `pathlint where <command>` (R4, planned)
+
+Surfaces what `check` already computes internally: for the named
+command, print
+
+- the resolved full path (the one R1 evaluates against)
+- every matched source, with the most specific listed first
+- a single best-guess uninstall command, derived from the matched
+  source's catalog entry (e.g. `mise uninstall cargo:lazygit` when
+  the path matches `mise/installs/cargo-lazygit/...`; falls back
+  to `cargo uninstall lazygit` for `~/.cargo/bin/lazygit`)
+- the next-priority source if PATH order changed (so the user
+  knows what would win after an uninstall)
+
+The uninstall hint is a string the user runs themselves; pathlint
+never executes it. When the catalog cannot suggest a command the
+output says so explicitly rather than guessing.
+
+Naming: `where` overlaps with Windows `where.exe`, but pathlint's
+output is provenance-focused and clearly distinct in style. If the
+overlap proves too confusing in practice the name will be revisited
+before 0.1.0.
+
+### 7.8 `pathlint sort` (post-MVP)
 
 - Computes a PATH order that satisfies every applicable expectation,
   prints it (`--dry-run` default) or applies it via OS-appropriate
@@ -559,44 +669,11 @@ Options (global):
 
 ## 16. Open questions
 
-- **Multiple installs of the same source.** `mise` puts binaries in
-  both `mise/shims/` and `mise/installs/<lang>/<ver>/bin/`.
-  *(Resolved in 0.0.3 — split into `mise`, `mise_shims`, and
-  `mise_installs`. The catch-all `mise` is kept so rules written
-  before 0.0.3 still match.)*
-- **mise plugin attribution.** A binary installed via mise's plugin
-  system lives at `mise/installs/<plugin>/<ver>/bin/<bin>`, where
-  `<plugin>` often encodes the upstream installer (`cargo-foo`,
-  `npm-google-gemini-cli`). pathlint currently labels these as
-  `mise_installs`, never as `cargo` / `npm_global`, even when
-  semantically the user installed them through cargo. A 0.0.4 idea
-  is to inspect the plugin segment and surface a hybrid label such
-  as `mise_installs[cargo]`. Out of scope for 0.0.3.
-- **mise activate vs shims.** `mise activate` can either prepend
-  `mise/shims/` to PATH or rewrite PATH with the per-runtime
-  `installs/<lang>/<ver>/bin/` directly. The two modes resolve to
-  different sources (`mise_shims` vs `mise_installs`). Users
-  should pick which they expect — see the README for guidance —
-  rather than expecting pathlint to detect the mode.
-- **`MISE_DATA_DIR` / `XDG_DATA_HOME`.** mise honors both env vars
-  for the location of its tree. The built-in catalog hardcodes
-  the default `$LocalAppData/mise` (Windows) and
-  `$HOME/.local/share/mise` (Unix). Users with a custom location
-  override `[source.mise]` (and the two siblings) in their own
-  `pathlint.toml`.
-- **Catalog distribution.** Should the embedded catalog be exposed
-  via `pathlint catalog list` for discovery? Trivial to add but adds
-  a subcommand. *(Resolved in 0.0.x — `pathlint catalog list` ships.)*
-- **Package-manager queries (0.2 candidate).** path-based matching
-  misses AUR, Homebrew tap, `make install`, and anything else that
-  lands outside the prefixes listed in `[source.<name>]`. A future
-  knob — perhaps `[source.X] owner_query = ["pacman", "-Qo"]` or an
-  `[[expect]] via = "command"` opt-in — would let pathlint ask the
-  package manager directly. Trade-off: ~50–100 ms per query, OS-
-  specific output parsers, and a ring-of-trust issue (the queried
-  binary must itself be trustworthy). Not for 0.1.x; revisit once we
-  have field data on how often path-based matching falls short.
-- **Symlinked system dirs.** On Arch, Solus, openSUSE TW etc.,
+Tagged with the role(s) each touches.
+
+### R1 — resolve order
+
+- **[R1] Symlinked system dirs.** On Arch, Solus, openSUSE TW etc.,
   `/usr/sbin` is a symlink to `/usr/bin`, and `which` reports
   `/usr/sbin/<cmd>`. The built-in `apt` / `pacman` / `dnf` /
   `system_linux` sources declare `linux = "/usr/bin"` only, so the
@@ -606,18 +683,68 @@ Options (global):
   combined entry. Path-canonicalize is rejected for now because it
   silently changes which source label appears in the output and
   breaks shim-aware matching for mise / volta / asdf.
-- **`prefer` ordering.** Currently `prefer = ["mise", "volta"]` is
-  treated as a set ("any of these is OK"). Should the order
-  additionally express preference for `sort`? Out of MVP.
-- **Catalog versioning.** When pathlint updates a built-in source
-  path (e.g. winget changes its layout), users on an old binary may
-  silently get wrong matches. *(Resolved in 0.0.3 — embedded catalog
-  declares `catalog_version`, user `pathlint.toml` may pin
-  `require_catalog = N`. Mismatch triggers exit 2 with a message
-  pointing at the version gap. Bumping `catalog_version` is reserved
-  for path / semantics changes; new sources don't bump it.)*
-- **macOS launchd / `eval $(brew shellenv)`.** PATH set by these
-  paths may differ from `process`. Out of MVP.
+- **[R1] `prefer` ordering.** Currently `prefer = ["mise", "volta"]`
+  is treated as a set ("any of these is OK"). Should the order
+  additionally express preference for `sort`? Tied to the post-MVP
+  `pathlint sort` design.
+
+### R1 / R4 — installer identification
+
+- **[R1, R4] Package-manager queries (0.2 candidate).** path-based
+  matching misses AUR, Homebrew tap, `make install`, and anything
+  else outside the prefixes listed in `[source.<name>]`. A future
+  knob — perhaps `[source.X] owner_query = ["pacman", "-Qo"]` or an
+  `[[expect]] via = "command"` opt-in — would let pathlint ask the
+  package manager directly. Trade-off: ~50–100 ms per query,
+  OS-specific output parsers, and a ring-of-trust issue (the
+  queried binary must itself be trustworthy). Not for 0.1.x;
+  revisit once we have field data on how often path-based matching
+  falls short. R4 in particular benefits from this — uninstall
+  hints get sharper when the package manager confirms ownership.
+- **[R1, R4] mise plugin attribution.** A binary installed via
+  mise's plugin system lives at `mise/installs/<plugin>/<ver>/bin/<bin>`,
+  where `<plugin>` often encodes the upstream installer
+  (`cargo-foo`, `npm-google-gemini-cli`). pathlint currently labels
+  these as `mise_installs`, never as `cargo` / `npm_global`, even
+  when semantically the user installed them through cargo. The
+  question is whether to mix "where the file lives" (catalog) and
+  "how it got there" (provenance) — early thinking says R4 is the
+  right home for this, not R1's catalog. Revisit when R4 is
+  implemented.
+
+### R3 — PATH hygiene
+
+- **[R3] mise activate vs shims.** `mise activate` can either
+  prepend `mise/shims/` to PATH or rewrite PATH with the
+  per-runtime `installs/<lang>/<ver>/bin/` directly. The two modes
+  resolve to different sources (`mise_shims` vs `mise_installs`).
+  Users pick which they expect rather than pathlint detecting the
+  mode. R3 may eventually warn when both layers appear in PATH
+  simultaneously.
+- **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
+  these paths may differ from `process`. Out of MVP. R3 might
+  expose this differently from R1: doctor could compare what the
+  user sees vs what login services see, instead of pretending one
+  PATH is "the" PATH.
+
+### Cross-role / infrastructure
+
+- **`MISE_DATA_DIR` / `XDG_DATA_HOME`.** mise honors both env
+  vars for the location of its tree. The built-in catalog
+  hardcodes the default `$LocalAppData/mise` (Windows) and
+  `$HOME/.local/share/mise` (Unix). Users with a custom location
+  override `[source.mise]` (and the two siblings) in their own
+  `pathlint.toml`. Could be lifted to automatic discovery in 0.0.5+
+  if it becomes a recurring papercut.
+
+### Resolved
+
+- **[R1] Multiple installs of the same source.** *(Resolved in
+  0.0.3 — split into `mise`, `mise_shims`, `mise_installs`.)*
+- **Catalog distribution.** *(Resolved in 0.0.x — `pathlint
+  catalog list` ships.)*
+- **Catalog versioning.** *(Resolved in 0.0.3 — `catalog_version`
+  / `require_catalog`.)*
 
 ## 17. Relationship to other tools
 
