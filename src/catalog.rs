@@ -110,4 +110,25 @@ mod tests {
         assert_eq!(cargo.path_for(Os::Windows), Some("X:/cargo"));
         assert_eq!(cargo.path_for(Os::Linux), Some("/x/cargo"));
     }
+
+    #[test]
+    fn mise_layered_sources_are_present() {
+        let cat = builtin();
+        assert!(cat.contains_key("mise"));
+        assert!(cat.contains_key("mise_shims"));
+        assert!(cat.contains_key("mise_installs"));
+    }
+
+    #[test]
+    fn mise_shims_path_is_a_subdirectory_of_mise() {
+        let cat = builtin();
+        let mise = cat["mise"].path_for(Os::Linux).unwrap();
+        let shims = cat["mise_shims"].path_for(Os::Linux).unwrap();
+        let installs = cat["mise_installs"].path_for(Os::Linux).unwrap();
+        // mise_shims and mise_installs must each live inside the
+        // mise root, so any binary path that matches a subordinate
+        // source automatically also matches the parent `mise`.
+        assert!(shims.starts_with(mise), "{shims} not under {mise}");
+        assert!(installs.starts_with(mise), "{installs} not under {mise}");
+    }
 }

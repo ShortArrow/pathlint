@@ -29,9 +29,31 @@ unix    = "$HOME/.local/bin"
 
 # ---- Polyglot version managers ----
 
+# Catch-all that matches anything served by mise (shims + installs).
+# Kept for backwards compatibility with rules that don't care which
+# layer mise served the binary from. Prefer mise_shims / mise_installs
+# in new rules for finer control.
 [source.mise]
+description = "any binary served by mise (alias matching shims + installs)"
 windows = "$LocalAppData/mise"
 unix    = "$HOME/.local/share/mise"
+
+# Binaries reached via the mise shim layer ($PATH front-loaded with
+# `mise/shims`). This is the typical setup when shells run
+# `mise activate`.
+[source.mise_shims]
+description = "mise shim layer"
+windows = "$LocalAppData/mise/shims"
+unix    = "$HOME/.local/share/mise/shims"
+
+# Direct binaries from `mise/installs/<tool>/<version>/bin`. This is
+# what shows up when mise activates a runtime via PATH-rewriting
+# rather than shims, or when a plugin (cargo-*, npm-*, etc.) was
+# installed through mise.
+[source.mise_installs]
+description = "mise per-runtime install dirs"
+windows = "$LocalAppData/mise/installs"
+unix    = "$HOME/.local/share/mise/installs"
 
 [source.volta]
 windows = "$LocalAppData/Volta"

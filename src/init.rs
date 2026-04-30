@@ -83,10 +83,15 @@ command = "cargo"
 prefer  = ["cargo", "scoop", "winget"]
 
 # ---- Windows-specific examples ----
+#
+# `mise_shims` is the recommended way to consume mise — it matches
+# binaries served via `mise/shims/`. `mise_installs` matches the
+# per-runtime install dirs. The catch-all `mise` source covers
+# either layer for backwards compatibility.
 
 [[expect]]
 command = "python"
-prefer  = ["mise", "scoop"]
+prefer  = ["mise_shims", "scoop"]
 avoid   = ["WindowsApps", "choco"]
 os      = ["windows"]
 
@@ -106,7 +111,7 @@ prefer  = ["cargo"]
 
 [[expect]]
 command = "python"
-prefer  = ["mise", "brew_arm", "brew_intel"]
+prefer  = ["mise_shims", "brew_arm", "brew_intel"]
 os      = ["macos"]
 
 [[expect]]
@@ -133,12 +138,12 @@ prefer  = ["cargo"]
 
 [[expect]]
 command = "python"
-prefer  = ["mise", "asdf", "apt", "pacman"]
+prefer  = ["mise_shims", "asdf", "apt", "pacman"]
 os      = ["linux"]
 
 [[expect]]
 command = "node"
-prefer  = ["mise", "volta"]
+prefer  = ["mise_shims", "volta"]
 avoid   = ["snap"]
 os      = ["linux"]
 
