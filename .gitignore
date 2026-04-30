@@ -11,7 +11,7 @@
 Thumbs.db
 
 # Claude / Serena workspace state
-/.claude/.gitignore
+/.claude/
 /.serena/cache
 
 # Local environment overrides
