@@ -45,10 +45,23 @@ pub fn render_starter(os: Os, emit_defaults: bool) -> String {
         buf.push_str("\n\n");
         buf.push_str(DEFAULTS_HEADER);
         buf.push('\n');
-        buf.push_str(EMBEDDED_CATALOG);
+        buf.push_str(&embedded_catalog_for_starter());
     }
 
     buf
+}
+
+/// The embedded catalog with the top-level `catalog_version` line
+/// stripped. The bare key is meaningful in the binary but parses as
+/// part of the preceding `[[expect]]` table when concatenated into
+/// a starter file, so we drop it here. (The starter has no use for
+/// the version anyway — users write `require_catalog` instead.)
+fn embedded_catalog_for_starter() -> String {
+    EMBEDDED_CATALOG
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("catalog_version"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 const HEADER: &str = "\

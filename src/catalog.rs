@@ -12,6 +12,16 @@ pub fn builtin() -> BTreeMap<String, SourceDef> {
     cfg.source
 }
 
+/// Version of the catalog embedded in this binary. Bumped whenever
+/// an existing source's path or semantics changes — see
+/// `embedded_catalog.toml` for the policy. Defaults to `0` if the
+/// embedded file forgets to declare one (which would be a build bug
+/// caught at code review).
+pub fn embedded_version() -> u32 {
+    let cfg: Config = Config::parse_toml(EMBEDDED).expect("embedded_catalog.toml must parse");
+    cfg.catalog_version.unwrap_or(0)
+}
+
 /// Merge user-defined sources on top of the built-in catalog. User
 /// entries with the same name override field-by-field; new names are
 /// added.
@@ -109,6 +119,14 @@ mod tests {
         assert_eq!(cargo.description.as_deref(), Some("user-overridden"));
         assert_eq!(cargo.path_for(Os::Windows), Some("X:/cargo"));
         assert_eq!(cargo.path_for(Os::Linux), Some("/x/cargo"));
+    }
+
+    #[test]
+    fn embedded_version_is_at_least_one() {
+        // Bumping catalog_version is a deliberate act; default of 0
+        // would mean somebody removed the declaration. Guard the
+        // floor at 1 — the version we shipped in 0.0.3.
+        assert!(embedded_version() >= 1);
     }
 
     #[test]

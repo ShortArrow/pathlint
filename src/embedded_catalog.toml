@@ -1,4 +1,11 @@
 # Built-in source catalog. See docs/PRD.md §9.
+#
+# Bump `catalog_version` whenever an existing source's per-OS path,
+# semantics, or definition changes — never just for additions.
+# Users who pin `require_catalog = N` in their pathlint.toml will
+# get a config error on a binary whose embedded catalog is older
+# than what they need.
+catalog_version = 1
 
 # ---- Cross-OS user-installed binaries ----
 

@@ -88,6 +88,27 @@ unix = "$HOME/dotfiles/bin"
 }
 
 #[test]
+fn catalog_list_default_includes_catalog_version() {
+    // The version line should appear at the top of default output
+    // (so users can spot which catalog vintage they're matching
+    // against), but NOT in --names-only.
+    let tmp = tempfile::tempdir().unwrap();
+    let (code, stdout, _) = run_catalog_list(tmp.path(), &[]);
+    assert_eq!(code, 0);
+    let first = stdout.lines().next().unwrap_or("");
+    assert!(
+        first.starts_with("# catalog_version = "),
+        "first line should announce the catalog version: {first}"
+    );
+
+    let (_, names_only, _) = run_catalog_list(tmp.path(), &["--names-only"]);
+    assert!(
+        !names_only.contains("catalog_version"),
+        "--names-only must stay machine-readable: {names_only}"
+    );
+}
+
+#[test]
 fn catalog_list_rejects_unknown_subcommand() {
     let tmp = tempfile::tempdir().unwrap();
     let mut cmd = Command::new(BIN);

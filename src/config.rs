@@ -12,6 +12,19 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Catalog version embedded in the running binary. Set only by
+    /// the embedded `embedded_catalog.toml`; user `pathlint.toml`
+    /// files leave this `None` and use `require_catalog` instead.
+    #[serde(default)]
+    pub catalog_version: Option<u32>,
+
+    /// Minimum embedded catalog version this `pathlint.toml`
+    /// requires. If set, pathlint refuses to run when the binary's
+    /// `catalog_version` is lower (config error, exit 2). Leave
+    /// unset to opt out of the check.
+    #[serde(default)]
+    pub require_catalog: Option<u32>,
+
     #[serde(default, rename = "expect")]
     pub expectations: Vec<Expectation>,
 
@@ -186,5 +199,25 @@ unknown_field = true
         .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("unknown_field"), "got: {msg}");
+    }
+
+    #[test]
+    fn catalog_version_and_require_catalog_are_parsed() {
+        let cfg = Config::parse_toml(
+            r#"
+catalog_version = 7
+require_catalog = 5
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.catalog_version, Some(7));
+        assert_eq!(cfg.require_catalog, Some(5));
+    }
+
+    #[test]
+    fn require_catalog_is_optional() {
+        let cfg = Config::parse_toml("").unwrap();
+        assert_eq!(cfg.catalog_version, None);
+        assert_eq!(cfg.require_catalog, None);
     }
 }
