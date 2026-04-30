@@ -8,7 +8,8 @@
 
 > **⚠ Pre-alpha (0.0.x)。** スキーマと CLI 表面はまだ動きます。
 > 0.1.0 が出るまで、minor / patch 双方が schema や CLI の互換を
-> 壊しうる前提でお使いください。
+> 壊しうる前提でお使いください。0.0.2 のバイナリは動作します
+> （load-bearing な仕組みに組み込むのはまだ時期尚早）。
 
 ---
 
@@ -159,11 +160,15 @@ unix = "$HOME/dotfiles/bin"
 ## インストール
 
 ```sh
-# crates.io から（公開後）
+# crates.io から
 cargo install pathlint
 
 # ソースから（最新 main）
 cargo install --git https://github.com/ShortArrow/pathlint
+
+# ビルド済みバイナリ
+# https://github.com/ShortArrow/pathlint/releases
+# Linux x86_64 / Windows x86_64 / macOS x86_64 / macOS aarch64
 ```
 
 ## ドキュメント

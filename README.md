@@ -7,8 +7,9 @@
 > Verify that each command on `PATH` resolves from the installer you expect.
 
 > **⚠ Pre-alpha (0.0.x).** Schema and CLI surface are still moving;
-> not ready for production wiring. Skeleton only — no working binary
-> yet.
+> until 0.1.0 lands, both minor and patch releases may break the
+> TOML schema or the CLI. The 0.0.2 binary is functional — just
+> don't bake it into anything load-bearing yet.
 
 ---
 
@@ -154,11 +155,15 @@ Match is substring + case-insensitive, after env-var expansion (both
 ## Installation
 
 ```sh
-# From crates.io (once published)
+# From crates.io
 cargo install pathlint
 
 # From source (latest main)
 cargo install --git https://github.com/ShortArrow/pathlint
+
+# Pre-built binaries
+# https://github.com/ShortArrow/pathlint/releases
+# Linux x86_64 / Windows x86_64 / macOS x86_64 / macOS aarch64
 ```
 
 ## Documentation
