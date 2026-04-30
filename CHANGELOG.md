@@ -11,6 +11,8 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-04-30
+
 ### Added
 
 - **mise overhaul.** The single `mise` source now has two
@@ -108,5 +110,6 @@ actually fetch.
     `$HOME` and friends — case and slash style preserved).
   - `--quiet` hides warns; errors always print.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.3
 [0.0.2]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.2
