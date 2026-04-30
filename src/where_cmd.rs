@@ -97,7 +97,7 @@ fn matched_sources_ranked(
             hits.push((needle.len(), name.clone()));
         }
     }
-    hits.sort_by(|a, b| b.0.cmp(&a.0));
+    hits.sort_by_key(|h| std::cmp::Reverse(h.0));
     hits.into_iter().map(|(_, n)| n).collect()
 }
 
