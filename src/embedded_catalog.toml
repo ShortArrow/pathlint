@@ -5,7 +5,7 @@
 # Users who pin `require_catalog = N` in their pathlint.toml will
 # get a config error on a binary whose embedded catalog is older
 # than what they need.
-catalog_version = 1
+catalog_version = 2
 
 # ---- Cross-OS user-installed binaries ----
 
@@ -13,19 +13,24 @@ catalog_version = 1
 description = "binaries from `cargo install`"
 windows = "$UserProfile/.cargo/bin"
 unix    = "$HOME/.cargo/bin"
+uninstall_command = "cargo uninstall {bin}"
 
 [source.go]
 description = "binaries from `go install`"
 windows = "$UserProfile/go/bin"
 unix    = "$HOME/go/bin"
+# `go install` doesn't ship a remove command — `rm $GOBIN/<bin>`
+# is the practical answer, but it depends on the shell.
 
 [source.npm_global]
 windows = "$AppData/npm"
 unix    = "$HOME/.npm-global/bin"
+uninstall_command = "npm uninstall -g {bin}"
 
 [source.pip_user]
 windows = "$AppData/Python"
 unix    = "$HOME/.local/bin"
+uninstall_command = "pip uninstall {bin}"
 
 [source.user_bin]
 windows = "$UserProfile/bin"
@@ -65,24 +70,30 @@ unix    = "$HOME/.local/share/mise/installs"
 [source.volta]
 windows = "$LocalAppData/Volta"
 unix    = "$HOME/.volta/bin"
+uninstall_command = "volta uninstall {bin}"
 
 [source.aqua]
 windows = "$LocalAppData/aquaproj-aqua"
 unix    = "$HOME/.local/share/aquaproj-aqua"
+# aqua manages tools via aqua.yaml, no per-binary uninstall.
 
 [source.asdf]
 unix    = "$HOME/.asdf/shims"
+# asdf removes tools by plugin: `asdf uninstall <plugin> <version>`.
 
 # ---- Windows-only package managers ----
 
 [source.winget]
 windows = "$LocalAppData/Microsoft/WinGet"
+uninstall_command = "winget uninstall {bin}"
 
 [source.choco]
 windows = "$ProgramData/chocolatey"
+uninstall_command = "choco uninstall {bin}"
 
 [source.scoop]
 windows = "$UserProfile/scoop"
+uninstall_command = "scoop uninstall {bin}"
 
 [source.WindowsApps]
 description = "Microsoft Store stub layer"
@@ -102,36 +113,45 @@ windows = "msys"
 [source.brew_arm]
 description = "Homebrew on Apple Silicon"
 macos = "/opt/homebrew"
+uninstall_command = "brew uninstall {bin}"
 
 [source.brew_intel]
 description = "Homebrew on Intel macOS"
 macos = "/usr/local"
+uninstall_command = "brew uninstall {bin}"
 
 [source.macports]
 macos = "/opt/local"
+uninstall_command = "sudo port uninstall {bin}"
 
 # ---- Linux-only package managers ----
 
 [source.apt]
 linux = "/usr/bin"
+uninstall_command = "sudo apt remove {bin}"
 
 [source.pacman]
 linux = "/usr/bin"
+uninstall_command = "sudo pacman -Rns {bin}"
 
 [source.dnf]
 linux = "/usr/bin"
+uninstall_command = "sudo dnf remove {bin}"
 
 [source.flatpak]
 linux = "/var/lib/flatpak/exports/bin"
+uninstall_command = "flatpak uninstall {bin}"
 
 [source.snap]
 linux = "/snap/bin"
+uninstall_command = "sudo snap remove {bin}"
 
 # ---- Termux ----
 
 [source.pkg]
 description = "Termux pkg installs"
 termux = "$PREFIX/bin"
+uninstall_command = "pkg uninstall {bin}"
 
 [source.termux_user_bin]
 termux = "$PREFIX/../home/bin"

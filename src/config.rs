@@ -89,6 +89,14 @@ pub struct SourceDef {
     /// not separately set.
     #[serde(default)]
     pub unix: Option<String>,
+    /// R4 — shell command template that uninstalls a binary served
+    /// by this source. The substring `{bin}` is substituted with
+    /// the resolved binary's stem (filename without extension).
+    /// Used by `pathlint where`. Leave unset for sources where
+    /// uninstall is not a meaningful single command (e.g. shim
+    /// layers, system_*).
+    #[serde(default)]
+    pub uninstall_command: Option<String>,
 }
 
 impl SourceDef {
@@ -125,6 +133,10 @@ impl SourceDef {
             linux: override_with.linux.clone().or_else(|| self.linux.clone()),
             termux: override_with.termux.clone().or_else(|| self.termux.clone()),
             unix: override_with.unix.clone().or_else(|| self.unix.clone()),
+            uninstall_command: override_with
+                .uninstall_command
+                .clone()
+                .or_else(|| self.uninstall_command.clone()),
         }
     }
 }

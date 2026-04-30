@@ -13,3 +13,4 @@ pub mod path_source;
 pub mod report;
 pub mod resolve;
 pub mod run;
+pub mod where_cmd;
