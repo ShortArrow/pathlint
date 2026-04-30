@@ -18,6 +18,10 @@ pub enum Status {
     NgWrongSource,
     NgUnknownSource,
     NgNotFound,
+    /// R2 — resolved path failed `kind` shape check (directory,
+    /// broken symlink, missing exec bit, etc.). Carries a short
+    /// human-readable reason.
+    NgNotExecutable(String),
     Skip, // optional + not on PATH
     NotApplicable,
     ConfigError(String),
@@ -98,7 +102,20 @@ fn evaluate_one<R: FnMut(&str) -> Option<Resolution>>(
 
     let haystack = normalize(&resolution.full_path.to_string_lossy());
     let matched = matched_sources(&haystack, sources, os);
-    let status = decide(&matched, &expect.prefer, &expect.avoid);
+    let mut status = decide(&matched, &expect.prefer, &expect.avoid);
+
+    // R2 shape check. Only run when the source check already passed —
+    // a `prefer` mismatch is a louder failure than a shape one and
+    // we don't want to drown the user in two diagnostics for the
+    // same expectation. The shape check only escalates an OK status
+    // into a NG, never the other way around.
+    if matches!(status, Status::Ok) {
+        if let Some(kind) = expect.kind {
+            if let Err(reason) = check_shape(&resolution.full_path, kind) {
+                status = Status::NgNotExecutable(reason);
+            }
+        }
+    }
 
     Outcome {
         command: expect.command.clone(),
@@ -108,6 +125,45 @@ fn evaluate_one<R: FnMut(&str) -> Option<Resolution>>(
         prefer: expect.prefer.clone(),
         avoid: expect.avoid.clone(),
     }
+}
+
+/// Verify a resolved path matches the expected `kind`. Today only
+/// handles `Kind::Executable`. Returns Err with a short human-
+/// readable reason on mismatch.
+fn check_shape(path: &std::path::Path, kind: crate::config::Kind) -> Result<(), String> {
+    use crate::config::Kind;
+    match kind {
+        Kind::Executable => check_executable(path),
+    }
+}
+
+fn check_executable(path: &std::path::Path) -> Result<(), String> {
+    // metadata() follows symlinks. If that fails, the symlink is
+    // dangling or the file vanished between resolve and now.
+    let md = match std::fs::metadata(path) {
+        Ok(md) => md,
+        Err(_) => {
+            return Err(if path.is_symlink() {
+                "broken symlink".into()
+            } else {
+                "cannot stat".into()
+            });
+        }
+    };
+    if md.is_dir() {
+        return Err("is a directory".into());
+    }
+    if !md.is_file() {
+        return Err("not a regular file".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if md.permissions().mode() & 0o111 == 0 {
+            return Err("not executable (no +x bit)".into());
+        }
+    }
+    Ok(())
 }
 
 fn os_filter_applies(expect: &Expectation, os: Os) -> bool {
@@ -210,6 +266,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Linux, |_| {
             Some(resolved("/home/u/.cargo/bin/runex"))
@@ -230,6 +287,7 @@ mod tests {
             avoid: vec!["winget".into()],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Windows, |_| {
             Some(resolved(
@@ -249,6 +307,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Linux, |_| {
             Some(resolved("/usr/local/bin/runex"))
@@ -264,6 +323,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &BTreeMap::new(), Os::Linux, |_| None);
         assert_eq!(out[0].status, Status::NgNotFound);
@@ -274,6 +334,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: true,
+            kind: None,
         }];
         let out = evaluate(&optional, &BTreeMap::new(), Os::Linux, |_| None);
         assert_eq!(out[0].status, Status::Skip);
@@ -287,6 +348,7 @@ mod tests {
             avoid: vec![],
             os: Some(vec!["windows".into()]),
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &BTreeMap::new(), Os::Linux, |_| {
             panic!("resolver must not be called for n/a expectations")
@@ -302,6 +364,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &BTreeMap::new(), Os::Linux, |_| {
             panic!("must not resolve when config is invalid")
@@ -318,6 +381,7 @@ mod tests {
             avoid: vec!["winget".into()],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Windows, |_| {
             Some(resolved(r"C:\Users\u\.cargo\bin\runex.exe"))
@@ -339,6 +403,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         // Only the mise install path matches; cargo and winget do not.
         let out = evaluate(&expectations, &sources, Os::Linux, |_| {
@@ -363,6 +428,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Linux, |_| {
             Some(resolved(
@@ -393,6 +459,7 @@ mod tests {
             avoid: vec!["dangerous_subdir".into()],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Linux, |_| {
             Some(resolved(
@@ -419,6 +486,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Linux, |_| {
             Some(resolved("/home/u/.local/share/mise/shims/python"))
@@ -449,6 +517,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out = evaluate(&expectations, &sources, Os::Linux, |_| {
             Some(resolved(
@@ -480,6 +549,7 @@ mod tests {
             avoid: vec![],
             os: None,
             optional: false,
+            kind: None,
         }];
         let out_shim = evaluate(&expectations, &sources, Os::Linux, |_| {
             Some(resolved("/home/u/.local/share/mise/shims/python"))
@@ -491,5 +561,106 @@ mod tests {
         });
         assert_eq!(out_shim[0].status, Status::Ok);
         assert_eq!(out_install[0].status, Status::Ok);
+    }
+
+    // ---- R2 kind = "executable" shape checks --------------------
+
+    use crate::config::Kind;
+
+    fn expect_with_kind(command: &str, source: &str, kind: Kind) -> Expectation {
+        Expectation {
+            command: command.into(),
+            prefer: vec![source.into()],
+            avoid: vec![],
+            os: None,
+            optional: false,
+            kind: Some(kind),
+        }
+    }
+
+    /// Build a SourceDef whose path is set on every OS, so the
+    /// kind tests work regardless of which OS the test host runs on.
+    fn src_anywhere(p: &str) -> SourceDef {
+        SourceDef {
+            windows: Some(p.into()),
+            unix: Some(p.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn kind_executable_flags_directory_shadow() {
+        // Source matches, but the resolved path is a directory of
+        // the same name. R1 says OK, R2 must escalate to NG.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("rogue_bin");
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir_str = dir.to_string_lossy().into_owned();
+        let sources = cat(&[("rogue", src_anywhere(&dir_str))]);
+        let expectations = vec![expect_with_kind("rogue_bin", "rogue", Kind::Executable)];
+        let out = evaluate(&expectations, &sources, Os::current(), |_| {
+            Some(Resolution {
+                full_path: dir.clone(),
+            })
+        });
+        match &out[0].status {
+            Status::NgNotExecutable(reason) => {
+                assert!(reason.contains("directory"), "reason: {reason}");
+            }
+            other => panic!("expected NgNotExecutable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn kind_executable_flags_missing_target() {
+        // Resolver returns a path that doesn't exist on disk —
+        // a file vanishing between resolve and shape-check, or a
+        // dangling symlink. metadata() fails, R2 says NG.
+        let sources = cat(&[("anywhere", src_anywhere("/no/such/place"))]);
+        let expectations = vec![expect_with_kind("ghost", "anywhere", Kind::Executable)];
+        let out = evaluate(&expectations, &sources, Os::current(), |_| {
+            Some(resolved("/no/such/place/ghost"))
+        });
+        assert!(matches!(out[0].status, Status::NgNotExecutable(_)));
+    }
+
+    #[test]
+    fn kind_unset_skips_shape_check_entirely() {
+        // Even when the resolved path is bogus, no shape check
+        // means the source-only outcome stands.
+        let sources = cat(&[("anywhere", src_anywhere("/no/such/place"))]);
+        let expectations = vec![Expectation {
+            command: "ghost".into(),
+            prefer: vec!["anywhere".into()],
+            avoid: vec![],
+            os: None,
+            optional: false,
+            kind: None,
+        }];
+        let out = evaluate(&expectations, &sources, Os::current(), |_| {
+            Some(resolved("/no/such/place/ghost"))
+        });
+        assert_eq!(out[0].status, Status::Ok);
+    }
+
+    #[test]
+    fn kind_executable_does_not_override_wrong_source() {
+        // A source mismatch (NG already) must not be downgraded by
+        // the shape check.
+        let sources = cat(&[("good", src("/home/u/good")), ("bad", src("/home/u/bad"))]);
+        let expectations = vec![Expectation {
+            command: "x".into(),
+            prefer: vec!["good".into()],
+            avoid: vec!["bad".into()],
+            os: None,
+            optional: false,
+            kind: Some(Kind::Executable),
+        }];
+        let out = evaluate(&expectations, &sources, Os::Linux, |_| {
+            Some(resolved("/home/u/bad/x"))
+        });
+        // Stays NgWrongSource — the shape check is suppressed
+        // because the source check already failed.
+        assert!(matches!(out[0].status, Status::NgWrongSource));
     }
 }

@@ -483,3 +483,80 @@ require_catalog = 9999
         "stderr was: {stderr}"
     );
 }
+
+#[test]
+fn kind_executable_passes_for_real_stub() {
+    // The stub() helper writes a real executable file; kind =
+    // "executable" should not change OK to NG for it.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("good");
+    stub(&dir, "tooly");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[[expect]]
+command = "tooly"
+prefer  = ["good"]
+kind    = "executable"
+
+[source.good]
+{key} = "{path}"
+"#,
+        path = dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run(&rules, &join_path(&[&dir]));
+    assert_eq!(code, 0, "stdout: {stdout}");
+    assert!(stdout.contains("OK"), "stdout: {stdout}");
+}
+
+#[test]
+fn kind_executable_flags_directory_shadow_in_real_run() {
+    // PATH entry contains a *directory* named like a binary. On
+    // Windows this needs PATHEXT to think it's executable, so we
+    // drop a `.cmd` directory which won't actually run; on Unix
+    // a plain directory called `tooly` is enough.
+    //
+    // Skip on Windows because resolve() requires PATHEXT to flag
+    // the entry as a candidate, and a directory with `.cmd` on
+    // the end is awkward to construct safely. Unix proves the
+    // mechanism end-to-end.
+    if cfg!(windows) {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("path_root");
+    fs::create_dir_all(&dir).unwrap();
+    // Create a directory that resolve() will pick up because it
+    // matches the command name and (on Unix) has the executable
+    // bit. Directories normally do have the +x bit set.
+    let shadow = dir.join("tooly");
+    fs::create_dir_all(&shadow).unwrap();
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[[expect]]
+command = "tooly"
+prefer  = ["good"]
+kind    = "executable"
+
+[source.good]
+{key} = "{path}"
+"#,
+        path = dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+    let (code, stdout, _) = run(&rules, &join_path(&[&dir]));
+    // We expect the resolver to either pick up the directory (then
+    // R2 escalates to NG) or to skip it (then R1 says
+    // not_found -> NG either way). Either outcome should yield
+    // exit 1; we additionally check the directory message when
+    // it's the shape-check that fired.
+    assert_eq!(code, 1, "stdout: {stdout}");
+    if stdout.contains("not executable") {
+        assert!(stdout.contains("directory"), "stdout: {stdout}");
+    }
+}
