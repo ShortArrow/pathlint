@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
-use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, InitArgs};
+use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, InitArgs, WhereArgs};
 use crate::config::Config;
 use crate::doctor::{self, Diagnostic, Kind, Severity};
 use crate::init::{self, InitOptions, InitOutcome};
@@ -15,6 +15,7 @@ use crate::os_detect::Os;
 use crate::path_source::{self, Target};
 use crate::report;
 use crate::resolve;
+use crate::where_cmd::{self, UninstallHint, WhereOutcome};
 
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
@@ -25,6 +26,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
             action: CatalogCommand::List(args),
         }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
         Some(Command::Doctor) => return execute_doctor(&cli.global),
+        Some(Command::Where(args)) => return execute_where(&args, &cli.global),
         Some(Command::Check) | None => {}
     }
     let rules_path = locate_rules(cli.global.rules.as_deref())?;
@@ -155,6 +157,57 @@ fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -
     }
     print!("{}", catalog_view::render(&merged, Os::current(), style));
     Ok(0)
+}
+
+fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+    // R4 reads the same merged catalog `check` does so user
+    // overrides apply; the rules file's `[[expect]]` block is
+    // ignored — `where` is per-command, not rule-driven.
+    let rules_path = locate_rules(global.rules.as_deref())?;
+    let cfg = match rules_path.as_ref() {
+        Some(p) => Config::from_path(p)?,
+        None => Config::default(),
+    };
+    let merged = catalog::merge_with_user(&cfg.source);
+
+    let target: Target = global.target.into();
+    let path_read = path_source::read_path(target);
+    if let Some(w) = &path_read.warning {
+        eprintln!("pathlint: warning: {w}");
+    }
+    let path_entries = resolve::split_path(&path_read.value);
+
+    let outcome = where_cmd::locate(&args.command, &merged, Os::current(), |cmd| {
+        resolve::resolve(cmd, &path_entries)
+    });
+
+    match outcome {
+        WhereOutcome::NotFound => {
+            println!("{} — not found on PATH", args.command);
+            Ok(1)
+        }
+        WhereOutcome::Found(found) => {
+            println!("{}", found.command);
+            println!("  resolved: {}", found.resolved.display());
+            if found.matched_sources.is_empty() {
+                println!("  sources:  (no source matched)");
+            } else {
+                println!("  sources:  {}", found.matched_sources.join(", "));
+            }
+            match found.uninstall {
+                UninstallHint::Command(cmd) => {
+                    println!("  hint:     {cmd}");
+                }
+                UninstallHint::NoTemplate { source } => {
+                    println!("  hint:     (no uninstall template for source `{source}`)");
+                }
+                UninstallHint::NoSource => {
+                    println!("  hint:     (no source matched — pathlint cannot guess)");
+                }
+            }
+            Ok(0)
+        }
+    }
 }
 
 fn execute_init(args: &InitArgs) -> Result<u8> {

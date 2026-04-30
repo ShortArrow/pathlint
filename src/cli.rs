@@ -34,6 +34,16 @@ pub enum Command {
     /// shortening candidates, Windows 8.3 short names, malformed
     /// entries). Independent of `[[expect]]` rules.
     Doctor,
+
+    /// Show where a command resolves from, which sources it matches,
+    /// and the most plausible uninstall command.
+    Where(WhereArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct WhereArgs {
+    /// The command to look up on PATH.
+    pub command: String,
 }
 
 #[derive(Debug, Subcommand)]

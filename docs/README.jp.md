@@ -109,6 +109,9 @@ pathlint catalog list --names-only
 # PATH 自体の衛生チェック（重複、不在ディレクトリ、env-var 短縮候補、
 # Windows 8.3 短縮、形式破損エントリなど）
 pathlint doctor
+
+# コマンドがどこから来たか + uninstall コマンドのヒント
+pathlint where lazygit
 ```
 
 ## `pathlint.toml`（最小例）
@@ -133,6 +136,17 @@ command = "gcc"
 prefer  = ["mingw", "msys"]
 avoid   = ["strawberry"]
 os      = ["windows"]
+```
+
+`kind = "executable"` を足せば、resolve したパスが実際に実行可能
+ファイルかも検証する — 同名のディレクトリがバイナリを覆い隠した
+場合や、symlink の先が消えた場合などを捕まえる：
+
+```toml
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
 ```
 
 上の例で参照している source 名はすべて組み込みカタログにあるので、

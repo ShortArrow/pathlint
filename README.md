@@ -104,6 +104,9 @@ pathlint init --emit-defaults     # also embeds the full source catalog
 pathlint catalog list             # paths for the running OS
 pathlint catalog list --all       # every per-OS field
 pathlint catalog list --names-only
+
+# Find a command's provenance and uninstall hint
+pathlint where lazygit            # who installed this binary?
 ```
 
 ## `pathlint.toml` (minimal example)
@@ -128,6 +131,18 @@ command = "gcc"
 prefer  = ["mingw", "msys"]
 avoid   = ["strawberry"]
 os      = ["windows"]
+```
+
+Add `kind = "executable"` to also verify the resolved path is an
+actual executable file — catches the case where a directory of the
+same name shadows the binary, or where the file the symlink points
+at has gone missing:
+
+```toml
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
 ```
 
 No `[source.*]` section is needed for any of the names above —

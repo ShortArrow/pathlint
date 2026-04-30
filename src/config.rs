@@ -49,6 +49,25 @@ pub struct Expectation {
 
     #[serde(default)]
     pub optional: bool,
+
+    /// R2 — shape check on the resolved path. When set, pathlint
+    /// verifies the resolved file matches the expected kind in
+    /// addition to the source check. See PRD §7.6.
+    #[serde(default)]
+    pub kind: Option<Kind>,
+}
+
+/// Shape vocabulary for `[[expect]] kind = ...`. Only `executable`
+/// today; deliberately kept minimal so we can grow it on real
+/// demand instead of OS-specific permutations of `script` /
+/// `binary` / `dll` / `wrapper`.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    /// The resolved path must be an executable file: not a
+    /// directory, not a broken symlink, and on Unix have at least
+    /// one `+x` mode bit set.
+    Executable,
 }
 
 /// A `[source.<name>]` definition. Each per-OS field is an optional
@@ -70,6 +89,14 @@ pub struct SourceDef {
     /// not separately set.
     #[serde(default)]
     pub unix: Option<String>,
+    /// R4 — shell command template that uninstalls a binary served
+    /// by this source. The substring `{bin}` is substituted with
+    /// the resolved binary's stem (filename without extension).
+    /// Used by `pathlint where`. Leave unset for sources where
+    /// uninstall is not a meaningful single command (e.g. shim
+    /// layers, system_*).
+    #[serde(default)]
+    pub uninstall_command: Option<String>,
 }
 
 impl SourceDef {
@@ -106,6 +133,10 @@ impl SourceDef {
             linux: override_with.linux.clone().or_else(|| self.linux.clone()),
             termux: override_with.termux.clone().or_else(|| self.termux.clone()),
             unix: override_with.unix.clone().or_else(|| self.unix.clone()),
+            uninstall_command: override_with
+                .uninstall_command
+                .clone()
+                .or_else(|| self.uninstall_command.clone()),
         }
     }
 }
@@ -219,5 +250,43 @@ require_catalog = 5
         let cfg = Config::parse_toml("").unwrap();
         assert_eq!(cfg.catalog_version, None);
         assert_eq!(cfg.require_catalog, None);
+    }
+
+    #[test]
+    fn kind_executable_parses() {
+        let cfg = Config::parse_toml(
+            r#"
+[[expect]]
+command = "x"
+kind    = "executable"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.expectations[0].kind, Some(Kind::Executable));
+    }
+
+    #[test]
+    fn kind_unknown_value_is_a_parse_error() {
+        let err = Config::parse_toml(
+            r#"
+[[expect]]
+command = "x"
+kind    = "binary"
+"#,
+        )
+        .unwrap_err();
+        assert!(format!("{err}").contains("kind"), "{err}");
+    }
+
+    #[test]
+    fn kind_is_optional() {
+        let cfg = Config::parse_toml(
+            r#"
+[[expect]]
+command = "x"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.expectations[0].kind, None);
     }
 }

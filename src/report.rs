@@ -65,6 +65,13 @@ fn detail_line(o: &Outcome) -> Option<String> {
             o.prefer.join(", "),
         )),
         Status::NgNotFound => Some("not found on PATH".into()),
+        Status::NgNotExecutable(reason) => Some(format!(
+            "resolved: {} — not executable: {reason}",
+            o.resolved
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "<unresolved>".into()),
+        )),
         Status::Skip => Some("optional; not on PATH".into()),
         Status::NotApplicable => Some("excluded by os filter".into()),
         Status::ConfigError(msg) => Some(msg.clone()),
@@ -74,12 +81,24 @@ fn detail_line(o: &Outcome) -> Option<String> {
 fn status_tag(s: &Status, no_glyphs: bool) -> &'static str {
     match (s, no_glyphs) {
         (Status::Ok, false) => "[OK]  ",
-        (Status::NgWrongSource | Status::NgUnknownSource | Status::NgNotFound, false) => "[NG]  ",
+        (
+            Status::NgWrongSource
+            | Status::NgUnknownSource
+            | Status::NgNotFound
+            | Status::NgNotExecutable(_),
+            false,
+        ) => "[NG]  ",
         (Status::Skip, false) => "[skip]",
         (Status::NotApplicable, false) => "[n/a] ",
         (Status::ConfigError(_), false) => "[ERR] ",
         (Status::Ok, true) => "OK   ",
-        (Status::NgWrongSource | Status::NgUnknownSource | Status::NgNotFound, true) => "NG   ",
+        (
+            Status::NgWrongSource
+            | Status::NgUnknownSource
+            | Status::NgNotFound
+            | Status::NgNotExecutable(_),
+            true,
+        ) => "NG   ",
         (Status::Skip, true) => "skip ",
         (Status::NotApplicable, true) => "n/a  ",
         (Status::ConfigError(_), true) => "ERR  ",
@@ -89,7 +108,10 @@ fn status_tag(s: &Status, no_glyphs: bool) -> &'static str {
 pub fn is_failure(status: &Status) -> bool {
     matches!(
         status,
-        Status::NgWrongSource | Status::NgUnknownSource | Status::NgNotFound
+        Status::NgWrongSource
+            | Status::NgUnknownSource
+            | Status::NgNotFound
+            | Status::NgNotExecutable(_)
     )
 }
 
