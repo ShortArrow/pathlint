@@ -130,6 +130,18 @@ avoid   = ["strawberry"]
 os      = ["windows"]
 ```
 
+Add `kind = "executable"` to also verify the resolved path is an
+actual executable file — catches the case where a directory of the
+same name shadows the binary, or where the file the symlink points
+at has gone missing:
+
+```toml
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
+```
+
 No `[source.*]` section is needed for any of the names above —
 they're all in the built-in catalog. The whole file is the user's
 intent.

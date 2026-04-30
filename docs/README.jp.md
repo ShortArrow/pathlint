@@ -135,6 +135,17 @@ avoid   = ["strawberry"]
 os      = ["windows"]
 ```
 
+`kind = "executable"` を足せば、resolve したパスが実際に実行可能
+ファイルかも検証する — 同名のディレクトリがバイナリを覆い隠した
+場合や、symlink の先が消えた場合などを捕まえる：
+
+```toml
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
+```
+
 上の例で参照している source 名はすべて組み込みカタログにあるので、
 `[source.*]` セクションは 1 つも書かない。ファイル全体がユーザーの
 意図そのもの。

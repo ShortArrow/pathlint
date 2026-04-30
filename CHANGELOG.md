@@ -11,6 +11,27 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+### Added
+
+- **R2 — `[[expect]] kind = "executable"`.** Verifies the
+  resolved path actually points at an executable file, in addition
+  to the source check. Catches cases where a directory of the
+  same name shadows the binary, the resolved path is a broken
+  symlink, or (on Unix) the file lacks a `+x` mode bit. Mismatches
+  surface as a new `NG (not_executable: <reason>)` status. The
+  shape check only escalates an OK to NG; an existing source
+  mismatch (NG already) is left alone so users don't get two
+  diagnostics for the same line.
+- PRD redefined around four roles (R1 resolve order, R2 existence
+  & shape, R3 PATH hygiene, R4 provenance) with a new
+  subcommand-to-role map at the top of §7. R5 (predicting future
+  installs) explicitly listed as a non-goal in §4.
+
+### Changed
+
+- (Schema) `[[expect]]` gains an optional `kind` field
+  (`"executable"` only). Existing rules without `kind` keep working.
+
 ## [0.0.3] - 2026-04-30
 
 ### Added
