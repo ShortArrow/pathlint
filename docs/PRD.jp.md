@@ -333,9 +333,28 @@ unix    = "$HOME/.local/bin"
 
 # ---- 多言語バージョンマネージャ ----
 
+# キャッチオールエイリアス: mise が出す全バイナリ（shims + installs）
+# にマッチ。「どの層から来たかは問わない」ルール用に残す。
 [source.mise]
+description = "any binary served by mise (alias matching shims + installs)"
 windows = "$LocalAppData/mise"
 unix    = "$HOME/.local/share/mise"
+
+# 多くのルールでこれを推奨。`mise activate` がシェルから
+# PATH の先頭に付ける shim 層。
+[source.mise_shims]
+description = "mise shim layer"
+windows = "$LocalAppData/mise/shims"
+unix    = "$HOME/.local/share/mise/shims"
+
+# ランタイム別の install ディレクトリ。mise が PATH 書き換え
+# (shim ではない) で activate するときにここに直接バイナリが現れる。
+# プラグイン (cargo-*, npm-*, ...) がインストールしたバイナリも
+# `installs/<plugin>/<ver>/bin` 配下にある。
+[source.mise_installs]
+description = "mise per-runtime install dirs"
+windows = "$LocalAppData/mise/installs"
+unix    = "$HOME/.local/share/mise/installs"
 
 [source.volta]
 windows = "$LocalAppData/Volta"
@@ -526,8 +545,29 @@ Options（global）:
 
 - **同じ source の複数インストール先。** `mise` はバイナリを
   `mise/shims/` と `mise/installs/<lang>/<ver>/bin/` の両方に置く。
-  現状は両方とも「mise 由来」と扱う。これで十分か、
-  `mise_shims` / `mise_installs` に分けるべきか。
+  *(0.0.3 で解決 — `mise` / `mise_shims` / `mise_installs` の 3 層
+  に分割。0.0.3 以前のルールが壊れないよう、キャッチオールの
+  `mise` も残してある。)*
+- **mise プラグイン経由のバイナリの帰属。** mise のプラグイン経由
+  でインストールしたバイナリは `mise/installs/<plugin>/<ver>/bin/<bin>`
+  に置かれ、`<plugin>` が上流のインストーラ名（`cargo-foo`、
+  `npm-google-gemini-cli`）を含むことが多い。pathlint は現状これを
+  常に `mise_installs` とラベル付けし、`cargo` / `npm_global` には
+  しない。意味的にはユーザーが cargo 経由で入れた認識でも。0.0.4
+  以降の議題: プラグインのセグメントを解析して
+  `mise_installs[cargo]` のような複合ラベルにできるか。0.0.3 では
+  対象外。
+- **mise activate vs shims モード。** `mise activate` は PATH に
+  `mise/shims/` を前置する形と、`installs/<lang>/<ver>/bin/` を直接
+  PATH に書き換える形の 2 通りある。それぞれ resolve 結果は
+  `mise_shims` か `mise_installs` のどちらかに当たる。ユーザーが
+  どちらを使っているか expect 側で意識する（README のガイドを参照）。
+  pathlint がモードを自動判別することは目指さない。
+- **`MISE_DATA_DIR` / `XDG_DATA_HOME`.** mise はこれらの env var で
+  ツリーの場所を変えられる。組み込みカタログはデフォルトの
+  `$LocalAppData/mise` (Windows) / `$HOME/.local/share/mise` (Unix)
+  を埋め込んでいる。カスタム配置のユーザーは `pathlint.toml` 側
+  で `[source.mise]`（および兄弟 2 つ）を上書きする。
 - **カタログの可視化。** 組み込みカタログを `pathlint catalog list`
   で参照できるようにすべきか。実装は trivial だがサブコマンドが増
   える。*(0.0.x で解決済み — `pathlint catalog list` を提供。)*

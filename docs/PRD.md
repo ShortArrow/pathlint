@@ -347,9 +347,28 @@ unix    = "$HOME/.local/bin"
 
 # ---- Polyglot version managers ----
 
+# Catch-all alias: matches anything served by mise (shims OR
+# installs). Kept for rules that don't care which layer.
 [source.mise]
+description = "any binary served by mise (alias matching shims + installs)"
 windows = "$LocalAppData/mise"
 unix    = "$HOME/.local/share/mise"
+
+# Recommended for most rules — mise's shim layer is what shells
+# `mise activate` front-loads onto PATH.
+[source.mise_shims]
+description = "mise shim layer"
+windows = "$LocalAppData/mise/shims"
+unix    = "$HOME/.local/share/mise/shims"
+
+# Per-runtime install dirs. Hit either when mise activates a
+# runtime via PATH-rewriting (no shim layer in front), or when a
+# plugin (cargo-*, npm-*, ...) ships its own bin under
+# `installs/<plugin>/<ver>/bin`.
+[source.mise_installs]
+description = "mise per-runtime install dirs"
+windows = "$LocalAppData/mise/installs"
+unix    = "$HOME/.local/share/mise/installs"
 
 [source.volta]
 windows = "$LocalAppData/Volta"
@@ -541,9 +560,30 @@ Options (global):
 ## 16. Open questions
 
 - **Multiple installs of the same source.** `mise` puts binaries in
-  both `mise/shims/` and `mise/installs/<lang>/<ver>/bin/`. The
-  current rule treats both as "from mise". Is that good enough, or
-  should sources be split into `mise_shims` / `mise_installs`?
+  both `mise/shims/` and `mise/installs/<lang>/<ver>/bin/`.
+  *(Resolved in 0.0.3 — split into `mise`, `mise_shims`, and
+  `mise_installs`. The catch-all `mise` is kept so rules written
+  before 0.0.3 still match.)*
+- **mise plugin attribution.** A binary installed via mise's plugin
+  system lives at `mise/installs/<plugin>/<ver>/bin/<bin>`, where
+  `<plugin>` often encodes the upstream installer (`cargo-foo`,
+  `npm-google-gemini-cli`). pathlint currently labels these as
+  `mise_installs`, never as `cargo` / `npm_global`, even when
+  semantically the user installed them through cargo. A 0.0.4 idea
+  is to inspect the plugin segment and surface a hybrid label such
+  as `mise_installs[cargo]`. Out of scope for 0.0.3.
+- **mise activate vs shims.** `mise activate` can either prepend
+  `mise/shims/` to PATH or rewrite PATH with the per-runtime
+  `installs/<lang>/<ver>/bin/` directly. The two modes resolve to
+  different sources (`mise_shims` vs `mise_installs`). Users
+  should pick which they expect — see the README for guidance —
+  rather than expecting pathlint to detect the mode.
+- **`MISE_DATA_DIR` / `XDG_DATA_HOME`.** mise honors both env vars
+  for the location of its tree. The built-in catalog hardcodes
+  the default `$LocalAppData/mise` (Windows) and
+  `$HOME/.local/share/mise` (Unix). Users with a custom location
+  override `[source.mise]` (and the two siblings) in their own
+  `pathlint.toml`.
 - **Catalog distribution.** Should the embedded catalog be exposed
   via `pathlint catalog list` for discovery? Trivial to add but adds
   a subcommand. *(Resolved in 0.0.x — `pathlint catalog list` ships.)*

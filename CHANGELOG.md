@@ -11,6 +11,29 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+### Added
+
+- **mise overhaul.** The single `mise` source now has two
+  finer-grained siblings, so rules can be specific about which
+  layer of mise served the binary:
+  - `mise_shims` — `mise/shims/<bin>` (the layer `mise activate`
+    front-loads onto PATH; recommended for most rules).
+  - `mise_installs` — `mise/installs/<tool>/<ver>/bin/<bin>` (used
+    when mise activates a runtime via PATH-rewriting, or when a
+    plugin like `cargo-*` / `npm-*` installs through mise).
+- The catch-all `mise` source is kept as an alias matching either
+  layer, so rules written for 0.0.2 keep working without edits.
+- `pathlint init` starter files now reference `mise_shims` in their
+  example expectations (Windows / macOS / Linux), nudging new
+  users toward the more specific source.
+- README and PRD gain a "Working with mise" section explaining
+  shims vs installs, plus how to override the catalog when mise
+  lives in a non-standard location (`MISE_DATA_DIR` /
+  `XDG_DATA_HOME`).
+- PRD §16 refreshed: open question on shim/install split is now
+  marked resolved; new questions added on mise plugin attribution
+  (0.0.4 candidate) and `mise activate` mode handling.
+
 ## [0.0.2] - 2026-04-30
 
 The first release that does anything. `0.0.1` was a skeleton and
