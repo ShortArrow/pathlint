@@ -6,7 +6,9 @@ use anyhow::Result;
 
 use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
-use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs};
+use crate::cli::{
+    CatalogCommand, CatalogListArgs, CheckArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs,
+};
 use crate::config::Config;
 use crate::doctor::{self, Diagnostic, Severity};
 use crate::format;
@@ -34,15 +36,16 @@ fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<String> {
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
-    match cli.command {
+    let check_args = match cli.command {
         Some(Command::Init(args)) => return execute_init(&args),
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
         }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
         Some(Command::Where(args)) => return execute_where(&args, &cli.global),
-        Some(Command::Check) | None => {}
-    }
+        Some(Command::Check(args)) => args,
+        None => CheckArgs::default(),
+    };
     let rules_path = locate_rules(cli.global.rules.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
@@ -83,6 +86,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         no_glyphs: cli.global.no_glyphs,
         verbose: cli.global.verbose,
         quiet: cli.global.quiet,
+        explain: check_args.explain,
     };
     print!("{}", report::render(&outcomes, style));
 

@@ -485,6 +485,76 @@ require_catalog = 9999
 }
 
 #[test]
+fn explain_flag_expands_ng_into_multiline_diagnosis_and_hint() {
+    // `pathlint check --explain` swaps the one-line NG detail for a
+    // multi-line breakdown. The new rows must include `diagnosis:`,
+    // `hint:`, and a `pathlint where ...` follow-up suggestion so the
+    // user knows what to do next.
+    let tmp = tempfile::tempdir().unwrap();
+    let bad_dir = tmp.path().join("bad");
+    stub(&bad_dir, "tooly");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[[expect]]
+command = "tooly"
+prefer  = ["good"]
+
+[source.good]
+{key} = "{good}"
+
+[source.bad]
+{key} = "{bad}"
+"#,
+        good = "/this/path/does/not/exist",
+        bad = bad_dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run_with_args(&rules, &join_path(&[&bad_dir]), &["check", "--explain"]);
+    assert_eq!(code, 1, "stdout was: {stdout}");
+    assert!(stdout.contains("diagnosis:"), "stdout was: {stdout}");
+    assert!(stdout.contains("hint:"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("pathlint where tooly"),
+        "stdout was: {stdout}"
+    );
+}
+
+#[test]
+fn explain_off_keeps_one_line_detail_for_ng() {
+    // Sanity: without --explain the detail is still the one-liner.
+    let tmp = tempfile::tempdir().unwrap();
+    let bad_dir = tmp.path().join("bad");
+    stub(&bad_dir, "tooly");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[[expect]]
+command = "tooly"
+prefer  = ["good"]
+
+[source.good]
+{key} = "{good}"
+
+[source.bad]
+{key} = "{bad}"
+"#,
+        good = "/this/path/does/not/exist",
+        bad = bad_dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (_code, stdout, _) = run(&rules, &join_path(&[&bad_dir]));
+    assert!(
+        !stdout.contains("diagnosis:"),
+        "explain block leaked into default output: {stdout}"
+    );
+}
+
+#[test]
 fn kind_executable_passes_for_real_stub() {
     // The stub() helper writes a real executable file; kind =
     // "executable" should not change OK to NG for it.

@@ -19,7 +19,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Lint PATH against expectations (default).
-    Check,
+    Check(CheckArgs),
 
     /// Write a starter `pathlint.toml` in the current directory.
     Init(InitArgs),
@@ -38,6 +38,16 @@ pub enum Command {
     /// Show where a command resolves from, which sources it matches,
     /// and the most plausible uninstall command.
     Where(WhereArgs),
+}
+
+#[derive(Debug, clap::Args, Default)]
+pub struct CheckArgs {
+    /// Expand each NG outcome into a multi-line breakdown — resolved
+    /// path, matched sources, prefer / avoid lists, the underlying
+    /// diagnosis, and a follow-up hint. Use this when the one-line
+    /// detail is not enough to figure out why a rule failed.
+    #[arg(long)]
+    pub explain: bool,
 }
 
 #[derive(Debug, clap::Args)]
