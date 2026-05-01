@@ -112,6 +112,11 @@ pathlint doctor
 
 # コマンドがどこから来たか + uninstall コマンドのヒント
 pathlint where lazygit
+pathlint where lazygit --json     # 0.0.6+: 機械可読出力
+
+# CI 用に doctor の診断を絞る
+pathlint doctor --exclude shortenable,missing
+pathlint doctor --include duplicate,malformed
 ```
 
 ## `pathlint.toml`（最小例）

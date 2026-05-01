@@ -33,7 +33,7 @@ pub enum Command {
     /// Lint the PATH itself (duplicates, missing dirs, env-var
     /// shortening candidates, Windows 8.3 short names, malformed
     /// entries). Independent of `[[expect]]` rules.
-    Doctor,
+    Doctor(DoctorArgs),
 
     /// Show where a command resolves from, which sources it matches,
     /// and the most plausible uninstall command.
@@ -44,6 +44,29 @@ pub enum Command {
 pub struct WhereArgs {
     /// The command to look up on PATH.
     pub command: String,
+
+    /// Emit machine-readable JSON instead of the default human
+    /// output. The schema is described in the README; provenance
+    /// and uninstall objects use a `kind` discriminator so consumers
+    /// can match on it.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct DoctorArgs {
+    /// Only show diagnostics whose kind matches one of the listed
+    /// values. Mutually exclusive with `--exclude`. Accepts a comma
+    /// or repeated flag form: `--include duplicate,missing` or
+    /// `--include duplicate --include missing`.
+    #[arg(long, value_delimiter = ',', conflicts_with = "exclude")]
+    pub include: Vec<String>,
+
+    /// Suppress diagnostics whose kind matches one of the listed
+    /// values. Affects exit code too: an excluded `Malformed` no
+    /// longer escalates to exit 1.
+    #[arg(long, value_delimiter = ',')]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]

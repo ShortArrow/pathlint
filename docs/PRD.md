@@ -272,6 +272,15 @@ pathlint --quiet                      # only print failures
     in PATH. Output enumerates every shim and install entry so
     the user can pick which to remove.
 - `--quiet` hides warns; errors always print.
+- (0.0.6+) `--include <kind>[,<kind>...]` shows only the named
+  kinds; `--exclude <kind>[,<kind>...]` suppresses them. The two
+  flags are mutually exclusive. Filter values are the snake-case
+  kind names (`duplicate` / `missing` / `shortenable` /
+  `trailing_slash` / `case_variant` / `short_name` /
+  `malformed` / `mise_activate_both`); an unknown name is
+  reported as a config error (exit 2). The exit code reflects
+  the *kept* set, so `--exclude malformed` genuinely lets a run
+  pass even when the underlying analysis would have escalated.
 
 ### 7.6 `[[expect]] kind = "executable"` (R2, implemented in 0.0.4)
 
@@ -322,6 +331,32 @@ Plugin provenance is a path-segment heuristic — a R4-only label,
 never a source match. `prefer = ["cargo"]` in `[[expect]]` will
 NOT match a binary under `mise/installs/cargo-foo/...` unless the
 user explicitly defines a `[source.X]` for that prefix.
+
+(0.0.6+) `--json` switches the output to a single
+machine-readable object. The schema is stable for `0.0.x`:
+
+```json
+{
+  "found": true,
+  "command": "lazygit",
+  "resolved": "/home/u/.local/share/mise/installs/cargo-lazygit/0.61/bin/lazygit",
+  "matched_sources": ["mise_installs", "mise"],
+  "uninstall": {
+    "kind": "command",
+    "command": "mise uninstall cargo:lazygit  (best-guess; verify with `mise plugins ls`)"
+  },
+  "provenance": {
+    "kind": "mise_installer_plugin",
+    "installer": "cargo",
+    "plugin_segment": "cargo-lazygit"
+  }
+}
+```
+
+`uninstall.kind` is `"command"`, `"no_template"` (carries
+`source`), or `"no_source"`. `provenance` is `null` when no
+heuristic fired. NotFound emits `{ "command": "...", "found":
+false }` and exits 1.
 
 Naming: `where` overlaps with Windows `where.exe`, but pathlint's
 output is provenance-focused and clearly distinct in style. If the

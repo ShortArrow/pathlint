@@ -147,3 +147,100 @@ fn where_says_no_source_when_resolved_path_is_outside_catalog() {
         "stdout: {stdout}"
     );
 }
+
+// ---- --json (0.0.6+) ----------------------------------------
+
+fn run_where_args(
+    rules: &Path,
+    path_value: &str,
+    extra_before: &[&str],
+    command: &str,
+) -> (i32, String, String) {
+    let mut cmd = Command::new(BIN);
+    cmd.arg("--rules")
+        .arg(rules)
+        .arg("where")
+        .args(extra_before)
+        .arg(command)
+        .env("PATH", path_value)
+        .env_remove("XDG_CONFIG_HOME");
+    let out = cmd.output().expect("failed to run pathlint binary");
+    let code = out.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    (code, stdout, stderr)
+}
+
+#[test]
+fn where_json_found_carries_command_and_kind_discriminators() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("home_cargo_bin");
+    stub(&dir, "lazygit");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[source.cargo]
+{key} = "{path}"
+uninstall_command = "cargo uninstall {{bin}}"
+"#,
+        path = dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run_where_args(&rules, &join_path(&[&dir]), &["--json"], "lazygit");
+    assert_eq!(code, 0, "stdout: {stdout}");
+
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert_eq!(v["found"], true);
+    assert_eq!(v["command"], "lazygit");
+    assert!(v["resolved"].is_string());
+    assert_eq!(v["matched_sources"][0], "cargo");
+    assert_eq!(v["uninstall"]["kind"], "command");
+    assert_eq!(v["uninstall"]["command"], "cargo uninstall lazygit");
+    // No mise plugin here, so provenance is null.
+    assert!(v["provenance"].is_null());
+}
+
+#[test]
+fn where_json_not_found_emits_compact_object_with_exit_1() {
+    let tmp = tempfile::tempdir().unwrap();
+    let empty = tmp.path().join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let rules = write_rules(tmp.path(), "");
+
+    let (code, stdout, _) = run_where_args(
+        &rules,
+        &join_path(&[&empty]),
+        &["--json"],
+        "ghost_definitely_no_such_xyz",
+    );
+    assert_eq!(code, 1, "stdout: {stdout}");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert_eq!(v["found"], false);
+    assert_eq!(v["command"], "ghost_definitely_no_such_xyz");
+    assert!(v.get("resolved").is_none());
+}
+
+#[test]
+fn where_json_uninstall_no_template_uses_kind_field() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("aqua_dir");
+    stub(&dir, "aqua_tool");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[source.aqua_local]
+{key} = "{path}"
+"#,
+        path = dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run_where_args(&rules, &join_path(&[&dir]), &["--json"], "aqua_tool");
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert_eq!(v["uninstall"]["kind"], "no_template");
+    assert_eq!(v["uninstall"]["source"], "aqua_local");
+}
