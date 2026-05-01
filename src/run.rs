@@ -134,12 +134,41 @@ fn format_diagnostic(d: &Diagnostic, entries: &[String]) -> String {
         }
         Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
         Kind::Malformed { reason } => format!("malformed entry: {reason}"),
+        Kind::MiseActivateBoth {
+            shim_indices,
+            install_indices,
+        } => return format_mise_activate_both(d, entries, shim_indices, install_indices),
     };
     format!(
         "{tag} #{idx:>3} {entry}\n      {detail}",
         idx = d.index,
         entry = d.entry
     )
+}
+
+fn format_mise_activate_both(
+    d: &Diagnostic,
+    entries: &[String],
+    shim_indices: &[usize],
+    install_indices: &[usize],
+) -> String {
+    let tag = "[warn]";
+    let mut buf =
+        format!("{tag} mise activate exposes both shim and install layers (PATH order matters)\n");
+    buf.push_str("      shims:\n");
+    for &i in shim_indices {
+        let entry = entries.get(i).cloned().unwrap_or_default();
+        buf.push_str(&format!("        #{i:>3} {entry}\n"));
+    }
+    buf.push_str("      installs:\n");
+    for &i in install_indices {
+        let entry = entries.get(i).cloned().unwrap_or_default();
+        buf.push_str(&format!("        #{i:>3} {entry}\n"));
+    }
+    // strip the trailing newline so the outer renderer can add its own
+    buf.pop();
+    let _ = d; // keep parameter for symmetry with other format funcs
+    buf
 }
 
 fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {
