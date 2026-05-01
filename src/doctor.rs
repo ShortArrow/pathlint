@@ -27,13 +27,32 @@ pub enum Severity {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
-    Duplicate { first_index: usize },
+    Duplicate {
+        first_index: usize,
+    },
     Missing,
-    Shortenable { suggestion: String },
+    Shortenable {
+        suggestion: String,
+    },
     TrailingSlash,
-    CaseVariant { canonical: String },
+    CaseVariant {
+        canonical: String,
+    },
     ShortName,
-    Malformed { reason: String },
+    Malformed {
+        reason: String,
+    },
+    /// PATH exposes both `mise/shims/` and `mise/installs/`
+    /// directories at the same time. Usually means `mise activate`
+    /// is configured in both shim and PATH-rewrite modes, or stale
+    /// entries from a past configuration are still in PATH.
+    /// `shim_indices` and `install_indices` list which entries fall
+    /// in each layer; the `Diagnostic.index` points at the first
+    /// shim entry for sort stability.
+    MiseActivateBoth {
+        shim_indices: Vec<usize>,
+        install_indices: Vec<usize>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +95,7 @@ pub fn analyze(entries: &[String], os: Os) -> Vec<Diagnostic> {
         .collect();
     add_duplicate_diagnostics(&normalized, entries, &mut out);
     add_case_variant_diagnostics(entries, &mut out);
+    add_mise_activate_both_diagnostic(&normalized, entries, &mut out);
     out
 }
 
@@ -268,6 +288,46 @@ fn add_duplicate_diagnostics(normalized: &[String], raw: &[String], out: &mut Ve
     }
 }
 
+fn add_mise_activate_both_diagnostic(
+    normalized: &[String],
+    raw: &[String],
+    out: &mut Vec<Diagnostic>,
+) {
+    // Look for entries that contain `mise/shims` vs `mise/installs`.
+    // We deliberately don't mine the catalog here — these substrings
+    // are the well-known mise layout, and depending on the catalog
+    // (which the user can override) for a hygiene check would be
+    // surprising.
+    let mut shim_indices: Vec<usize> = Vec::new();
+    let mut install_indices: Vec<usize> = Vec::new();
+    for (i, n) in normalized.iter().enumerate() {
+        if n.contains("/mise/shims") {
+            shim_indices.push(i);
+        }
+        // `/mise/installs` matches both the parent dir and any
+        // `installs/<runtime>/<ver>/bin` underneath it. Both forms
+        // count as "the install layer is present".
+        if n.contains("/mise/installs") {
+            install_indices.push(i);
+        }
+    }
+    if shim_indices.is_empty() || install_indices.is_empty() {
+        return;
+    }
+    // Anchor the diagnostic at the first shim entry; sort stays
+    // stable that way regardless of how the layers are interleaved.
+    let anchor = shim_indices[0];
+    out.push(Diagnostic {
+        index: anchor,
+        entry: raw[anchor].clone(),
+        severity: Severity::Warn,
+        kind: Kind::MiseActivateBoth {
+            shim_indices,
+            install_indices,
+        },
+    });
+}
+
 fn add_case_variant_diagnostics(raw: &[String], out: &mut Vec<Diagnostic>) {
     // Two PATH entries can have identical normalized form but differ
     // verbatim (case difference, mixed slashes). The plain Duplicate
@@ -434,5 +494,84 @@ mod tests {
         // fire because Path::new("") exists() is false but we don't
         // count this as a useful diagnostic.
         let _ = kinds(&diags);
+    }
+
+    // ---- MiseActivateBoth (R3 / 0.0.5+) ------------------------
+
+    #[test]
+    fn mise_activate_both_fires_when_shim_and_install_coexist() {
+        let e = entries(&[
+            "/home/u/.local/share/mise/shims",
+            "/home/u/.local/share/mise/installs/python/3.14/bin",
+            "/usr/bin",
+        ]);
+        let diags = analyze(&e, Os::Linux);
+        let mab: Vec<_> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::MiseActivateBoth { .. }))
+            .collect();
+        assert_eq!(mab.len(), 1);
+        if let Kind::MiseActivateBoth {
+            shim_indices,
+            install_indices,
+        } = &mab[0].kind
+        {
+            assert_eq!(shim_indices, &vec![0]);
+            assert_eq!(install_indices, &vec![1]);
+        } else {
+            panic!("kind mismatch");
+        }
+    }
+
+    #[test]
+    fn mise_activate_both_does_not_fire_when_only_shims_present() {
+        let e = entries(&["/home/u/.local/share/mise/shims", "/usr/bin"]);
+        let diags = analyze(&e, Os::Linux);
+        assert!(
+            !diags
+                .iter()
+                .any(|d| matches!(d.kind, Kind::MiseActivateBoth { .. }))
+        );
+    }
+
+    #[test]
+    fn mise_activate_both_does_not_fire_when_only_installs_present() {
+        let e = entries(&[
+            "/home/u/.local/share/mise/installs/python/3.14/bin",
+            "/usr/bin",
+        ]);
+        let diags = analyze(&e, Os::Linux);
+        assert!(
+            !diags
+                .iter()
+                .any(|d| matches!(d.kind, Kind::MiseActivateBoth { .. }))
+        );
+    }
+
+    #[test]
+    fn mise_activate_both_collects_multiple_install_entries() {
+        let e = entries(&[
+            "/home/u/.local/share/mise/shims",
+            "/home/u/.local/share/mise/installs/python/3.14/bin",
+            "/home/u/.local/share/mise/installs/node/25.9.0/bin",
+            "/usr/bin",
+        ]);
+        let diags = analyze(&e, Os::Linux);
+        let kind = diags
+            .iter()
+            .find_map(|d| {
+                if let Kind::MiseActivateBoth {
+                    shim_indices,
+                    install_indices,
+                } = &d.kind
+                {
+                    Some((shim_indices.clone(), install_indices.clone()))
+                } else {
+                    None
+                }
+            })
+            .expect("MiseActivateBoth must fire");
+        assert_eq!(kind.0, vec![0]);
+        assert_eq!(kind.1, vec![1, 2]);
     }
 }

@@ -265,6 +265,12 @@ pathlint --quiet                      # only print failures
   - Shortenable entries — could be written using a known env var
     (`%LocalAppData%` / `%UserProfile%` / `$HOME` etc.); the
     suggestion preserves the original case + slash style.
+  - (0.0.5+) `MiseActivateBoth` — PATH exposes both `mise/shims/`
+    and `mise/installs/` simultaneously. Usually means
+    `mise activate` is configured in both shim and PATH-rewrite
+    modes, or stale entries from a past configuration are still
+    in PATH. Output enumerates every shim and install entry so
+    the user can pick which to remove.
 - `--quiet` hides warns; errors always print.
 
 ### 7.6 `[[expect]] kind = "executable"` (R2, implemented in 0.0.4)
@@ -289,23 +295,33 @@ Vocabulary stays minimal in 0.0.4: `executable` only. Distinguishing
 `.exe`, Unix shebangs) and would balloon the matrix without
 clear win.
 
-### 7.7 `pathlint where <command>` (R4, implemented in 0.0.4)
+### 7.7 `pathlint where <command>` (R4, implemented in 0.0.4; plugin provenance in 0.0.5)
 
 Surfaces what `check` already computes internally: for the named
 command, print
 
 - the resolved full path (the one R1 evaluates against)
 - every matched source, with the most specific listed first
-- a single best-guess uninstall command, derived from the matched
-  source's catalog entry (e.g. `mise uninstall cargo:lazygit` when
-  the path matches `mise/installs/cargo-lazygit/...`; falls back
-  to `cargo uninstall lazygit` for `~/.cargo/bin/lazygit`)
-- the next-priority source if PATH order changed (so the user
-  knows what would win after an uninstall)
+- (0.0.5+) a `provenance:` line when the path is under
+  `mise/installs/<segment>/...` and `<segment>` starts with
+  `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`. The provenance
+  carries both the installer name and the raw plugin segment, so
+  the user can verify with `mise plugins ls`.
+- a single best-guess uninstall command. When provenance is
+  present (0.0.5+) the hint is `mise uninstall <installer>:<rest>`
+  with a "best-guess; verify" caveat, because the segment-to-id
+  mapping is lossy. Otherwise the hint comes from the matched
+  source's `uninstall_command` template.
 
 The uninstall hint is a string the user runs themselves; pathlint
-never executes it. When the catalog cannot suggest a command the
-output says so explicitly rather than guessing.
+never executes it. When neither provenance nor the catalog can
+suggest a command the output says so explicitly rather than
+guessing.
+
+Plugin provenance is a path-segment heuristic — a R4-only label,
+never a source match. `prefer = ["cargo"]` in `[[expect]]` will
+NOT match a binary under `mise/installs/cargo-foo/...` unless the
+user explicitly defines a `[source.X]` for that prefix.
 
 Naming: `where` overlaps with Windows `where.exe`, but pathlint's
 output is provenance-focused and clearly distinct in style. If the
@@ -703,24 +719,25 @@ Tagged with the role(s) each touches.
   hints get sharper when the package manager confirms ownership.
 - **[R1, R4] mise plugin attribution.** A binary installed via
   mise's plugin system lives at `mise/installs/<plugin>/<ver>/bin/<bin>`,
-  where `<plugin>` often encodes the upstream installer
-  (`cargo-foo`, `npm-google-gemini-cli`). pathlint currently labels
-  these as `mise_installs`, never as `cargo` / `npm_global`, even
-  when semantically the user installed them through cargo. The
-  question is whether to mix "where the file lives" (catalog) and
-  "how it got there" (provenance) — early thinking says R4 is the
-  right home for this, not R1's catalog. Revisit when R4 is
-  implemented.
+  where `<plugin>` often encodes the upstream installer.
+  *(Resolved in 0.0.5 — R4 emits a `provenance:` line and a
+  `mise uninstall <installer>:<rest>` hint when the segment starts
+  with `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`. R1's catalog
+  is left untouched; this stays a pure provenance heuristic,
+  never a source label, so `prefer = ["cargo"]` does NOT match a
+  `mise/installs/cargo-foo/...` binary. Users who want such
+  matching can still write a custom `[source.X]` for the
+  `mise/installs/cargo-` substring.)*
 
 ### R3 — PATH hygiene
 
 - **[R3] mise activate vs shims.** `mise activate` can either
   prepend `mise/shims/` to PATH or rewrite PATH with the
-  per-runtime `installs/<lang>/<ver>/bin/` directly. The two modes
-  resolve to different sources (`mise_shims` vs `mise_installs`).
-  Users pick which they expect rather than pathlint detecting the
-  mode. R3 may eventually warn when both layers appear in PATH
-  simultaneously.
+  per-runtime `installs/<lang>/<ver>/bin/` directly. *(0.0.5
+  resolved the "warn when both layers coexist" half — `pathlint
+  doctor` now emits a `MiseActivateBoth` diagnostic listing every
+  shim entry alongside every install entry. Users still pick a
+  mode for `[[expect]]` rules; pathlint does not auto-detect.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP. R3 might
   expose this differently from R1: doctor could compare what the

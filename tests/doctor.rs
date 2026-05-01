@@ -148,3 +148,28 @@ fn doctor_quiet_hides_warnings_but_keeps_errors() {
         "quiet mode must hide warns: {stdout}"
     );
 }
+
+#[test]
+fn doctor_warns_when_mise_shim_and_install_coexist() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mise_root = tmp.path().join("mise");
+    let shims = mise_root.join("shims");
+    let installs_python = mise_root
+        .join("installs")
+        .join("python")
+        .join("3.14")
+        .join("bin");
+    fs::create_dir_all(&shims).unwrap();
+    fs::create_dir_all(&installs_python).unwrap();
+
+    let path = join_path(&[&shims, &installs_python]);
+    let (code, stdout, _) = run_doctor(&path);
+    assert_eq!(code, 0, "warn-only must exit 0");
+    assert!(
+        stdout.contains("mise activate exposes both shim and install layers"),
+        "stdout: {stdout}"
+    );
+    // Both layer headers should appear.
+    assert!(stdout.contains("shims:"), "stdout: {stdout}");
+    assert!(stdout.contains("installs:"), "stdout: {stdout}");
+}
