@@ -6,6 +6,7 @@
 //! unit-testable without an `assert_cmd`-style integration harness.
 
 use crate::doctor::{Diagnostic, Kind, Severity};
+use crate::lint::{self, Diagnosis, Outcome, Status};
 use crate::where_cmd::{Found, Provenance, UninstallHint, WhereOutcome};
 
 /// Render a single doctor diagnostic into a multi-line block
@@ -130,6 +131,52 @@ pub fn where_outcome(outcome: &WhereOutcome) -> String {
             // for `where_not_found` directly. For symmetry we
             // return an empty string so this branch is detectable.
             String::new()
+        }
+    }
+}
+
+/// Render `check` outcomes as a pretty-printed JSON array — the
+/// machine-readable counterpart of `--explain`. Each element
+/// carries the per-expectation status, resolved path (when known),
+/// the matched / prefer / avoid sets, and a tagged `diagnosis`
+/// object derived from `lint::diagnose`.
+///
+/// Schema is stable through `0.0.x`. The `diagnosis` field uses a
+/// `kind` discriminator (`"wrong_source"` / `"unknown_source"` /
+/// `"not_found"` / `"not_executable"` / `"config"`) so consumers
+/// can pattern-match instead of string-searching.
+///
+/// Pure: callers do the printing and exit-code mapping.
+pub fn check_json(outcomes: &[Outcome]) -> Result<String, serde_json::Error> {
+    let view: Vec<OutcomeView<'_>> = outcomes.iter().map(OutcomeView::from).collect();
+    serde_json::to_string_pretty(&view)
+}
+
+#[derive(serde::Serialize)]
+struct OutcomeView<'a> {
+    command: &'a str,
+    status: &'a Status,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolved: Option<String>,
+    matched_sources: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    prefer: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    avoid: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnosis: Option<Diagnosis>,
+}
+
+impl<'a> From<&'a Outcome> for OutcomeView<'a> {
+    fn from(o: &'a Outcome) -> Self {
+        OutcomeView {
+            command: &o.command,
+            status: &o.status,
+            resolved: o.resolved.as_ref().map(|p| p.display().to_string()),
+            matched_sources: &o.matched_sources,
+            prefer: &o.prefer,
+            avoid: &o.avoid,
+            diagnosis: lint::diagnose(o),
         }
     }
 }
@@ -341,6 +388,87 @@ mod tests {
         assert_eq!(v["provenance"]["kind"], "mise_installer_plugin");
         assert_eq!(v["provenance"]["installer"], "cargo");
         assert_eq!(v["provenance"]["plugin_segment"], "cargo-foo");
+    }
+
+    fn check_outcome_ok() -> Outcome {
+        Outcome {
+            command: "rg".into(),
+            status: Status::Ok,
+            resolved: Some(PathBuf::from("/home/u/.cargo/bin/rg")),
+            matched_sources: vec!["cargo".into()],
+            prefer: vec!["cargo".into()],
+            avoid: vec![],
+        }
+    }
+
+    fn check_outcome_wrong_source() -> Outcome {
+        Outcome {
+            command: "rg".into(),
+            status: Status::NgWrongSource,
+            resolved: Some(PathBuf::from("/usr/local/bin/rg")),
+            matched_sources: vec!["scoop".into()],
+            prefer: vec!["cargo".into()],
+            avoid: vec![],
+        }
+    }
+
+    #[test]
+    fn check_json_emits_array_with_status_resolved_and_diagnosis() {
+        let out = check_json(&[check_outcome_ok(), check_outcome_wrong_source()]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v[0]["command"], "rg");
+        assert_eq!(v[0]["status"], "ok");
+        assert_eq!(v[0]["resolved"], "/home/u/.cargo/bin/rg");
+        assert!(
+            v[0].get("diagnosis").is_none(),
+            "ok must not carry diagnosis"
+        );
+        assert_eq!(v[1]["status"], "ng_wrong_source");
+        assert_eq!(v[1]["diagnosis"]["kind"], "wrong_source");
+        assert_eq!(v[1]["diagnosis"]["matched"][0], "scoop");
+        assert_eq!(v[1]["diagnosis"]["prefer_missed"][0], "cargo");
+    }
+
+    #[test]
+    fn check_json_omits_empty_prefer_and_avoid_for_ok() {
+        let out = check_json(&[check_outcome_ok()]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        // prefer is non-empty for this outcome
+        assert!(v[0].get("prefer").is_some());
+        // avoid is empty -> skipped
+        assert!(v[0].get("avoid").is_none(), "empty avoid leaked");
+    }
+
+    #[test]
+    fn check_json_resolved_field_absent_when_outcome_has_no_path() {
+        let not_found = Outcome {
+            command: "ghost".into(),
+            status: Status::NgNotFound,
+            resolved: None,
+            matched_sources: vec![],
+            prefer: vec!["cargo".into()],
+            avoid: vec![],
+        };
+        let out = check_json(&[not_found]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v[0].get("resolved").is_none(), "resolved leaked: {out}");
+        assert_eq!(v[0]["diagnosis"]["kind"], "not_found");
+    }
+
+    #[test]
+    fn check_json_skip_outcome_has_no_diagnosis() {
+        let skip = Outcome {
+            command: "tooly".into(),
+            status: Status::Skip,
+            resolved: None,
+            matched_sources: vec![],
+            prefer: vec![],
+            avoid: vec![],
+        };
+        let out = check_json(&[skip]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v[0]["status"], "skip");
+        assert!(v[0].get("diagnosis").is_none());
     }
 
     #[test]

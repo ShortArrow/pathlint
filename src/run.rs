@@ -82,13 +82,18 @@ pub fn execute(cli: Cli) -> Result<u8> {
         resolve::resolve(cmd, &path_entries)
     });
 
-    let style = report::Style {
-        no_glyphs: cli.global.no_glyphs,
-        verbose: cli.global.verbose,
-        quiet: cli.global.quiet,
-        explain: check_args.explain,
-    };
-    print!("{}", report::render(&outcomes, style));
+    if check_args.json {
+        let json = format::check_json(&outcomes)?;
+        println!("{json}");
+    } else {
+        let style = report::Style {
+            no_glyphs: cli.global.no_glyphs,
+            verbose: cli.global.verbose,
+            quiet: cli.global.quiet,
+            explain: check_args.explain,
+        };
+        print!("{}", report::render(&outcomes, style));
+    }
 
     if report::has_config_error(&outcomes) {
         return Ok(2);

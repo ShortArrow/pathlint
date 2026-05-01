@@ -523,6 +523,40 @@ prefer  = ["good"]
 }
 
 #[test]
+fn check_json_emits_array_with_status_and_diagnosis_for_ng() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bad_dir = tmp.path().join("bad");
+    stub(&bad_dir, "tooly");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[[expect]]
+command = "tooly"
+prefer  = ["good"]
+
+[source.good]
+{key} = "{good}"
+
+[source.bad]
+{key} = "{bad}"
+"#,
+        good = "/this/path/does/not/exist",
+        bad = bad_dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run_with_args(&rules, &join_path(&[&bad_dir]), &["check", "--json"]);
+    assert_eq!(code, 1, "stdout: {stdout}");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    assert!(v.is_array(), "stdout: {stdout}");
+    assert_eq!(v[0]["command"], "tooly");
+    assert_eq!(v[0]["status"], "ng_wrong_source");
+    assert_eq!(v[0]["diagnosis"]["kind"], "wrong_source");
+    assert_eq!(v[0]["diagnosis"]["matched"][0], "bad");
+}
+
+#[test]
 fn explain_off_keeps_one_line_detail_for_ng() {
     // Sanity: without --explain the detail is still the one-liner.
     let tmp = tempfile::tempdir().unwrap();

@@ -12,7 +12,8 @@ use crate::expand::{expand_and_normalize, normalize};
 use crate::os_detect::Os;
 use crate::resolve::Resolution;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Status {
     Ok,
     NgWrongSource,
@@ -21,6 +22,7 @@ pub enum Status {
     /// R2 — resolved path failed `kind` shape check (directory,
     /// broken symlink, missing exec bit, etc.). Carries a short
     /// human-readable reason.
+    #[serde(rename = "ng_not_executable")]
     NgNotExecutable(String),
     Skip, // optional + not on PATH
     NotApplicable,

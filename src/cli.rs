@@ -46,8 +46,16 @@ pub struct CheckArgs {
     /// path, matched sources, prefer / avoid lists, the underlying
     /// diagnosis, and a follow-up hint. Use this when the one-line
     /// detail is not enough to figure out why a rule failed.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "json")]
     pub explain: bool,
+
+    /// Emit one JSON array describing every expectation: status,
+    /// resolved path, matched sources, prefer / avoid, and a
+    /// `diagnosis` object on failures. Schema is stable through
+    /// 0.0.x; the diagnosis uses a `kind` discriminator so consumers
+    /// can match on it. Mutually exclusive with --explain.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, clap::Args)]
