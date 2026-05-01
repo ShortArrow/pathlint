@@ -11,6 +11,24 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+### Added
+
+- **`pathlint where --json`.** Switches the output to a single
+  machine-readable JSON object so scripts can pipe pathlint into
+  jq, awk, or another tool without parsing the human format. The
+  schema (stable through `0.0.x`) uses a `kind` discriminator
+  on `uninstall` and `provenance` so consumers can pattern-match
+  rather than string-search. NotFound is `{"command":"...",
+  "found":false}` and still exits 1.
+- **`pathlint doctor --include` / `--exclude`.** Filters
+  diagnostics by snake-case kind name (`duplicate`, `missing`,
+  `shortenable`, `trailing_slash`, `case_variant`, `short_name`,
+  `malformed`, `mise_activate_both`). The two flags are mutually
+  exclusive. Filtering also affects exit code: `--exclude
+  malformed` lets a run pass even when the underlying analysis
+  would have escalated to exit 1. An unknown kind name is a
+  config error (exit 2) with the valid list printed.
+
 ## [0.0.5] - 2026-05-02
 
 ### Added

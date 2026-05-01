@@ -250,6 +250,14 @@ pathlint --quiet                      # 失敗のみ
     まだ PATH に残っているか。shim entries と install entries
     すべてを列挙して、どちらを残すかユーザーが判断できるようにする。
 - `--quiet` で warn 抑制、error は常に表示。
+- (0.0.6+) `--include <kind>[,<kind>...]` で表示対象を絞る、
+  `--exclude <kind>[,<kind>...]` で抑制。両方同時指定はエラー。
+  値は snake_case の kind 名（`duplicate` / `missing` /
+  `shortenable` / `trailing_slash` / `case_variant` /
+  `short_name` / `malformed` / `mise_activate_both`）。未知の
+  名前は config エラー (exit 2)。exit code は **絞られたあとの**
+  集合に対して計算されるので、`--exclude malformed` で
+  Error も含めて抑制すると本当に exit 0 で通る。
 
 ### 7.6 `[[expect]] kind = "executable"`（R2、0.0.4 で実装）
 
@@ -300,6 +308,31 @@ plugin provenance は path-segment の heuristic で、R4 専用の
 命名: `where` は Windows の `where.exe` と被るが、pathlint の出力は
 出自情報中心でスタイルが明らかに違う。実用上の混乱が大きすぎたら
 0.1.0 までに改名を再検討する。
+
+(0.0.6+) `--json` で出力を機械可読の単一オブジェクトに切り替え。
+スキーマは `0.0.x` 中安定：
+
+```json
+{
+  "found": true,
+  "command": "lazygit",
+  "resolved": "/home/u/.local/share/mise/installs/cargo-lazygit/0.61/bin/lazygit",
+  "matched_sources": ["mise_installs", "mise"],
+  "uninstall": {
+    "kind": "command",
+    "command": "mise uninstall cargo:lazygit  (best-guess; verify with `mise plugins ls`)"
+  },
+  "provenance": {
+    "kind": "mise_installer_plugin",
+    "installer": "cargo",
+    "plugin_segment": "cargo-lazygit"
+  }
+}
+```
+
+`uninstall.kind` は `"command"` / `"no_template"` (`source` を持つ)
+/ `"no_source"`。 `provenance` は heuristic が発火しないとき `null`。
+NotFound は `{ "command": "...", "found": false }` を出して exit 1。
 
 ### 7.8 `pathlint sort`（post-MVP）
 

@@ -107,6 +107,11 @@ pathlint catalog list --names-only
 
 # Find a command's provenance and uninstall hint
 pathlint where lazygit            # who installed this binary?
+pathlint where lazygit --json     # 0.0.6+: machine-readable output
+
+# Filter doctor diagnostics for CI
+pathlint doctor --exclude shortenable,missing
+pathlint doctor --include duplicate,malformed
 ```
 
 ## `pathlint.toml` (minimal example)
