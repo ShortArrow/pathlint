@@ -13,15 +13,25 @@ pub struct Style {
     pub explain: bool,
 }
 
+impl Style {
+    /// Should the given outcome appear in the rendered output?
+    /// Pure visibility predicate, separated so the rule (`quiet`
+    /// drops non-failures, default-mode hides NotApplicable) is
+    /// unit-testable without going through `render`.
+    pub fn should_show(&self, o: &Outcome) -> bool {
+        if self.quiet && !lint::is_failure(&o.status) {
+            return false;
+        }
+        if !self.verbose && matches!(o.status, Status::NotApplicable) {
+            return false;
+        }
+        true
+    }
+}
+
 pub fn render(outcomes: &[Outcome], style: Style) -> String {
     let mut buf = String::new();
-    for o in outcomes {
-        if style.quiet && !lint::is_failure(&o.status) {
-            continue;
-        }
-        if !style.verbose && matches!(o.status, Status::NotApplicable) {
-            continue;
-        }
+    for o in outcomes.iter().filter(|o| style.should_show(o)) {
         buf.push_str(&render_one(o, style));
         buf.push('\n');
     }
@@ -415,5 +425,66 @@ mod tests {
         let lines = explain_lines(&o);
         assert!(lines[0].contains("undefined source name: typo"));
         assert!(lines[1].contains("catalog list"));
+    }
+
+    // ---- Style::should_show ----------------------------------------
+
+    fn outcome_with(status: Status) -> Outcome {
+        Outcome {
+            command: "rg".into(),
+            status,
+            resolved: None,
+            matched_sources: vec![],
+            prefer: vec![],
+            avoid: vec![],
+        }
+    }
+
+    #[test]
+    fn should_show_default_style_keeps_ok_skip_failure_drops_not_applicable() {
+        let s = style(false);
+        assert!(s.should_show(&outcome_with(Status::Ok)));
+        assert!(s.should_show(&outcome_with(Status::Skip)));
+        assert!(s.should_show(&outcome_with(Status::NgNotFound)));
+        assert!(!s.should_show(&outcome_with(Status::NotApplicable)));
+    }
+
+    #[test]
+    fn should_show_verbose_keeps_not_applicable() {
+        let s = Style {
+            verbose: true,
+            ..style(false)
+        };
+        assert!(s.should_show(&outcome_with(Status::NotApplicable)));
+    }
+
+    #[test]
+    fn should_show_quiet_drops_non_failures() {
+        let s = Style {
+            quiet: true,
+            ..style(false)
+        };
+        assert!(!s.should_show(&outcome_with(Status::Ok)));
+        assert!(!s.should_show(&outcome_with(Status::Skip)));
+        assert!(!s.should_show(&outcome_with(Status::NotApplicable)));
+        // Failures still print under quiet — that's the whole point.
+        assert!(s.should_show(&outcome_with(Status::NgNotFound)));
+        assert!(s.should_show(&outcome_with(Status::NgWrongSource)));
+    }
+
+    #[test]
+    fn should_show_quiet_overrides_verbose_for_non_failures() {
+        // If the user passes both --quiet and --verbose (clap allows
+        // it), quiet wins on the visibility question. The CLI may
+        // tighten this later; this test pins the current contract.
+        let s = Style {
+            quiet: true,
+            verbose: true,
+            ..style(false)
+        };
+        assert!(!s.should_show(&outcome_with(Status::Ok)));
+        // NotApplicable: verbose would keep it, but quiet drops
+        // anything non-failure.
+        assert!(!s.should_show(&outcome_with(Status::NotApplicable)));
     }
 }

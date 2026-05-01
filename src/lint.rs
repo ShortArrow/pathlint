@@ -40,6 +40,47 @@ pub struct Outcome {
     pub avoid: Vec<String>,
 }
 
+impl Outcome {
+    /// Smart constructor: build an `Outcome` skeleton from an
+    /// `Expectation`, copying the rule's name and prefer/avoid sets
+    /// and starting with `Status::Ok`, no resolved path, and no
+    /// matched sources. Callers refine the skeleton via the builder
+    /// methods (`with_status`, `with_resolved`, …) as they learn
+    /// more about the resolution.
+    ///
+    /// Centralising the field-by-field initialization keeps every
+    /// `evaluate` early-return path consistent — previously the
+    /// same five-line struct literal was repeated four times.
+    pub fn initial(expect: &Expectation) -> Self {
+        Outcome {
+            command: expect.command.clone(),
+            status: Status::Ok,
+            resolved: None,
+            matched_sources: Vec::new(),
+            prefer: expect.prefer.clone(),
+            avoid: expect.avoid.clone(),
+        }
+    }
+
+    /// Builder: set the status. Useful in expression-style flow.
+    pub fn with_status(mut self, status: Status) -> Self {
+        self.status = status;
+        self
+    }
+
+    /// Builder: set the resolved path.
+    pub fn with_resolved(mut self, resolved: PathBuf) -> Self {
+        self.resolved = Some(resolved);
+        self
+    }
+
+    /// Builder: set the matched-source list.
+    pub fn with_matched_sources(mut self, matched: Vec<String>) -> Self {
+        self.matched_sources = matched;
+        self
+    }
+}
+
 /// Pure-data view of *why* an outcome failed. Derived from
 /// `Outcome` by `diagnose`; kept separate so the presentation
 /// layer renders strings from a structured value rather than from
@@ -197,48 +238,30 @@ where
     R: FnMut(&str) -> Option<Resolution>,
     S: FnMut(&std::path::Path, Kind) -> Result<(), String>,
 {
+    let base = Outcome::initial(expect);
+
     if !os_filter_applies(expect, os) {
-        return Outcome {
-            command: expect.command.clone(),
-            status: Status::NotApplicable,
-            resolved: None,
-            matched_sources: Vec::new(),
-            prefer: expect.prefer.clone(),
-            avoid: expect.avoid.clone(),
-        };
+        return base.with_status(Status::NotApplicable);
     }
 
     if let Some(name) = first_undefined(&expect.prefer, &expect.avoid, sources) {
-        return Outcome {
-            command: expect.command.clone(),
-            status: Status::ConfigError(format!("undefined source name: {name}")),
-            resolved: None,
-            matched_sources: Vec::new(),
-            prefer: expect.prefer.clone(),
-            avoid: expect.avoid.clone(),
-        };
+        return base.with_status(Status::ConfigError(format!(
+            "undefined source name: {name}"
+        )));
     }
 
-    let resolution = resolver(&expect.command);
-    let Some(resolution) = resolution else {
+    let Some(resolution) = resolver(&expect.command) else {
         let status = if expect.optional {
             Status::Skip
         } else {
             Status::NgNotFound
         };
-        return Outcome {
-            command: expect.command.clone(),
-            status,
-            resolved: None,
-            matched_sources: Vec::new(),
-            prefer: expect.prefer.clone(),
-            avoid: expect.avoid.clone(),
-        };
+        return base.with_status(status);
     };
 
     let haystack = normalize(&resolution.full_path.to_string_lossy());
     let matched = source_match::names_only(&haystack, sources, os);
-    let mut status = decide(&matched, &expect.prefer, &expect.avoid);
+    let source_status = decide(&matched, &expect.prefer, &expect.avoid);
 
     // R2 shape check. Only run when the source check already passed —
     // a `prefer` mismatch is a louder failure than a shape one and
@@ -246,22 +269,17 @@ where
     // same expectation. The shape check only escalates an OK status
     // into a NG, never the other way around. Delegated to the
     // injected `shape_check` closure so this function stays pure.
-    if matches!(status, Status::Ok) {
-        if let Some(kind) = expect.kind {
-            if let Err(reason) = shape_check(&resolution.full_path, kind) {
-                status = Status::NgNotExecutable(reason);
-            }
-        }
-    }
+    let final_status = match (&source_status, expect.kind) {
+        (Status::Ok, Some(kind)) => match shape_check(&resolution.full_path, kind) {
+            Ok(()) => Status::Ok,
+            Err(reason) => Status::NgNotExecutable(reason),
+        },
+        _ => source_status,
+    };
 
-    Outcome {
-        command: expect.command.clone(),
-        status,
-        resolved: Some(resolution.full_path),
-        matched_sources: matched,
-        prefer: expect.prefer.clone(),
-        avoid: expect.avoid.clone(),
-    }
+    base.with_resolved(resolution.full_path)
+        .with_matched_sources(matched)
+        .with_status(final_status)
 }
 
 /// Default shape-check implementation: hits the filesystem via
@@ -1072,5 +1090,58 @@ mod tests {
         // ConfigError is *not* a "failure" per is_failure — it gets
         // exit code 2 via has_config_error and exit_code instead.
         assert!(!is_failure(&Status::ConfigError("x".into())));
+    }
+
+    // ---- Outcome smart constructor + builders --------------------
+
+    fn expect_simple() -> Expectation {
+        Expectation {
+            command: "rg".into(),
+            prefer: vec!["cargo".into()],
+            avoid: vec!["winget".into()],
+            os: None,
+            optional: false,
+            kind: None,
+        }
+    }
+
+    #[test]
+    fn outcome_initial_copies_command_prefer_avoid_from_expectation() {
+        let e = expect_simple();
+        let o = Outcome::initial(&e);
+        assert_eq!(o.command, "rg");
+        assert_eq!(o.prefer, vec!["cargo".to_string()]);
+        assert_eq!(o.avoid, vec!["winget".to_string()]);
+    }
+
+    #[test]
+    fn outcome_initial_starts_with_ok_status_and_no_resolution() {
+        let o = Outcome::initial(&expect_simple());
+        assert_eq!(o.status, Status::Ok);
+        assert!(o.resolved.is_none());
+        assert!(o.matched_sources.is_empty());
+    }
+
+    #[test]
+    fn outcome_with_status_replaces_status_only() {
+        let o = Outcome::initial(&expect_simple()).with_status(Status::NgNotFound);
+        assert_eq!(o.status, Status::NgNotFound);
+        // Other fields unchanged.
+        assert_eq!(o.command, "rg");
+        assert_eq!(o.prefer, vec!["cargo".to_string()]);
+    }
+
+    #[test]
+    fn outcome_builders_chain() {
+        let o = Outcome::initial(&expect_simple())
+            .with_resolved(PathBuf::from("/usr/local/bin/rg"))
+            .with_matched_sources(vec!["scoop".into()])
+            .with_status(Status::NgWrongSource);
+        assert_eq!(
+            o.resolved.as_deref(),
+            Some(std::path::Path::new("/usr/local/bin/rg"))
+        );
+        assert_eq!(o.matched_sources, vec!["scoop".to_string()]);
+        assert_eq!(o.status, Status::NgWrongSource);
     }
 }

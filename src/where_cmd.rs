@@ -87,7 +87,7 @@ where
     };
 
     let haystack = normalize(&resolution.full_path.to_string_lossy());
-    let mut matched = source_match::names_only(&haystack, sources, os);
+    let matched = source_match::names_only(&haystack, sources, os);
 
     // Plugin-aware provenance gets a chance BEFORE the generic
     // catalog-based uninstall lookup, because for mise plugins we
@@ -106,7 +106,7 @@ where
 
     // The ranking already has the most specific match first; we
     // also surface the catch-all `mise` last among the mise family.
-    rank_mise_alias_last(&mut matched);
+    let matched = rank_mise_alias_last(matched);
 
     WhereOutcome::Found(Found {
         command: command.to_string(),
@@ -117,27 +117,22 @@ where
     })
 }
 
-fn rank_mise_alias_last(matched: &mut [String]) {
-    // Move plain "mise" to the back of the matched list IF a more
-    // specific mise_* source is also present. Keeps the lead source
-    // useful (mise_shims is more informative than mise alone).
+/// Push the catch-all `mise` source to the end of `matched` when a
+/// more specific `mise_*` sibling is also present, otherwise return
+/// the input unchanged. Pure: takes ownership and returns the new
+/// vector. Stable: relative order of every other element is
+/// preserved (we walk the input once and re-emit, deferring
+/// `"mise"`).
+fn rank_mise_alias_last(matched: Vec<String>) -> Vec<String> {
     let has_specific = matched
         .iter()
         .any(|s| s.starts_with("mise_") && s != "mise");
     if !has_specific {
-        return;
+        return matched;
     }
-    if let Some(pos) = matched.iter().position(|s| s == "mise") {
-        let removed = matched[pos].clone();
-        // Shift elements after `pos` left by one, then write at
-        // the end. We're using a slice so we can't push; the
-        // caller already gave us a Vec via DerefMut above.
-        for i in pos..matched.len() - 1 {
-            matched[i] = matched[i + 1].clone();
-        }
-        let last = matched.len() - 1;
-        matched[last] = removed;
-    }
+    let (mise_alias, others): (Vec<String>, Vec<String>) =
+        matched.into_iter().partition(|s| s == "mise");
+    others.into_iter().chain(mise_alias).collect()
 }
 
 fn derive_uninstall(
