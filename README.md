@@ -96,6 +96,10 @@ pathlint --target machine
 # Verbose: also show n/a expectations and the resolved PATH
 pathlint --verbose
 
+# Explain why each NG fired (resolved / matched / prefer / avoid /
+# diagnosis / hint), 0.0.7+
+pathlint check --explain
+
 # Drop a starter pathlint.toml in the current directory
 pathlint init
 pathlint init --emit-defaults     # also embeds the full source catalog

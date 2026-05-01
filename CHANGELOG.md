@@ -11,6 +11,31 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-04-29
+
+### Added
+
+- **`pathlint check --explain`.** Expands every NG outcome into a
+  multi-line breakdown (resolved path / matched sources /
+  prefer / avoid / diagnosis / hint) instead of the single-line
+  detail. Each NG variant gets a tailored diagnosis: `NgWrongSource`
+  names the offending `avoid` source if there is one, otherwise
+  states which `prefer` names were missed; `NgUnknownSource` says
+  the path lies outside every defined `[source.<name>]` and points
+  at adding one; `NgNotFound` advises installing or marking the
+  rule `optional = true`; `NgNotExecutable` carries the underlying
+  reason (directory shadow / broken symlink / missing +x bit) and
+  points at the most plausible cause. Off by default — the existing
+  one-line detail is unchanged.
+
+### Changed
+
+- (Internal) Presentation logic factored into `src/format.rs`
+  (doctor / where formatters) and `src/report.rs` gained
+  `explain_lines` plus a new `Style.explain` flag. `run.rs` shrunk
+  from 384 to 264 lines. Pure formatters, fully unit-tested. No
+  observable CLI behaviour change other than `--explain` itself.
+
 ## [0.0.6] - 2026-05-02
 
 ### Added
@@ -205,7 +230,8 @@ actually fetch.
     `$HOME` and friends — case and slash style preserved).
   - `--quiet` hides warns; errors always print.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.7
 [0.0.6]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.6
 [0.0.5]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.5
 [0.0.4]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.4

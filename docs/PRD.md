@@ -94,7 +94,10 @@ Per-role:
 - **R1 (resolve order).** A failing expectation shows the command,
   its resolved full path, the matched source(s), and the
   `prefer` / `avoid` mismatch. It must be enough to fix without
-  another debugging tool.
+  another debugging tool. `pathlint check --explain` (0.0.7+) opts
+  in to a multi-line breakdown that names the offending `avoid`
+  source, lists the `prefer` candidates that didn't match, and
+  points at `pathlint where <command>` for the uninstall hint.
 - **R2 (existence and shape).** When a command resolves to a path,
   the path must point at an actually-executable file. Symlinks
   must be alive; "executable" must mean it. Today only `not_found`
@@ -193,6 +196,7 @@ pathlint --target user                # explicit target
 pathlint --rules ./other.toml
 pathlint --verbose                    # also show n/a expectations and resolved PATH
 pathlint --quiet                      # only print failures
+pathlint check --explain              # multi-line NG breakdown (0.0.7+)
 ```
 
 - `--target` default is `process`. `user` / `machine` are accepted
@@ -216,7 +220,13 @@ pathlint --quiet                      # only print failures
   6. **NG** otherwise — print the actual resolved path and the
      mismatch reason.
 - One status line per expectation. Failures get a second indented
-  line with details.
+  line with details. Pass `--explain` to expand each NG line into
+  six rows (`resolved:` / `matched sources:` / `prefer:` / `avoid:` /
+  `diagnosis:` / `hint:`); the diagnosis sentence is variant-
+  specific (NgWrongSource names the offending `avoid` source if
+  any, NgUnknownSource says the path is outside every defined
+  source, NgNotFound advises install / `optional = true`,
+  NgNotExecutable carries the underlying reason).
 - Exit code: `0` if no expectation has status `NG` or `not_found`
   (excluding `optional`), `1` otherwise.
 

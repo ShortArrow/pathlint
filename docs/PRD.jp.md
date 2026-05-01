@@ -86,7 +86,11 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 
 - **R1（解決順）。** 失敗 expectation はコマンド名、実解決パス、
   マッチした source、`prefer` / `avoid` の違反内容を示す。他の
-  デバッグツール無しで直せる程度に。
+  デバッグツール無しで直せる程度に。`pathlint check --explain`
+  （0.0.7+）は NG ごとに 6 行（resolved / matched / prefer / avoid
+  / diagnosis / hint）の詳細表示に切り替え、`avoid` ヒット時には
+  違反 source 名を、`prefer` 不一致時には候補一覧を出し、
+  `pathlint where <command>` への follow-up を案内する。
 - **R2（存在と形状）。** コマンドが path に解決されるとき、その path
   は本当に実行可能ファイルを指している必要がある。symlink は生き
   ていて、「実行可能」が嘘でないこと。今は `not_found` しか報告
@@ -180,6 +184,7 @@ pathlint --target user                # 明示的なターゲット
 pathlint --rules ./other.toml
 pathlint --verbose                    # n/a 含む全 expectation と解決後 PATH を表示
 pathlint --quiet                      # 失敗のみ
+pathlint check --explain              # NG ごとに多行詳細を表示（0.0.7+）
 ```
 
 - `--target` のデフォルトは `process`。`user` / `machine` はどの OS

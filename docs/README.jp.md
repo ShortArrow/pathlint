@@ -97,6 +97,10 @@ pathlint --target machine
 # 詳細：n/a の expectation や解決後 PATH も表示
 pathlint --verbose
 
+# NG ごとに resolved / matched / prefer / avoid / diagnosis / hint
+# を多行表示（0.0.7+）
+pathlint check --explain
+
 # starter pathlint.toml をカレントに作る
 pathlint init
 pathlint init --emit-defaults     # 組み込みカタログ全体も書き出す
