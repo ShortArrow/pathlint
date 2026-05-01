@@ -196,6 +196,26 @@ command = "node"
 prefer  = ["mise"]
 ```
 
+`pathlint where <command>` is plugin-aware: when the resolved
+binary lives under `mise/installs/<segment>/...` and `<segment>`
+starts with `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`, the
+output adds a `provenance:` line and a `mise uninstall ...` hint
+so you don't have to remember which plugin you used:
+
+```
+$ pathlint where lazygit
+lazygit
+  resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
+  sources:  mise_installs, mise
+  provenance: cargo (via mise plugin `cargo-jesseduffield-lazygit`)
+  hint:     mise uninstall cargo:jesseduffield-lazygit  (best-guess; verify with `mise plugins ls`)
+```
+
+The provenance is a path heuristic — it never causes
+`prefer = ["cargo"]` to match a mise-served binary. Source
+labels stay catalog-driven; provenance is purely a `where`
+display.
+
 If you set `MISE_DATA_DIR` or `XDG_DATA_HOME` to a non-standard
 location, override the three sources in your `pathlint.toml`:
 

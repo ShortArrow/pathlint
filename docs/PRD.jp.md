@@ -266,23 +266,31 @@ pathlint --quiet                      # 失敗のみ
 "script" の区別は OS 別の事情が多く（Windows `.cmd` vs `.exe`、
 Unix の shebang）見合うリターンが薄い。
 
-### 7.7 `pathlint where <command>`（R4、0.0.4 で実装）
+### 7.7 `pathlint where <command>`（R4、0.0.4 で実装、plugin provenance は 0.0.5 で実装）
 
 `check` が内部で計算している情報を表に出す：指定コマンドについて
 
 - 解決済みフルパス（R1 が評価しているもの）
 - マッチした全 source、最も具体的なものから順に
-- 最も妥当な uninstall コマンド 1 つ。マッチした source の
-  カタログエントリから導出
-  （例: パスが `mise/installs/cargo-lazygit/...` なら
-  `mise uninstall cargo:lazygit`、`~/.cargo/bin/lazygit` なら
-  `cargo uninstall lazygit`）
-- PATH 順序が変わった場合の次候補 source（uninstall 後に何が
-  勝つか）
+- (0.0.5+) `provenance:` 行。パスが `mise/installs/<segment>/...`
+  の下にあり、`<segment>` が `cargo-` / `npm-` / `pipx-` / `go-`
+  / `aqua-` のいずれかで始まるとき。インストーラ名と raw plugin
+  segment を併記するので `mise plugins ls` で確認できる。
+- 最も妥当な uninstall コマンド 1 つ。provenance がある場合
+  （0.0.5+）は `mise uninstall <installer>:<rest>` 形式で
+  「best-guess; verify」注釈付き（segment → ID 変換は lossy のため）。
+  そうでなければマッチした source の `uninstall_command` テンプレ
+  から組み立て。
 
 uninstall ヒントはユーザーが自分で実行する文字列、pathlint は
-実行しない。カタログがコマンドを推測できないときは、推測ではなく
-明示的に「不明」と出す。
+実行しない。provenance もカタログもコマンドを示せないときは、
+推測ではなく明示的に「不明」と出す。
+
+plugin provenance は path-segment の heuristic で、R4 専用の
+ラベル。**source match ではない**。`[[expect]] prefer = ["cargo"]`
+は `mise/installs/cargo-foo/...` のバイナリに **マッチしない**。
+そう動かしたければユーザーが明示的に `[source.X]` で
+`mise/installs/cargo-` 部分一致を書く必要がある。
 
 命名: `where` は Windows の `where.exe` と被るが、pathlint の出力は
 出自情報中心でスタイルが明らかに違う。実用上の混乱が大きすぎたら
@@ -674,12 +682,15 @@ Options（global）:
   uninstall ヒントが鋭くなる）。
 - **[R1, R4] mise プラグイン経由のバイナリの帰属。** mise の
   プラグイン経由のバイナリは `mise/installs/<plugin>/<ver>/bin/<bin>`
-  に置かれ、`<plugin>` が上流インストーラ名を含むことが多い
-  （`cargo-foo`、`npm-google-gemini-cli`）。pathlint は現状これを
-  常に `mise_installs` とラベル付けし、`cargo` / `npm_global` には
-  しない。これは「ファイルがどこにあるか」（カタログ）と「どう来たか」
-  （出自）を混ぜる議論で、初期検討としては R4 が居場所として正しい
-  ように見える、R1 のカタログではなく。R4 実装時に再考。
+  に置かれ、`<plugin>` が上流インストーラ名を含む。
+  *(0.0.5 で解決 — R4 が segment が `cargo-` / `npm-` / `pipx-` /
+  `go-` / `aqua-` で始まるときに `provenance:` 行と
+  `mise uninstall <installer>:<rest>` ヒントを出す。R1 のカタログ
+  には触らず、これは純粋な provenance heuristic — source label
+  ではない。なので `prefer = ["cargo"]` は
+  `mise/installs/cargo-foo/...` のバイナリに**マッチしない**。
+  マッチさせたいユーザーは `mise/installs/cargo-` 部分一致の
+  `[source.X]` を自分で書く。)*
 
 ### R3 — PATH 衛生
 

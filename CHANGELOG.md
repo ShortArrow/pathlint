@@ -11,6 +11,24 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+### Added
+
+- **R4 — mise plugin provenance.** `pathlint where <command>` now
+  inspects mise plugin segments. When the resolved binary lives
+  under `mise/installs/<segment>/...` and `<segment>` starts with
+  `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`, the output adds
+  a `provenance:` line naming the upstream installer (e.g.
+  "cargo (via mise plugin `cargo-jesseduffield-lazygit`)") and
+  the `hint:` line becomes
+  `mise uninstall <installer>:<rest>  (best-guess; verify with
+  `mise plugins ls`)`. The "best-guess" caveat is real — the
+  segment-to-id mapping is lossy.
+- The provenance is a R4-only heuristic, not an R1 source match.
+  `[[expect]] prefer = ["cargo"]` does **not** match a binary
+  served from `mise/installs/cargo-foo/...`; users who want such
+  matching still need a custom `[source.X]`.
+- PRD §16 mise-plugin-attribution open question marked resolved.
+
 ## [0.0.4] - 2026-05-01
 
 ### Added

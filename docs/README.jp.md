@@ -200,6 +200,26 @@ command = "node"
 prefer  = ["mise"]
 ```
 
+`pathlint where <command>` は plugin-aware：解決済みパスが
+`mise/installs/<segment>/...` の下にあり、`<segment>` が
+`cargo-` / `npm-` / `pipx-` / `go-` / `aqua-` で始まるとき、
+出力に `provenance:` 行と `mise uninstall ...` ヒントが追加される
+（どのプラグインで入れたか思い出さなくて済む）：
+
+```
+$ pathlint where lazygit
+lazygit
+  resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
+  sources:  mise_installs, mise
+  provenance: cargo (via mise plugin `cargo-jesseduffield-lazygit`)
+  hint:     mise uninstall cargo:jesseduffield-lazygit  (best-guess; verify with `mise plugins ls`)
+```
+
+provenance はパス上の heuristic で source match では**ない**。
+`prefer = ["cargo"]` が `mise/installs/cargo-foo/...` のバイナリに
+マッチすることはない。source ラベルはカタログ駆動のまま、
+provenance は `where` の表示専用。
+
 `MISE_DATA_DIR` や `XDG_DATA_HOME` で mise を非標準パスに置いて
 いる場合は、3 つのソースをまとめて `pathlint.toml` で上書きする：
 
