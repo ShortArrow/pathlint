@@ -15,7 +15,7 @@ use crate::os_detect::Os;
 use crate::path_source::{self, Target};
 use crate::report;
 use crate::resolve;
-use crate::where_cmd::{self, UninstallHint, WhereOutcome};
+use crate::where_cmd::{self, Provenance, UninstallHint, WhereOutcome};
 
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
@@ -193,6 +193,16 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
                 println!("  sources:  (no source matched)");
             } else {
                 println!("  sources:  {}", found.matched_sources.join(", "));
+            }
+            if let Some(prov) = &found.provenance {
+                match prov {
+                    Provenance::MiseInstallerPlugin {
+                        installer,
+                        plugin_segment,
+                    } => {
+                        println!("  provenance: {installer} (via mise plugin `{plugin_segment}`)");
+                    }
+                }
             }
             match found.uninstall {
                 UninstallHint::Command(cmd) => {
