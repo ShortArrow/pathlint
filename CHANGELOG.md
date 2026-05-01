@@ -11,6 +11,8 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-05-02
+
 ### Added
 
 - **`pathlint where --json`.** Switches the output to a single
@@ -203,7 +205,8 @@ actually fetch.
     `$HOME` and friends — case and slash style preserved).
   - `--quiet` hides warns; errors always print.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.6
 [0.0.5]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.5
 [0.0.4]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.4
 [0.0.3]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.3
