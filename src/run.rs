@@ -52,14 +52,9 @@ pub fn execute(cli: Cli) -> Result<u8> {
         None => Config::default(),
     };
 
-    if let Some(required) = cfg.require_catalog {
-        let embedded = catalog::embedded_version();
-        if embedded < required {
-            eprintln!(
-                "pathlint: rules require catalog_version >= {required}, but this binary embeds version {embedded}. Upgrade pathlint or lower require_catalog."
-            );
-            return Ok(2);
-        }
+    if let Err(msg) = catalog::version_check(cfg.require_catalog, catalog::embedded_version()) {
+        eprintln!("pathlint: {msg}");
+        return Ok(2);
     }
 
     let catalog = catalog::merge_with_user(&cfg.source);
@@ -99,14 +94,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         print!("{}", report::render(&outcomes, style));
     }
 
-    if report::has_config_error(&outcomes) {
-        return Ok(2);
-    }
-    if outcomes.iter().any(|o| report::is_failure(&o.status)) {
-        Ok(1)
-    } else {
-        Ok(0)
-    }
+    Ok(lint::exit_code(&outcomes))
 }
 
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {

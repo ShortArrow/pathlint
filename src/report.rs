@@ -16,7 +16,7 @@ pub struct Style {
 pub fn render(outcomes: &[Outcome], style: Style) -> String {
     let mut buf = String::new();
     for o in outcomes {
-        if style.quiet && !is_failure(&o.status) {
+        if style.quiet && !lint::is_failure(&o.status) {
             continue;
         }
         if !style.verbose && matches!(o.status, Status::NotApplicable) {
@@ -36,7 +36,7 @@ fn render_one(o: &Outcome, style: Style) -> String {
     // breakdown. Only failure statuses produce explain content;
     // anything else (Ok / Skip / NotApplicable) falls through to
     // the regular detail line so behaviour is unchanged.
-    if style.explain && is_failure(&o.status) {
+    if style.explain && lint::is_failure(&o.status) {
         for ex in explain_lines(o) {
             line.push('\n');
             line.push_str("    ");
@@ -127,22 +127,6 @@ fn status_tag(s: &Status, no_glyphs: bool) -> &'static str {
         (Status::NotApplicable, true) => "n/a  ",
         (Status::ConfigError(_), true) => "ERR  ",
     }
-}
-
-pub fn is_failure(status: &Status) -> bool {
-    matches!(
-        status,
-        Status::NgWrongSource
-            | Status::NgUnknownSource
-            | Status::NgNotFound
-            | Status::NgNotExecutable(_)
-    )
-}
-
-pub fn has_config_error(outcomes: &[Outcome]) -> bool {
-    outcomes
-        .iter()
-        .any(|o| matches!(o.status, Status::ConfigError(_)))
 }
 
 /// Render a structured, multi-line diagnosis for a single Outcome.

@@ -82,6 +82,46 @@ pub enum Diagnosis {
     Config { message: String },
 }
 
+/// Does this status indicate an expectation failure (NG)? Pure.
+/// `ConfigError` is a *configuration* failure rather than a lint
+/// failure — it deserves a different exit code, so it is not
+/// considered a failure by this predicate. Use `is_config_error`
+/// for that case.
+pub fn is_failure(status: &Status) -> bool {
+    matches!(
+        status,
+        Status::NgWrongSource
+            | Status::NgUnknownSource
+            | Status::NgNotFound
+            | Status::NgNotExecutable(_)
+    )
+}
+
+/// Is the outcome list polluted by at least one `ConfigError`?
+/// Pure. Drives the exit-code-2 branch.
+pub fn has_config_error(outcomes: &[Outcome]) -> bool {
+    outcomes
+        .iter()
+        .any(|o| matches!(o.status, Status::ConfigError(_)))
+}
+
+/// Map a slice of outcomes to a process exit code. Pure.
+///
+/// - `2` — at least one `ConfigError` (rules file referenced an
+///   undefined source, etc.). Wins over `1` because the rules
+///   themselves are wrong; ignoring this would mask real bugs.
+/// - `1` — at least one NG (`is_failure`).
+/// - `0` — every outcome is `Ok` / `Skip` / `NotApplicable`.
+pub fn exit_code(outcomes: &[Outcome]) -> u8 {
+    if has_config_error(outcomes) {
+        2
+    } else if outcomes.iter().any(|o| is_failure(&o.status)) {
+        1
+    } else {
+        0
+    }
+}
+
 /// Derive the `Diagnosis` for an outcome — the *why* behind a
 /// failing status. Pure: takes only the outcome.
 ///
@@ -961,5 +1001,76 @@ mod tests {
         let json = serde_json::to_value(&d).unwrap();
         assert_eq!(json["kind"], "wrong_source");
         assert_eq!(json["matched"][0], "scoop");
+    }
+
+    // ---- exit_code ------------------------------------------------
+
+    fn outcome_status(status: Status) -> Outcome {
+        outcome(status, &[], &[], &[])
+    }
+
+    #[test]
+    fn exit_code_zero_when_all_outcomes_pass() {
+        let out = vec![
+            outcome_status(Status::Ok),
+            outcome_status(Status::Skip),
+            outcome_status(Status::NotApplicable),
+        ];
+        assert_eq!(exit_code(&out), 0);
+    }
+
+    #[test]
+    fn exit_code_one_when_any_failure_present() {
+        let out = vec![
+            outcome_status(Status::Ok),
+            outcome_status(Status::NgNotFound),
+        ];
+        assert_eq!(exit_code(&out), 1);
+    }
+
+    #[test]
+    fn exit_code_two_when_any_config_error_present() {
+        let out = vec![
+            outcome_status(Status::Ok),
+            outcome_status(Status::ConfigError("typo".into())),
+        ];
+        assert_eq!(exit_code(&out), 2);
+    }
+
+    #[test]
+    fn exit_code_two_wins_over_one_when_both_present() {
+        // A rules-file error must mask plain NGs; otherwise users
+        // patch the lint failure and re-run only to discover the
+        // config error a second time.
+        let out = vec![
+            outcome_status(Status::NgWrongSource),
+            outcome_status(Status::ConfigError("undefined".into())),
+        ];
+        assert_eq!(exit_code(&out), 2);
+    }
+
+    #[test]
+    fn exit_code_zero_for_empty_outcome_list() {
+        // No `[[expect]]` rules at all is a valid (if useless) state.
+        let out: Vec<Outcome> = vec![];
+        assert_eq!(exit_code(&out), 0);
+    }
+
+    #[test]
+    fn is_failure_true_for_each_ng_variant() {
+        assert!(is_failure(&Status::NgWrongSource));
+        assert!(is_failure(&Status::NgUnknownSource));
+        assert!(is_failure(&Status::NgNotFound));
+        assert!(is_failure(&Status::NgNotExecutable("x".into())));
+    }
+
+    #[test]
+    fn is_failure_false_for_non_ng_variants() {
+        assert!(!is_failure(&Status::Ok));
+        assert!(!is_failure(&Status::Skip));
+        assert!(!is_failure(&Status::NotApplicable));
+        // ConfigError is *not* a "failure" per is_failure — it gets
+        // exit code 2 via has_config_error and exit_code instead.
+        assert!(!is_failure(&Status::ConfigError("x".into())));
     }
 }

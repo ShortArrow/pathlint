@@ -22,6 +22,27 @@ pub fn embedded_version() -> u32 {
     cfg.catalog_version.unwrap_or(0)
 }
 
+/// Pure compatibility check: does this binary's embedded catalog
+/// satisfy the user's `require_catalog` directive? `Ok(())` means
+/// either no requirement was set or the embedded version meets or
+/// exceeds it. `Err` carries a one-line user-facing message naming
+/// both versions and the recommended fix.
+///
+/// Pure: no I/O, no globals — both versions are passed in. Unit-
+/// testable without touching the embedded catalog or stderr.
+pub fn version_check(require_catalog: Option<u32>, embedded: u32) -> Result<(), String> {
+    let Some(required) = require_catalog else {
+        return Ok(());
+    };
+    if embedded >= required {
+        return Ok(());
+    }
+    Err(format!(
+        "rules require catalog_version >= {required}, but this binary embeds version {embedded}. \
+         Upgrade pathlint or lower require_catalog."
+    ))
+}
+
 /// Merge user-defined sources on top of the built-in catalog. User
 /// entries with the same name override field-by-field; new names are
 /// added.
@@ -127,6 +148,29 @@ mod tests {
         // would mean somebody removed the declaration. Guard the
         // floor at 1 — the version we shipped in 0.0.3.
         assert!(embedded_version() >= 1);
+    }
+
+    #[test]
+    fn version_check_passes_when_no_requirement_set() {
+        assert!(version_check(None, 0).is_ok());
+        assert!(version_check(None, 9999).is_ok());
+    }
+
+    #[test]
+    fn version_check_passes_when_embedded_meets_required() {
+        assert!(version_check(Some(2), 2).is_ok());
+        assert!(version_check(Some(2), 3).is_ok());
+    }
+
+    #[test]
+    fn version_check_fails_when_embedded_below_required() {
+        let err = version_check(Some(7), 3).unwrap_err();
+        assert!(err.contains("7"), "error must name required: {err}");
+        assert!(err.contains("3"), "error must name embedded: {err}");
+        assert!(
+            err.contains("Upgrade") || err.contains("require_catalog"),
+            "error must hint at fix: {err}"
+        );
     }
 
     #[test]
