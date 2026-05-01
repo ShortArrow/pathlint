@@ -10,7 +10,7 @@ use crate::cli::{
     CatalogCommand, CatalogListArgs, CheckArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs,
 };
 use crate::config::Config;
-use crate::doctor::{self, Diagnostic, Severity};
+use crate::doctor::{self, Diagnostic, Filter, Severity};
 use crate::format;
 use crate::init::{self, InitOptions, InitOutcome};
 use crate::lint;
@@ -110,35 +110,19 @@ pub fn execute(cli: Cli) -> Result<u8> {
 }
 
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
-    let entries = read_path_entries(global);
-    let diags = doctor::analyze_real(&entries, Os::current());
-
-    // Validate filter inputs before running anything else so a typo
-    // is caught fast (exit 2 — config error, not a lint failure).
-    let known: std::collections::BTreeSet<&'static str> =
-        doctor::all_kind_names().iter().copied().collect();
-    for name in args.include.iter().chain(args.exclude.iter()) {
-        if !known.contains(name.as_str()) {
-            anyhow::bail!(
-                "unknown doctor kind `{name}`; valid values: {}",
-                doctor::all_kind_names().join(", ")
-            );
-        }
+    let filter = Filter {
+        include: args.include.clone(),
+        exclude: args.exclude.clone(),
+    };
+    // Validate before running anything else so a typo is caught
+    // fast (exit 2 — config error, not a lint failure).
+    if let Err(msg) = doctor::validate_filter_names(&filter) {
+        anyhow::bail!(msg);
     }
 
-    let kept: Vec<&Diagnostic> = diags
-        .iter()
-        .filter(|d| {
-            let name = doctor::kind_name(&d.kind);
-            if !args.include.is_empty() {
-                args.include.iter().any(|s| s == name)
-            } else if !args.exclude.is_empty() {
-                !args.exclude.iter().any(|s| s == name)
-            } else {
-                true
-            }
-        })
-        .collect();
+    let entries = read_path_entries(global);
+    let diags = doctor::analyze_real(&entries, Os::current());
+    let kept = filter.apply(&diags);
 
     let printable: Vec<&Diagnostic> = if global.quiet {
         kept.iter()
@@ -153,10 +137,7 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
         println!("{}", format::doctor_line(d, &entries));
     }
 
-    // Exit code reflects the *kept* set so excluding a Malformed
-    // diagnostic genuinely lets the run pass.
-    let has_error = kept.iter().any(|d| d.severity == Severity::Error);
-    Ok(if has_error { 1 } else { 0 })
+    Ok(if doctor::has_error(&kept) { 1 } else { 0 })
 }
 
 fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {

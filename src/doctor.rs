@@ -112,6 +112,70 @@ pub fn all_kind_names() -> &'static [&'static str] {
     ]
 }
 
+/// User intent for `pathlint doctor --include` / `--exclude`.
+/// Pure data: holds two snake_case kind-name lists. The semantics
+/// are "include-when-non-empty, otherwise exclude-when-non-empty,
+/// otherwise pass-through". `--include` / `--exclude` are mutually
+/// exclusive at the CLI layer (clap `conflicts_with`); this struct
+/// does not re-enforce that.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Filter {
+    pub include: Vec<String>,
+    pub exclude: Vec<String>,
+}
+
+impl Filter {
+    /// Filter a slice of diagnostics by kind name. The returned
+    /// vector borrows from the input. Pure: no allocations beyond
+    /// the references.
+    ///
+    /// Semantics:
+    /// - both empty → pass everything through
+    /// - `include` non-empty → keep only diagnostics whose kind is listed
+    /// - `exclude` non-empty (and `include` empty) → drop listed kinds
+    pub fn apply<'a>(&self, diags: &'a [Diagnostic]) -> Vec<&'a Diagnostic> {
+        diags
+            .iter()
+            .filter(|d| {
+                let name = kind_name(&d.kind);
+                if !self.include.is_empty() {
+                    self.include.iter().any(|s| s == name)
+                } else if !self.exclude.is_empty() {
+                    !self.exclude.iter().any(|s| s == name)
+                } else {
+                    true
+                }
+            })
+            .collect()
+    }
+}
+
+/// Reject any name in `filter` that isn't a valid `Kind` discriminator.
+/// Returns `Err` carrying a one-line message naming the offending
+/// name and the valid set, suitable for surfacing as exit code 2.
+pub fn validate_filter_names(filter: &Filter) -> Result<(), String> {
+    let known: std::collections::BTreeSet<&'static str> =
+        all_kind_names().iter().copied().collect();
+    for name in filter.include.iter().chain(filter.exclude.iter()) {
+        if !known.contains(name.as_str()) {
+            return Err(format!(
+                "unknown doctor kind `{name}`; valid values: {}",
+                all_kind_names().join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Does the (already-filtered) set of diagnostics contain at least
+/// one `Severity::Error`? This is the single source of truth for
+/// `pathlint doctor`'s exit code 1 — an excluded `Malformed`
+/// diagnostic must not escalate, which is why we check the kept
+/// set rather than the raw `analyze` output.
+pub fn has_error(diags: &[&Diagnostic]) -> bool {
+    diags.iter().any(|d| d.severity == Severity::Error)
+}
+
 /// Run every PATH-hygiene check and return a flat list of
 /// diagnostics. Pure: I/O is reached via the injected `fs_exists`
 /// (used by the missing-directory check) and `env_lookup` (used by
@@ -655,5 +719,136 @@ mod tests {
             .expect("MiseActivateBoth must fire");
         assert_eq!(kind.0, vec![0]);
         assert_eq!(kind.1, vec![1, 2]);
+    }
+
+    // ---- Filter / validate / has_error ---------------------------
+
+    fn diag(kind: Kind, severity: Severity) -> Diagnostic {
+        Diagnostic {
+            index: 0,
+            entry: "/anywhere".into(),
+            severity,
+            kind,
+        }
+    }
+
+    #[test]
+    fn filter_default_passes_everything_through() {
+        let diags = vec![
+            diag(Kind::Missing, Severity::Warn),
+            diag(Kind::TrailingSlash, Severity::Warn),
+        ];
+        let kept = Filter::default().apply(&diags);
+        assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn filter_include_keeps_only_named_kinds() {
+        let diags = vec![
+            diag(Kind::Missing, Severity::Warn),
+            diag(Kind::TrailingSlash, Severity::Warn),
+            diag(Kind::Malformed { reason: "x".into() }, Severity::Error),
+        ];
+        let f = Filter {
+            include: vec!["missing".into(), "malformed".into()],
+            ..Default::default()
+        };
+        let kept = f.apply(&diags);
+        let names: Vec<&'static str> = kept.iter().map(|d| kind_name(&d.kind)).collect();
+        assert_eq!(names, vec!["missing", "malformed"]);
+    }
+
+    #[test]
+    fn filter_exclude_drops_named_kinds_when_include_empty() {
+        let diags = vec![
+            diag(Kind::Missing, Severity::Warn),
+            diag(Kind::TrailingSlash, Severity::Warn),
+        ];
+        let f = Filter {
+            exclude: vec!["trailing_slash".into()],
+            ..Default::default()
+        };
+        let kept = f.apply(&diags);
+        assert_eq!(kept.len(), 1);
+        assert!(matches!(kept[0].kind, Kind::Missing));
+    }
+
+    #[test]
+    fn filter_include_takes_precedence_over_exclude_when_both_set() {
+        // CLI layer enforces mutual exclusion; this guards the
+        // semantic in case someone constructs a Filter directly.
+        let diags = vec![
+            diag(Kind::Missing, Severity::Warn),
+            diag(Kind::TrailingSlash, Severity::Warn),
+        ];
+        let f = Filter {
+            include: vec!["missing".into()],
+            exclude: vec!["missing".into()],
+        };
+        let kept = f.apply(&diags);
+        assert_eq!(kept.len(), 1);
+        assert!(matches!(kept[0].kind, Kind::Missing));
+    }
+
+    #[test]
+    fn validate_filter_names_accepts_valid() {
+        let f = Filter {
+            include: vec!["duplicate".into(), "malformed".into()],
+            exclude: vec![],
+        };
+        assert!(validate_filter_names(&f).is_ok());
+    }
+
+    #[test]
+    fn validate_filter_names_rejects_typo() {
+        let f = Filter {
+            include: vec!["duplicat".into()],
+            exclude: vec![],
+        };
+        let err = validate_filter_names(&f).unwrap_err();
+        assert!(err.contains("duplicat"));
+        assert!(err.contains("duplicate"), "valid list must be listed");
+    }
+
+    #[test]
+    fn validate_checks_exclude_too() {
+        let f = Filter {
+            include: vec![],
+            exclude: vec!["nope".into()],
+        };
+        assert!(validate_filter_names(&f).is_err());
+    }
+
+    #[test]
+    fn has_error_true_when_any_kept_is_error_severity() {
+        let d_err = diag(Kind::Malformed { reason: "x".into() }, Severity::Error);
+        let d_warn = diag(Kind::Missing, Severity::Warn);
+        let kept: Vec<&Diagnostic> = vec![&d_warn, &d_err];
+        assert!(has_error(&kept));
+    }
+
+    #[test]
+    fn has_error_false_when_all_kept_are_warn() {
+        let d1 = diag(Kind::Missing, Severity::Warn);
+        let d2 = diag(Kind::TrailingSlash, Severity::Warn);
+        let kept: Vec<&Diagnostic> = vec![&d1, &d2];
+        assert!(!has_error(&kept));
+    }
+
+    #[test]
+    fn has_error_respects_filtering_excluding_malformed_lets_run_pass() {
+        // Regression guard: the whole point of the kept-set check
+        // is that excluding `malformed` lets a run pass even when
+        // the raw analysis would have escalated.
+        let diags = vec![
+            diag(Kind::Malformed { reason: "x".into() }, Severity::Error),
+            diag(Kind::Missing, Severity::Warn),
+        ];
+        let f = Filter {
+            exclude: vec!["malformed".into()],
+            ..Default::default()
+        };
+        let kept = f.apply(&diags);
+        assert!(!has_error(&kept), "excluded malformed must not escalate");
     }
 }
