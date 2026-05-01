@@ -37,6 +37,87 @@ pub struct Outcome {
     pub avoid: Vec<String>,
 }
 
+/// Pure-data view of *why* an outcome failed. Derived from
+/// `Outcome` by `diagnose`; kept separate so the presentation
+/// layer renders strings from a structured value rather than from
+/// raw `Outcome` fields. `serde::Serialize` so the same value can
+/// drive `check --json`.
+///
+/// Variants name the failure mode; the fields are the load-bearing
+/// facts callers need: which sources were missed (`prefer_missed`),
+/// which `avoid` names were hit (`avoid_hits`), the reason the
+/// shape check rejected the file, etc. The struct does *not*
+/// carry `command` / `resolved` — those live on `Outcome` and the
+/// caller pairs them up.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Diagnosis {
+    /// Resolved path matched some sources, but none of the
+    /// `prefer` set — or it matched a source listed under `avoid`.
+    /// `avoid_hits` is the intersection of `matched ∩ avoid`;
+    /// non-empty means the rule explicitly forbids this source.
+    /// `prefer_missed` is `prefer` itself (every name the user
+    /// hoped for); rendering decides whether to show it.
+    WrongSource {
+        matched: Vec<String>,
+        prefer_missed: Vec<String>,
+        avoid_hits: Vec<String>,
+    },
+    /// Path lies outside every defined `[source.<name>]`. No
+    /// source name matched at all.
+    UnknownSource { prefer: Vec<String> },
+    /// Command was not on PATH, and the rule was not optional.
+    NotFound { prefer: Vec<String> },
+    /// `kind = "executable"` shape check rejected the resolved file.
+    /// `reason` is the short human-readable cause from `lint`
+    /// (`"is a directory"`, `"broken symlink"`, …).
+    NotExecutable {
+        reason: String,
+        matched: Vec<String>,
+    },
+    /// `[[expect]]` referenced a source name that is not defined.
+    Config { message: String },
+}
+
+/// Derive the `Diagnosis` for an outcome — the *why* behind a
+/// failing status. Pure: takes only the outcome.
+///
+/// Returns `None` for non-failure statuses (`Ok` / `Skip` /
+/// `NotApplicable`). Callers typically render a `Diagnosis` into
+/// human or JSON form; treating the value as the single source of
+/// truth keeps the two views in sync.
+pub fn diagnose(o: &Outcome) -> Option<Diagnosis> {
+    match &o.status {
+        Status::Ok | Status::Skip | Status::NotApplicable => None,
+        Status::NgWrongSource => {
+            let avoid_hits: Vec<String> = o
+                .matched_sources
+                .iter()
+                .filter(|m| o.avoid.iter().any(|a| a == *m))
+                .cloned()
+                .collect();
+            Some(Diagnosis::WrongSource {
+                matched: o.matched_sources.clone(),
+                prefer_missed: o.prefer.clone(),
+                avoid_hits,
+            })
+        }
+        Status::NgUnknownSource => Some(Diagnosis::UnknownSource {
+            prefer: o.prefer.clone(),
+        }),
+        Status::NgNotFound => Some(Diagnosis::NotFound {
+            prefer: o.prefer.clone(),
+        }),
+        Status::NgNotExecutable(reason) => Some(Diagnosis::NotExecutable {
+            reason: reason.clone(),
+            matched: o.matched_sources.clone(),
+        }),
+        Status::ConfigError(msg) => Some(Diagnosis::Config {
+            message: msg.clone(),
+        }),
+    }
+}
+
 /// Evaluate every expectation. `resolver` is called for the ones that
 /// pass the OS filter; in production it is a closure over the real
 /// PATH-resolve function, in tests it is a stub.
@@ -662,5 +743,121 @@ mod tests {
         // Stays NgWrongSource — the shape check is suppressed
         // because the source check already failed.
         assert!(matches!(out[0].status, Status::NgWrongSource));
+    }
+
+    // ---- diagnose() -------------------------------------------------
+
+    fn outcome(status: Status, matched: &[&str], prefer: &[&str], avoid: &[&str]) -> Outcome {
+        Outcome {
+            command: "rg".into(),
+            status,
+            resolved: Some(PathBuf::from("/usr/local/bin/rg")),
+            matched_sources: matched.iter().map(|s| s.to_string()).collect(),
+            prefer: prefer.iter().map(|s| s.to_string()).collect(),
+            avoid: avoid.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn diagnose_returns_none_for_non_failure_statuses() {
+        for status in [Status::Ok, Status::Skip, Status::NotApplicable] {
+            let o = outcome(status, &["cargo"], &["cargo"], &[]);
+            assert!(
+                diagnose(&o).is_none(),
+                "status should yield None: {:?}",
+                o.status
+            );
+        }
+    }
+
+    #[test]
+    fn diagnose_wrong_source_collects_avoid_hits_when_intersection_non_empty() {
+        let o = outcome(
+            Status::NgWrongSource,
+            &["winget", "scoop"],
+            &["cargo"],
+            &["winget"],
+        );
+        let d = diagnose(&o).unwrap();
+        match d {
+            Diagnosis::WrongSource {
+                matched,
+                prefer_missed,
+                avoid_hits,
+            } => {
+                assert_eq!(matched, vec!["winget", "scoop"]);
+                assert_eq!(prefer_missed, vec!["cargo"]);
+                assert_eq!(avoid_hits, vec!["winget"]);
+            }
+            other => panic!("expected WrongSource, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diagnose_wrong_source_with_no_avoid_overlap_returns_empty_avoid_hits() {
+        let o = outcome(Status::NgWrongSource, &["scoop"], &["cargo"], &[]);
+        let d = diagnose(&o).unwrap();
+        match d {
+            Diagnosis::WrongSource { avoid_hits, .. } => assert!(avoid_hits.is_empty()),
+            other => panic!("expected WrongSource, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diagnose_unknown_source_carries_only_prefer() {
+        let o = outcome(Status::NgUnknownSource, &[], &["cargo"], &[]);
+        let d = diagnose(&o).unwrap();
+        assert!(
+            matches!(d, Diagnosis::UnknownSource { ref prefer } if prefer == &["cargo".to_string()])
+        );
+    }
+
+    #[test]
+    fn diagnose_not_found_carries_prefer() {
+        let o = outcome(Status::NgNotFound, &[], &["cargo", "winget"], &[]);
+        let d = diagnose(&o).unwrap();
+        assert!(matches!(d, Diagnosis::NotFound { ref prefer } if prefer.len() == 2));
+    }
+
+    #[test]
+    fn diagnose_not_executable_keeps_reason_and_matched() {
+        let o = outcome(
+            Status::NgNotExecutable("is a directory".into()),
+            &["custom"],
+            &["custom"],
+            &[],
+        );
+        let d = diagnose(&o).unwrap();
+        match d {
+            Diagnosis::NotExecutable { reason, matched } => {
+                assert_eq!(reason, "is a directory");
+                assert_eq!(matched, vec!["custom"]);
+            }
+            other => panic!("expected NotExecutable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diagnose_config_error_propagates_message() {
+        let o = outcome(
+            Status::ConfigError("undefined source name: typo".into()),
+            &[],
+            &[],
+            &[],
+        );
+        let d = diagnose(&o).unwrap();
+        assert!(matches!(d, Diagnosis::Config { ref message } if message.contains("typo")));
+    }
+
+    #[test]
+    fn diagnosis_serializes_with_kind_discriminator() {
+        let d = Diagnosis::WrongSource {
+            matched: vec!["scoop".into()],
+            prefer_missed: vec!["cargo".into()],
+            avoid_hits: vec![],
+        };
+        let json = serde_json::to_value(&d).unwrap();
+        assert_eq!(json["kind"], "wrong_source");
+        assert_eq!(json["matched"][0], "scoop");
     }
 }

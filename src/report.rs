@@ -1,6 +1,6 @@
 //! Format `Outcome`s into human-readable lines.
 
-use crate::lint::{Outcome, Status};
+use crate::lint::{self, Diagnosis, Outcome, Status};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Style {
@@ -54,44 +54,51 @@ fn render_one(o: &Outcome, style: Style) -> String {
 }
 
 fn detail_line(o: &Outcome) -> Option<String> {
+    // Non-failure statuses don't go through `Diagnosis`; their
+    // detail is direct projection of the Outcome.
     match &o.status {
-        Status::Ok => o.resolved.as_ref().map(|p| {
-            let sources = if o.matched_sources.is_empty() {
-                String::from("(no source matched)")
-            } else {
-                format!("source: {}", o.matched_sources.join(", "))
-            };
-            format!("{} — {}", p.display(), sources)
-        }),
-        Status::NgWrongSource => Some(format!(
-            "resolved: {} — matched sources: [{}], prefer: [{}], avoid: [{}]",
-            o.resolved
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "<unresolved>".into()),
-            o.matched_sources.join(", "),
-            o.prefer.join(", "),
+        Status::Ok => {
+            return o.resolved.as_ref().map(|p| {
+                let sources = if o.matched_sources.is_empty() {
+                    String::from("(no source matched)")
+                } else {
+                    format!("source: {}", o.matched_sources.join(", "))
+                };
+                format!("{} — {}", p.display(), sources)
+            });
+        }
+        Status::Skip => return Some("optional; not on PATH".into()),
+        Status::NotApplicable => return Some("excluded by os filter".into()),
+        _ => {}
+    }
+    // Failure statuses: render the one-liner from the Diagnosis so
+    // the explain view and the default view share a single source
+    // of truth.
+    lint::diagnose(o).map(|d| detail_one_liner(o, &d))
+}
+
+fn detail_one_liner(o: &Outcome, diagnosis: &Diagnosis) -> String {
+    let resolved = resolved_or_placeholder(o);
+    match diagnosis {
+        Diagnosis::WrongSource {
+            matched,
+            prefer_missed,
+            avoid_hits: _,
+        } => format!(
+            "resolved: {resolved} — matched sources: [{}], prefer: [{}], avoid: [{}]",
+            matched.join(", "),
+            prefer_missed.join(", "),
             o.avoid.join(", "),
-        )),
-        Status::NgUnknownSource => Some(format!(
-            "resolved: {} — matched no defined source; prefer: [{}]",
-            o.resolved
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "<unresolved>".into()),
-            o.prefer.join(", "),
-        )),
-        Status::NgNotFound => Some("not found on PATH".into()),
-        Status::NgNotExecutable(reason) => Some(format!(
-            "resolved: {} — not executable: {reason}",
-            o.resolved
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "<unresolved>".into()),
-        )),
-        Status::Skip => Some("optional; not on PATH".into()),
-        Status::NotApplicable => Some("excluded by os filter".into()),
-        Status::ConfigError(msg) => Some(msg.clone()),
+        ),
+        Diagnosis::UnknownSource { prefer } => format!(
+            "resolved: {resolved} — matched no defined source; prefer: [{}]",
+            prefer.join(", "),
+        ),
+        Diagnosis::NotFound { .. } => "not found on PATH".into(),
+        Diagnosis::NotExecutable { reason, .. } => {
+            format!("resolved: {resolved} — not executable: {reason}")
+        }
+        Diagnosis::Config { message } => message.clone(),
     }
 }
 
@@ -142,118 +149,109 @@ pub fn has_config_error(outcomes: &[Outcome]) -> bool {
 /// Used by `pathlint check --explain` to expand the one-line detail
 /// into resolved / matched / prefer / avoid / diagnosis / hint rows.
 ///
-/// Returned as a `Vec<String>` of detail lines (no leading indent,
-/// no header — the caller wraps each line with the same `    `
-/// prefix used by `detail_line`). Pure function: no I/O, no
-/// allocation outside the returned strings.
+/// Pure function. Goes through `lint::diagnose` so the human
+/// rendering and the JSON rendering share a single source of truth
+/// (the `Diagnosis` value). Non-failure statuses return an empty
+/// vec; callers fall back to `detail_line`.
 pub fn explain_lines(o: &Outcome) -> Vec<String> {
-    let mut lines = Vec::new();
-    let resolved = o
-        .resolved
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "<unresolved>".into());
-    let none_marker = || String::from("(none)");
-    let join_or_none = |v: &[String]| {
-        if v.is_empty() {
-            none_marker()
-        } else {
-            v.join(", ")
-        }
+    let Some(diagnosis) = lint::diagnose(o) else {
+        return Vec::new();
     };
+    explain_lines_from(o, &diagnosis)
+}
 
-    match &o.status {
-        Status::NgWrongSource => {
-            lines.push(format!("resolved:        {resolved}"));
-            lines.push(format!(
-                "matched sources: {}",
-                join_or_none(&o.matched_sources)
-            ));
-            lines.push(format!("prefer:          {}", join_or_none(&o.prefer)));
-            lines.push(format!("avoid:           {}", join_or_none(&o.avoid)));
-            lines.push(format!(
+fn explain_lines_from(o: &Outcome, diagnosis: &Diagnosis) -> Vec<String> {
+    let resolved = resolved_or_placeholder(o);
+    match diagnosis {
+        Diagnosis::WrongSource {
+            matched,
+            prefer_missed,
+            avoid_hits,
+        } => vec![
+            format!("resolved:        {resolved}"),
+            format!("matched sources: {}", join_or_none(matched)),
+            format!("prefer:          {}", join_or_none(prefer_missed)),
+            format!("avoid:           {}", join_or_none(&o.avoid)),
+            format!(
                 "diagnosis:       {}",
-                wrong_source_diagnosis(&o.matched_sources, &o.prefer, &o.avoid)
-            ));
-            lines.push(format!(
+                wrong_source_sentence(matched, prefer_missed, avoid_hits)
+            ),
+            format!(
                 "hint:            run `pathlint where {}` for uninstall guidance.",
                 o.command
-            ));
-        }
-        Status::NgUnknownSource => {
-            lines.push(format!("resolved:        {resolved}"));
-            lines.push("matched sources: (none — path is outside every defined source)".into());
-            lines.push(format!("prefer:          {}", join_or_none(&o.prefer)));
-            lines.push(format!("avoid:           {}", join_or_none(&o.avoid)));
-            lines.push(
-                "diagnosis:       command resolves from a directory not declared in any \
-                    [source.<name>]. Either add a source for that directory or remove the \
-                    directory from PATH."
-                    .into(),
-            );
-            lines.push(format!(
+            ),
+        ],
+        Diagnosis::UnknownSource { prefer } => vec![
+            format!("resolved:        {resolved}"),
+            "matched sources: (none — path is outside every defined source)".into(),
+            format!("prefer:          {}", join_or_none(prefer)),
+            format!("avoid:           {}", join_or_none(&o.avoid)),
+            "diagnosis:       command resolves from a directory not declared in any \
+                [source.<name>]. Either add a source for that directory or remove the \
+                directory from PATH."
+                .into(),
+            format!(
                 "hint:            run `pathlint where {}` to see the full path; \
                 add `[source.X]` matching it if you want this case to pass.",
                 o.command
-            ));
-        }
-        Status::NgNotFound => {
-            lines.push(format!("command:         {}", o.command));
-            lines.push(format!("prefer:          {}", join_or_none(&o.prefer)));
-            lines.push("diagnosis:       command not found on any PATH entry.".into());
-            lines.push(
-                "hint:            install it via one of the prefer sources, \
+            ),
+        ],
+        Diagnosis::NotFound { prefer } => vec![
+            format!("command:         {}", o.command),
+            format!("prefer:          {}", join_or_none(prefer)),
+            "diagnosis:       command not found on any PATH entry.".into(),
+            "hint:            install it via one of the prefer sources, \
                 or pass `optional = true` if the rule should accept absence."
-                    .into(),
-            );
-        }
-        Status::NgNotExecutable(reason) => {
-            lines.push(format!("resolved:        {resolved}"));
-            lines.push(format!(
-                "matched sources: {}",
-                join_or_none(&o.matched_sources)
-            ));
-            lines.push(format!("diagnosis:       not executable — {reason}"));
-            lines.push(
-                "hint:            another file/directory of the same name shadows the binary, \
+                .into(),
+        ],
+        Diagnosis::NotExecutable { reason, matched } => vec![
+            format!("resolved:        {resolved}"),
+            format!("matched sources: {}", join_or_none(matched)),
+            format!("diagnosis:       not executable — {reason}"),
+            "hint:            another file/directory of the same name shadows the binary, \
                 or the file lost its +x bit / became a broken symlink."
-                    .into(),
-            );
-        }
-        Status::ConfigError(msg) => {
-            lines.push(format!("config error:    {msg}"));
-            lines.push(
-                "hint:            check spelling against `pathlint catalog list --names-only`."
-                    .into(),
-            );
-        }
-        // Non-failure statuses don't get an explain block; the
-        // caller falls back to detail_line for these.
-        Status::Ok | Status::Skip | Status::NotApplicable => {}
+                .into(),
+        ],
+        Diagnosis::Config { message } => vec![
+            format!("config error:    {message}"),
+            "hint:            check spelling against `pathlint catalog list --names-only`.".into(),
+        ],
     }
-    lines
 }
 
-fn wrong_source_diagnosis(matched: &[String], prefer: &[String], avoid: &[String]) -> String {
-    let in_avoid: Vec<&String> = matched
-        .iter()
-        .filter(|m| avoid.iter().any(|a| a == *m))
-        .collect();
-    if !in_avoid.is_empty() {
-        let names: Vec<&str> = in_avoid.iter().map(|s| s.as_str()).collect();
+fn resolved_or_placeholder(o: &Outcome) -> String {
+    o.resolved
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "<unresolved>".into())
+}
+
+fn join_or_none(v: &[String]) -> String {
+    if v.is_empty() {
+        "(none)".into()
+    } else {
+        v.join(", ")
+    }
+}
+
+fn wrong_source_sentence(
+    matched: &[String],
+    prefer_missed: &[String],
+    avoid_hits: &[String],
+) -> String {
+    if !avoid_hits.is_empty() {
         return format!(
             "resolved path matched `avoid` source(s) [{}]; rule forbids these.",
-            names.join(", ")
+            avoid_hits.join(", ")
         );
     }
-    if prefer.is_empty() {
-        // Should not happen for NgWrongSource, but stay defensive.
+    if prefer_missed.is_empty() {
         return "resolved path matched a source the rule rejects.".into();
     }
     format!(
         "resolved path matched [{}], none of which are in `prefer` [{}].",
         matched.join(", "),
-        prefer.join(", ")
+        prefer_missed.join(", ")
     )
 }
 
