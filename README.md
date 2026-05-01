@@ -100,6 +100,9 @@ pathlint --verbose
 # diagnosis / hint), 0.0.7+
 pathlint check --explain
 
+# Same data, machine-readable (CI), 0.0.7+
+pathlint check --json
+
 # Drop a starter pathlint.toml in the current directory
 pathlint init
 pathlint init --emit-defaults     # also embeds the full source catalog

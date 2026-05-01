@@ -197,6 +197,7 @@ pathlint --rules ./other.toml
 pathlint --verbose                    # also show n/a expectations and resolved PATH
 pathlint --quiet                      # only print failures
 pathlint check --explain              # multi-line NG breakdown (0.0.7+)
+pathlint check --json                 # JSON array of every outcome (0.0.7+)
 ```
 
 - `--target` default is `process`. `user` / `machine` are accepted
@@ -227,8 +228,19 @@ pathlint check --explain              # multi-line NG breakdown (0.0.7+)
   any, NgUnknownSource says the path is outside every defined
   source, NgNotFound advises install / `optional = true`,
   NgNotExecutable carries the underlying reason).
+- `--json` swaps the human output for a single pretty-printed
+  array: each element has `command`, `status` (snake_case
+  `Status` variant), optional `resolved` / `matched_sources` /
+  `prefer` / `avoid`, and on failures a tagged `diagnosis` object
+  with `kind` ∈ {`wrong_source`, `unknown_source`, `not_found`,
+  `not_executable`, `config`} plus the matching payload fields
+  (`matched`, `prefer_missed`, `avoid_hits`, `reason`, `message`).
+  The JSON view is the single source of truth in machine
+  pipelines, mirroring the human view exactly. `--explain` and
+  `--json` are mutually exclusive.
 - Exit code: `0` if no expectation has status `NG` or `not_found`
-  (excluding `optional`), `1` otherwise.
+  (excluding `optional`), `1` otherwise. Same exit codes apply to
+  `--json` output.
 
 ### 7.2 Source catalog merge
 

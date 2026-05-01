@@ -185,6 +185,7 @@ pathlint --rules ./other.toml
 pathlint --verbose                    # n/a 含む全 expectation と解決後 PATH を表示
 pathlint --quiet                      # 失敗のみ
 pathlint check --explain              # NG ごとに多行詳細を表示（0.0.7+）
+pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 ```
 
 - `--target` のデフォルトは `process`。`user` / `machine` はどの OS

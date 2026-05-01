@@ -27,14 +27,29 @@ regular semver rules apply.
   reason (directory shadow / broken symlink / missing +x bit) and
   points at the most plausible cause. Off by default — the existing
   one-line detail is unchanged.
+- **`pathlint check --json`.** Machine-readable companion to
+  `--explain`: emits a single pretty-printed JSON array, one
+  element per expectation, carrying `command`, `status`,
+  `resolved`, `matched_sources`, `prefer`, `avoid`, and a tagged
+  `diagnosis` object (`kind = "wrong_source"` /
+  `"unknown_source"` / `"not_found"` / `"not_executable"` /
+  `"config"`) on failures. The schema is stable through 0.0.x and
+  parallels `where --json`. `--explain` and `--json` are mutually
+  exclusive.
 
 ### Changed
 
+- (Internal) Introduced `lint::Diagnosis`, a pure-data view of the
+  *why* behind each NG status. Both the human (`--explain`,
+  one-line detail) and JSON (`--json`) views now derive from this
+  single value via `lint::diagnose`, eliminating the previous risk
+  that the two presentations could drift out of sync.
 - (Internal) Presentation logic factored into `src/format.rs`
   (doctor / where formatters) and `src/report.rs` gained
   `explain_lines` plus a new `Style.explain` flag. `run.rs` shrunk
   from 384 to 264 lines. Pure formatters, fully unit-tested. No
-  observable CLI behaviour change other than `--explain` itself.
+  observable CLI behaviour change other than `--explain` /
+  `--json` themselves.
 
 ## [0.0.6] - 2026-05-02
 

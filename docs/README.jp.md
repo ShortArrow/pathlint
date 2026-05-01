@@ -101,6 +101,9 @@ pathlint --verbose
 # を多行表示（0.0.7+）
 pathlint check --explain
 
+# 同じ情報を機械可読出力（CI 連携、0.0.7+）
+pathlint check --json
+
 # starter pathlint.toml をカレントに作る
 pathlint init
 pathlint init --emit-defaults     # 組み込みカタログ全体も書き出す
