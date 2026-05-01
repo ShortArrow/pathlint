@@ -111,7 +111,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
 
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
     let entries = read_path_entries(global);
-    let diags = doctor::analyze(&entries, Os::current());
+    let diags = doctor::analyze_real(&entries, Os::current());
 
     // Validate filter inputs before running anything else so a typo
     // is caught fast (exit 2 — config error, not a lint failure).

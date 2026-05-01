@@ -19,6 +19,23 @@ use std::path::Path;
 use crate::expand;
 use crate::os_detect::Os;
 
+/// Real-world `fs_exists` for `analyze`: hits the filesystem.
+pub fn fs_exists_real(path: &str) -> bool {
+    Path::new(path).exists()
+}
+
+/// Real-world `env_lookup` for `analyze`: reads the process env.
+pub fn env_lookup_real(var: &str) -> Option<String> {
+    env::var(var).ok()
+}
+
+/// Convenience: production wiring of `analyze` that uses the real
+/// filesystem and process env. Equivalent to
+/// `analyze(entries, os, fs_exists_real, env_lookup_real)`.
+pub fn analyze_real(entries: &[String], os: Os) -> Vec<Diagnostic> {
+    analyze(entries, os, fs_exists_real, env_lookup_real)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Severity {
     Warn,
@@ -95,8 +112,17 @@ pub fn all_kind_names() -> &'static [&'static str] {
     ]
 }
 
-/// Run every check on the PATH entry list.
-pub fn analyze(entries: &[String], os: Os) -> Vec<Diagnostic> {
+/// Run every PATH-hygiene check and return a flat list of
+/// diagnostics. Pure: I/O is reached via the injected `fs_exists`
+/// (used by the missing-directory check) and `env_lookup` (used by
+/// the shortenable-with-an-env-var check). Production passes
+/// `fs_exists_real` / `env_lookup_real`; tests pass deterministic
+/// stubs. See `analyze_real` for the production wiring.
+pub fn analyze<F, V>(entries: &[String], os: Os, fs_exists: F, env_lookup: V) -> Vec<Diagnostic>
+where
+    F: Fn(&str) -> bool,
+    V: Fn(&str) -> Option<String>,
+{
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         if let Some(d) = check_malformed(i, entry) {
@@ -105,7 +131,7 @@ pub fn analyze(entries: &[String], os: Os) -> Vec<Diagnostic> {
             // — they're going to be noisy or wrong.
             continue;
         }
-        if let Some(d) = check_missing(i, entry) {
+        if let Some(d) = check_missing(i, entry, &fs_exists) {
             out.push(d);
         }
         if let Some(d) = check_trailing_slash(i, entry) {
@@ -116,7 +142,7 @@ pub fn analyze(entries: &[String], os: Os) -> Vec<Diagnostic> {
                 out.push(d);
             }
         }
-        if let Some(d) = check_shortenable(i, entry, os) {
+        if let Some(d) = check_shortenable(i, entry, os, &env_lookup) {
             out.push(d);
         }
     }
@@ -163,10 +189,12 @@ fn check_malformed(index: usize, entry: &str) -> Option<Diagnostic> {
     None
 }
 
-fn check_missing(index: usize, entry: &str) -> Option<Diagnostic> {
+fn check_missing<F>(index: usize, entry: &str, fs_exists: &F) -> Option<Diagnostic>
+where
+    F: Fn(&str) -> bool,
+{
     let expanded = expand::expand_env(entry);
-    let p = Path::new(&expanded);
-    if p.exists() {
+    if fs_exists(&expanded) {
         return None;
     }
     Some(Diagnostic {
@@ -240,7 +268,10 @@ fn looks_like_8dot3(segment: &str) -> bool {
     matches!(after.get(digits), None | Some(b'.'))
 }
 
-fn check_shortenable(index: usize, entry: &str, os: Os) -> Option<Diagnostic> {
+fn check_shortenable<V>(index: usize, entry: &str, os: Os, env_lookup: &V) -> Option<Diagnostic>
+where
+    V: Fn(&str) -> Option<String>,
+{
     // Skip if the entry is already using an env var.
     if entry.contains('%') || entry.contains('$') {
         return None;
@@ -250,7 +281,7 @@ fn check_shortenable(index: usize, entry: &str, os: Os) -> Option<Diagnostic> {
     // capitalization and slash style.
     let normalized_entry = expand::normalize(entry);
     for (var, prefer_style) in candidate_vars(os) {
-        let Ok(raw) = env::var(var) else {
+        let Some(raw) = env_lookup(var) else {
             continue;
         };
         if raw.is_empty() {
@@ -408,10 +439,32 @@ mod tests {
         diags.iter().map(|d| &d.kind).collect()
     }
 
+    /// Test stubs for the closures `analyze` injects. Most tests
+    /// don't care about either signal, so default to "every path
+    /// exists" + "no env var defined" — that way `Missing` and
+    /// `Shortenable` simply don't fire and noise stays low.
+    fn fs_yes(_: &str) -> bool {
+        true
+    }
+    fn fs_no(_: &str) -> bool {
+        false
+    }
+    fn env_none(_: &str) -> Option<String> {
+        None
+    }
+    fn env_map<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(name, _)| *name == k)
+                .map(|(_, v)| (*v).to_string())
+        }
+    }
+
     #[test]
     fn duplicate_detected_on_normalized_form() {
         let e = entries(&["/usr/bin", "/usr/local/bin", "/usr/bin"]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         let dups: Vec<_> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::Duplicate { .. }))
@@ -422,16 +475,17 @@ mod tests {
 
     #[test]
     fn missing_directory_detected() {
-        // tempfile gives us a definitely-missing path.
-        let e = entries(&["/this/path/does/not/exist/pathlint_test_xyz"]);
-        let diags = analyze(&e, Os::Linux);
+        // fs_no makes every path "missing" — drives the Missing path
+        // without touching the real filesystem.
+        let e = entries(&["/anywhere"]);
+        let diags = analyze(&e, Os::Linux, fs_no, env_none);
         assert!(diags.iter().any(|d| matches!(d.kind, Kind::Missing)));
     }
 
     #[test]
     fn trailing_slash_detected_but_root_allowed() {
         let e = entries(&["/foo/", "/", "C:/"]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         let trailing: Vec<_> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::TrailingSlash))
@@ -443,7 +497,7 @@ mod tests {
     #[test]
     fn malformed_nul_is_error_severity() {
         let e = entries(&["/foo\0/bar"]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         assert!(
             diags
                 .iter()
@@ -467,20 +521,25 @@ mod tests {
     }
 
     #[test]
-    fn shortenable_preserves_original_case_and_slashes() {
-        // SAFETY: process-wide env mutation; isolate per unique name.
-        unsafe { env::set_var("PATHLINT_FAKE_HOME", "C:\\Users\\Mixed") };
-        // `candidate_vars` is keyed off process env, so we have to
-        // wire the test variant inline rather than via the helper.
-        let entry = "C:\\Users\\Mixed\\GoLang\\bin";
-        let normalized_entry = expand::normalize(entry);
-        let raw = env::var("PATHLINT_FAKE_HOME").unwrap();
-        let normalized_var = expand::normalize(&raw);
-        assert!(normalized_entry.starts_with(&normalized_var));
-        let suffix = entry.get(normalized_var.len()..).unwrap();
-        // The tail must come back in its original case + backslashes.
-        assert_eq!(suffix, "\\GoLang\\bin");
-        unsafe { env::remove_var("PATHLINT_FAKE_HOME") };
+    fn shortenable_suggests_env_var_when_entry_starts_with_one() {
+        // Inject UserProfile via env_map; analyze should pick it up
+        // and emit a Shortenable suggestion that preserves the
+        // original case and backslashes from the entry tail.
+        let e = entries(&["C:\\Users\\Mixed\\GoLang\\bin"]);
+        let diags = analyze(
+            &e,
+            Os::Windows,
+            fs_yes,
+            env_map(&[("UserProfile", "C:\\Users\\Mixed")]),
+        );
+        let s = diags
+            .iter()
+            .find_map(|d| match &d.kind {
+                Kind::Shortenable { suggestion } => Some(suggestion.clone()),
+                _ => None,
+            })
+            .expect("expected Shortenable");
+        assert_eq!(s, "%UserProfile%\\GoLang\\bin");
     }
 
     #[test]
@@ -488,7 +547,7 @@ mod tests {
         // Pre-condition: even if HOME points at a prefix of the entry,
         // we don't suggest anything when the entry already uses $.
         let e = entries(&["$HOME/bin"]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_map(&[("HOME", "/home/u")]));
         assert!(
             !diags
                 .iter()
@@ -498,18 +557,11 @@ mod tests {
 
     #[test]
     fn case_variant_picked_up_when_only_case_differs() {
-        // Same path normalized, different verbatim form. We need a
-        // path that genuinely exists for "missing" not to also fire,
-        // so use the OS temp dir.
-        let tmp = std::env::temp_dir();
-        let raw = tmp.to_string_lossy().into_owned();
-        let upper = raw.to_uppercase();
-        if raw == upper {
-            // Linux temp dir is already lowercase; skip.
-            return;
-        }
-        let e = entries(&[&raw, &upper]);
-        let diags = analyze(&e, Os::Linux);
+        // No more temp-dir dance; fs_yes makes both paths "exist" so
+        // Missing does not pollute the result, leaving CaseVariant
+        // free to fire on platforms that case-fold.
+        let e = entries(&["/Tmp/Pathlint_Case", "/tmp/pathlint_case"]);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         let case: Vec<_> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::CaseVariant { .. }))
@@ -520,11 +572,9 @@ mod tests {
     #[test]
     fn empty_entries_are_silently_ignored() {
         let e = entries(&[""]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         // Empty entries are filtered upstream by `split_path`. If one
-        // does sneak in, our checks must not blow up — Missing won't
-        // fire because Path::new("") exists() is false but we don't
-        // count this as a useful diagnostic.
+        // does sneak in, our checks must not blow up.
         let _ = kinds(&diags);
     }
 
@@ -537,7 +587,7 @@ mod tests {
             "/home/u/.local/share/mise/installs/python/3.14/bin",
             "/usr/bin",
         ]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         let mab: Vec<_> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::MiseActivateBoth { .. }))
@@ -558,7 +608,7 @@ mod tests {
     #[test]
     fn mise_activate_both_does_not_fire_when_only_shims_present() {
         let e = entries(&["/home/u/.local/share/mise/shims", "/usr/bin"]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         assert!(
             !diags
                 .iter()
@@ -572,7 +622,7 @@ mod tests {
             "/home/u/.local/share/mise/installs/python/3.14/bin",
             "/usr/bin",
         ]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         assert!(
             !diags
                 .iter()
@@ -588,7 +638,7 @@ mod tests {
             "/home/u/.local/share/mise/installs/node/25.9.0/bin",
             "/usr/bin",
         ]);
-        let diags = analyze(&e, Os::Linux);
+        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         let kind = diags
             .iter()
             .find_map(|d| {
