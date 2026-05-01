@@ -78,9 +78,13 @@ pub fn execute(cli: Cli) -> Result<u8> {
         }
     }
 
-    let outcomes = lint::evaluate(&cfg.expectations, &catalog, os, |cmd| {
-        resolve::resolve(cmd, &path_entries)
-    });
+    let outcomes = lint::evaluate(
+        &cfg.expectations,
+        &catalog,
+        os,
+        |cmd| resolve::resolve(cmd, &path_entries),
+        lint::check_shape_filesystem,
+    );
 
     if check_args.json {
         let json = format::check_json(&outcomes)?;
