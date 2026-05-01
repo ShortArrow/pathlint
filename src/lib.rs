@@ -6,6 +6,7 @@ pub mod cli;
 pub mod config;
 pub mod doctor;
 pub mod expand;
+pub mod format;
 pub mod init;
 pub mod lint;
 pub mod os_detect;

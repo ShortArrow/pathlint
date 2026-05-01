@@ -8,14 +8,28 @@ use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
 use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs};
 use crate::config::Config;
-use crate::doctor::{self, Diagnostic, Kind, Severity};
+use crate::doctor::{self, Diagnostic, Severity};
+use crate::format;
 use crate::init::{self, InitOptions, InitOutcome};
 use crate::lint;
 use crate::os_detect::Os;
 use crate::path_source::{self, Target};
 use crate::report;
 use crate::resolve;
-use crate::where_cmd::{self, Provenance, UninstallHint, WhereOutcome};
+use crate::where_cmd::{self, WhereOutcome};
+
+/// Read PATH for the chosen `--target`, surface any warning, and
+/// split it into entries. The three caller sites (`check`,
+/// `doctor`, `where`) all run the same sequence; centralising it
+/// keeps the warning prefix consistent.
+fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<String> {
+    let target: Target = global.target.into();
+    let path_read = path_source::read_path(target);
+    if let Some(w) = &path_read.warning {
+        eprintln!("pathlint: warning: {w}");
+    }
+    resolve::split_path(&path_read.value)
+}
 
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
@@ -47,14 +61,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
 
     let catalog = catalog::merge_with_user(&cfg.source);
     let os = Os::current();
-    let target: Target = cli.global.target.into();
-    let path_read = path_source::read_path(target);
-
-    if let Some(w) = &path_read.warning {
-        eprintln!("pathlint: warning: {w}");
-    }
-
-    let path_entries = resolve::split_path(&path_read.value);
+    let path_entries = read_path_entries(&cli.global);
 
     if cli.global.verbose {
         if let Some(p) = &rules_path {
@@ -90,12 +97,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
 }
 
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
-    let target: Target = global.target.into();
-    let path_read = path_source::read_path(target);
-    if let Some(w) = &path_read.warning {
-        eprintln!("pathlint: warning: {w}");
-    }
-    let entries = resolve::split_path(&path_read.value);
+    let entries = read_path_entries(global);
     let diags = doctor::analyze(&entries, Os::current());
 
     // Validate filter inputs before running anything else so a typo
@@ -135,69 +137,13 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     };
 
     for d in &printable {
-        println!("{}", format_diagnostic(d, &entries));
+        println!("{}", format::doctor_line(d, &entries));
     }
 
     // Exit code reflects the *kept* set so excluding a Malformed
     // diagnostic genuinely lets the run pass.
     let has_error = kept.iter().any(|d| d.severity == Severity::Error);
     Ok(if has_error { 1 } else { 0 })
-}
-
-fn format_diagnostic(d: &Diagnostic, entries: &[String]) -> String {
-    let tag = match d.severity {
-        Severity::Error => "[ERR] ",
-        Severity::Warn => "[warn]",
-    };
-    let detail = match &d.kind {
-        Kind::Duplicate { first_index } => format!(
-            "duplicate of entry #{first} ({first_path})",
-            first = first_index,
-            first_path = entries.get(*first_index).cloned().unwrap_or_default(),
-        ),
-        Kind::Missing => "directory does not exist".into(),
-        Kind::Shortenable { suggestion } => format!("could be written as {suggestion}"),
-        Kind::TrailingSlash => "trailing slash; some shells handle this oddly".into(),
-        Kind::CaseVariant { canonical } => {
-            format!("case / slash variant of {canonical}; OS treats them as one directory")
-        }
-        Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
-        Kind::Malformed { reason } => format!("malformed entry: {reason}"),
-        Kind::MiseActivateBoth {
-            shim_indices,
-            install_indices,
-        } => return format_mise_activate_both(d, entries, shim_indices, install_indices),
-    };
-    format!(
-        "{tag} #{idx:>3} {entry}\n      {detail}",
-        idx = d.index,
-        entry = d.entry
-    )
-}
-
-fn format_mise_activate_both(
-    d: &Diagnostic,
-    entries: &[String],
-    shim_indices: &[usize],
-    install_indices: &[usize],
-) -> String {
-    let tag = "[warn]";
-    let mut buf =
-        format!("{tag} mise activate exposes both shim and install layers (PATH order matters)\n");
-    buf.push_str("      shims:\n");
-    for &i in shim_indices {
-        let entry = entries.get(i).cloned().unwrap_or_default();
-        buf.push_str(&format!("        #{i:>3} {entry}\n"));
-    }
-    buf.push_str("      installs:\n");
-    for &i in install_indices {
-        let entry = entries.get(i).cloned().unwrap_or_default();
-        buf.push_str(&format!("        #{i:>3} {entry}\n"));
-    }
-    // strip the trailing newline so the outer renderer can add its own
-    buf.pop();
-    let _ = d; // keep parameter for symmetry with other format funcs
-    buf
 }
 
 fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {
@@ -227,97 +173,31 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
         None => Config::default(),
     };
     let merged = catalog::merge_with_user(&cfg.source);
-
-    let target: Target = global.target.into();
-    let path_read = path_source::read_path(target);
-    if let Some(w) = &path_read.warning {
-        eprintln!("pathlint: warning: {w}");
-    }
-    let path_entries = resolve::split_path(&path_read.value);
+    let path_entries = read_path_entries(global);
 
     let outcome = where_cmd::locate(&args.command, &merged, Os::current(), |cmd| {
         resolve::resolve(cmd, &path_entries)
     });
 
     if args.json {
-        return execute_where_json(&args.command, &outcome);
+        let json = format::where_json(&args.command, &outcome)?;
+        println!("{json}");
+        return Ok(match outcome {
+            WhereOutcome::NotFound => 1,
+            WhereOutcome::Found(_) => 0,
+        });
     }
 
     match outcome {
         WhereOutcome::NotFound => {
-            println!("{} — not found on PATH", args.command);
+            println!("{}", format::where_not_found(&args.command));
             Ok(1)
         }
         WhereOutcome::Found(found) => {
-            println!("{}", found.command);
-            println!("  resolved: {}", found.resolved.display());
-            if found.matched_sources.is_empty() {
-                println!("  sources:  (no source matched)");
-            } else {
-                println!("  sources:  {}", found.matched_sources.join(", "));
-            }
-            if let Some(prov) = &found.provenance {
-                match prov {
-                    Provenance::MiseInstallerPlugin {
-                        installer,
-                        plugin_segment,
-                    } => {
-                        println!("  provenance: {installer} (via mise plugin `{plugin_segment}`)");
-                    }
-                }
-            }
-            match found.uninstall {
-                UninstallHint::Command { command } => {
-                    println!("  hint:     {command}");
-                }
-                UninstallHint::NoTemplate { source } => {
-                    println!("  hint:     (no uninstall template for source `{source}`)");
-                }
-                UninstallHint::NoSource => {
-                    println!("  hint:     (no source matched — pathlint cannot guess)");
-                }
-            }
+            println!("{}", format::where_human(&found));
             Ok(0)
         }
     }
-}
-
-fn execute_where_json(command: &str, outcome: &WhereOutcome) -> Result<u8> {
-    // For NotFound we emit `{ "command": "...", "found": false }`
-    // so a script can match on a stable shape; Found uses the
-    // serde-derived layout on `where_cmd::Found` plus an explicit
-    // `"found": true` discriminator.
-    #[derive(serde::Serialize)]
-    #[serde(untagged)]
-    enum Out<'a> {
-        NotFound {
-            command: &'a str,
-            found: bool,
-        },
-        Found {
-            found: bool,
-            #[serde(flatten)]
-            inner: &'a where_cmd::Found,
-        },
-    }
-
-    let payload = match outcome {
-        WhereOutcome::NotFound => Out::NotFound {
-            command,
-            found: false,
-        },
-        WhereOutcome::Found(f) => Out::Found {
-            found: true,
-            inner: f,
-        },
-    };
-    let json = serde_json::to_string_pretty(&payload)?;
-    println!("{json}");
-    let exit = match outcome {
-        WhereOutcome::NotFound => 1,
-        WhereOutcome::Found(_) => 0,
-    };
-    Ok(exit)
 }
 
 fn execute_init(args: &InitArgs) -> Result<u8> {
