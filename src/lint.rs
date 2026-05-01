@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::config::{Expectation, Kind, SourceDef};
+use crate::config::{Expectation, Kind, Severity, SourceDef};
 use crate::expand::normalize;
 use crate::os_detect::Os;
 use crate::resolve::Resolution;
@@ -38,6 +38,25 @@ pub struct Outcome {
     pub matched_sources: Vec<String>,
     pub prefer: Vec<String>,
     pub avoid: Vec<String>,
+    /// Per-rule severity copied from `Expectation.severity`. Pure
+    /// policy: it does not affect `Status` (the domain fact) but
+    /// `lint::exit_code` reads it to decide whether an NG escalates
+    /// to exit 1 or stays at exit 0.
+    pub severity: Severity,
+}
+
+impl Default for Outcome {
+    fn default() -> Self {
+        Outcome {
+            command: String::new(),
+            status: Status::Ok,
+            resolved: None,
+            matched_sources: Vec::new(),
+            prefer: Vec::new(),
+            avoid: Vec::new(),
+            severity: Severity::Error,
+        }
+    }
 }
 
 impl Outcome {
@@ -59,6 +78,7 @@ impl Outcome {
             matched_sources: Vec::new(),
             prefer: expect.prefer.clone(),
             avoid: expect.avoid.clone(),
+            severity: expect.severity,
         }
     }
 
@@ -151,16 +171,23 @@ pub fn has_config_error(outcomes: &[Outcome]) -> bool {
 /// - `2` — at least one `ConfigError` (rules file referenced an
 ///   undefined source, etc.). Wins over `1` because the rules
 ///   themselves are wrong; ignoring this would mask real bugs.
-/// - `1` — at least one NG (`is_failure`).
-/// - `0` — every outcome is `Ok` / `Skip` / `NotApplicable`.
+/// - `1` — at least one NG with `severity = "error"` (the default).
+/// - `0` — every outcome is non-failure, or every failure carries
+///   `severity = "warn"` (a CI-friendly nudge that should not
+///   block the build).
+///
+/// The severity check happens *after* `is_failure`, so a `Warn`
+/// outcome still appears in `--explain` / `--json` and still gets
+/// the `[warn]` tag in the human view; only the exit code is
+/// suppressed.
 pub fn exit_code(outcomes: &[Outcome]) -> u8 {
     if has_config_error(outcomes) {
-        2
-    } else if outcomes.iter().any(|o| is_failure(&o.status)) {
-        1
-    } else {
-        0
+        return 2;
     }
+    let any_error_failure = outcomes
+        .iter()
+        .any(|o| is_failure(&o.status) && o.severity == Severity::Error);
+    if any_error_failure { 1 } else { 0 }
 }
 
 /// Derive the `Diagnosis` for an outcome — the *why* behind a
@@ -410,6 +437,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -435,6 +463,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -461,6 +490,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -481,6 +511,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -498,6 +529,7 @@ mod tests {
             os: None,
             optional: true,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(&optional, &BTreeMap::new(), Os::Linux, |_| None, shape_ok);
         assert_eq!(out[0].status, Status::Skip);
@@ -512,6 +544,7 @@ mod tests {
             os: Some(vec!["windows".into()]),
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -532,6 +565,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -553,6 +587,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -579,6 +614,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         // Only the mise install path matches; cargo and winget do not.
         let out = evaluate(
@@ -610,6 +646,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -647,6 +684,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -680,6 +718,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -715,6 +754,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -753,6 +793,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out_shim = evaluate(
             &expectations,
@@ -785,6 +826,7 @@ mod tests {
             command: command.into(),
             prefer: vec![source.into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
             os: None,
             optional: false,
             kind: Some(kind),
@@ -864,6 +906,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -887,6 +930,7 @@ mod tests {
             os: None,
             optional: false,
             kind: Some(Kind::Executable),
+            severity: crate::config::Severity::Error,
         }];
         let out = evaluate(
             &expectations,
@@ -915,6 +959,7 @@ mod tests {
             matched_sources: matched.iter().map(|s| s.to_string()).collect(),
             prefer: prefer.iter().map(|s| s.to_string()).collect(),
             avoid: avoid.iter().map(|s| s.to_string()).collect(),
+            severity: Severity::Error,
         }
     }
 
@@ -1074,6 +1119,44 @@ mod tests {
         assert_eq!(exit_code(&out), 0);
     }
 
+    fn outcome_with_severity(status: Status, severity: Severity) -> Outcome {
+        Outcome {
+            severity,
+            ..outcome_status(status)
+        }
+    }
+
+    #[test]
+    fn exit_code_zero_when_only_warn_severity_failures() {
+        // severity = "warn" demotes NG so CI doesn't block.
+        let out = vec![
+            outcome_with_severity(Status::NgWrongSource, Severity::Warn),
+            outcome_with_severity(Status::Ok, Severity::Error),
+        ];
+        assert_eq!(exit_code(&out), 0);
+    }
+
+    #[test]
+    fn exit_code_one_when_any_error_severity_failure_present() {
+        // A single Error-severity NG escalates even if other NGs are Warn.
+        let out = vec![
+            outcome_with_severity(Status::NgWrongSource, Severity::Warn),
+            outcome_with_severity(Status::NgNotFound, Severity::Error),
+        ];
+        assert_eq!(exit_code(&out), 1);
+    }
+
+    #[test]
+    fn exit_code_two_still_wins_over_warn_severity() {
+        // ConfigError is a config bug — severity policy must not
+        // mask it.
+        let out = vec![
+            outcome_with_severity(Status::NgWrongSource, Severity::Warn),
+            outcome_with_severity(Status::ConfigError("typo".into()), Severity::Warn),
+        ];
+        assert_eq!(exit_code(&out), 2);
+    }
+
     #[test]
     fn is_failure_true_for_each_ng_variant() {
         assert!(is_failure(&Status::NgWrongSource));
@@ -1102,6 +1185,7 @@ mod tests {
             os: None,
             optional: false,
             kind: None,
+            severity: crate::config::Severity::Error,
         }
     }
 

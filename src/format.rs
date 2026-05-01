@@ -156,6 +156,11 @@ pub fn check_json(outcomes: &[Outcome]) -> Result<String, serde_json::Error> {
 struct OutcomeView<'a> {
     command: &'a str,
     status: &'a Status,
+    /// Per-rule severity copied from the Outcome. Always emitted
+    /// (even for `error`, the default) so a downstream consumer
+    /// gating on severity does not need a fallback for the absent
+    /// case.
+    severity: crate::config::Severity,
     #[serde(skip_serializing_if = "Option::is_none")]
     resolved: Option<String>,
     matched_sources: &'a [String],
@@ -172,6 +177,7 @@ impl<'a> From<&'a Outcome> for OutcomeView<'a> {
         OutcomeView {
             command: &o.command,
             status: &o.status,
+            severity: o.severity,
             resolved: o.resolved.as_ref().map(|p| p.display().to_string()),
             matched_sources: &o.matched_sources,
             prefer: &o.prefer,
@@ -398,6 +404,7 @@ mod tests {
             matched_sources: vec!["cargo".into()],
             prefer: vec!["cargo".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         }
     }
 
@@ -409,6 +416,7 @@ mod tests {
             matched_sources: vec!["scoop".into()],
             prefer: vec!["cargo".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         }
     }
 
@@ -448,6 +456,7 @@ mod tests {
             matched_sources: vec![],
             prefer: vec!["cargo".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         let out = check_json(&[not_found]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -464,6 +473,7 @@ mod tests {
             matched_sources: vec![],
             prefer: vec![],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         let out = check_json(&[skip]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();

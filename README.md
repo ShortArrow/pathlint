@@ -145,6 +145,17 @@ avoid   = ["strawberry"]
 os      = ["windows"]
 ```
 
+Add `severity = "warn"` to a rule to keep its NG visible without
+blocking CI (exit stays 0; the line is tagged `[warn]` instead of
+`[NG]`):
+
+```toml
+[[expect]]
+command  = "rg"
+prefer   = ["cargo"]
+severity = "warn"   # 0.0.7+ — nudge, not a hard fail
+```
+
 Add `kind = "executable"` to also verify the resolved path is an
 actual executable file — catches the case where a directory of the
 same name shadows the binary, or where the file the symlink points

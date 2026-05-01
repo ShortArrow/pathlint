@@ -150,6 +150,16 @@ avoid   = ["strawberry"]
 os      = ["windows"]
 ```
 
+`severity = "warn"` をルールに付ければ、NG を表示するが exit 0
+を保つ（CI を止めずに気付きだけ得る用途、0.0.7+）：
+
+```toml
+[[expect]]
+command  = "rg"
+prefer   = ["cargo"]
+severity = "warn"   # 軽い警告、強制ではない
+```
+
 `kind = "executable"` を足せば、resolve したパスが実際に実行可能
 ファイルかも検証する — 同名のディレクトリがバイナリを覆い隠した
 場合や、symlink の先が消えた場合などを捕まえる：

@@ -239,8 +239,17 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
   pipelines, mirroring the human view exactly. `--explain` and
   `--json` are mutually exclusive.
 - Exit code: `0` if no expectation has status `NG` or `not_found`
-  (excluding `optional`), `1` otherwise. Same exit codes apply to
-  `--json` output.
+  (excluding `optional` and `severity = "warn"` rules), `1`
+  otherwise. Same exit codes apply to `--json` output.
+- **Per-rule severity (0.0.7+).** Each `[[expect]]` accepts an
+  optional `severity` field with values `"error"` (default) or
+  `"warn"`. `error` keeps 0.0.x semantics: NG escalates to exit 1.
+  `warn` reports the same diagnostic with a `[warn]` tag and
+  leaves the exit code at 0 — appropriate for CI nudges where a
+  single rogue path should not block the build. The choice is
+  per-rule; an `error` rule and a `warn` rule may coexist in the
+  same `pathlint.toml`. The severity is surfaced in
+  `check --json` for tooling.
 
 ### 7.2 Source catalog merge
 

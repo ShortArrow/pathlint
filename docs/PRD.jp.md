@@ -210,7 +210,13 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 - expectation 1 つにつき 1 行のステータス。失敗時はインデントされた
   詳細行が続く。
 - exit code: `NG` も `not_found` もなければ `0`、それ以外 `1`
-  （`optional` は除く）。
+  （`optional` および `severity = "warn"` は除く）。
+- **ルールごとの severity（0.0.7+）。** `[[expect]]` は optional な
+  `severity` を取る（`"error"` デフォルト、`"warn"`）。`error` は
+  0.0.x 通りで NG → exit 1。`warn` は同じ診断を `[warn]` タグで
+  表示し exit 0 を保つ。CI で「1 件の逸脱でビルドを止めたくないが
+  気付きは欲しい」ケース用。`error` ルールと `warn` ルールは同じ
+  `pathlint.toml` に混在可能。`check --json` でも severity を出力。
 
 ### 7.2 source カタログのマージ
 

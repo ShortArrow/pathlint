@@ -15,6 +15,15 @@ regular semver rules apply.
 
 ### Added
 
+- **`[[expect]] severity = "warn"`.** Per-rule severity knob for
+  CI scenarios where a `prefer` mismatch should be surfaced but
+  not block the build. `severity = "error"` (default) keeps 0.0.x
+  behaviour: NG escalates to exit 1. `severity = "warn"` reports
+  the diagnostic with a `[warn]` tag and keeps exit 0. The shape
+  of the failure (status, resolved path, matched sources) is
+  unchanged — only the exit-code consequence differs. The
+  `severity` field is also surfaced in `check --json` so CI gates
+  can pattern-match on it.
 - **`pathlint check --explain`.** Expands every NG outcome into a
   multi-line breakdown (resolved path / matched sources /
   prefer / avoid / diagnosis / hint) instead of the single-line

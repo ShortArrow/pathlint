@@ -39,7 +39,7 @@ pub fn render(outcomes: &[Outcome], style: Style) -> String {
 }
 
 fn render_one(o: &Outcome, style: Style) -> String {
-    let tag = status_tag(&o.status, style.no_glyphs);
+    let tag = status_tag(o, style.no_glyphs);
     let mut line = format!("{tag} {command}", command = o.command);
 
     // --explain mode swaps the one-line detail for the multi-line
@@ -112,30 +112,52 @@ fn detail_one_liner(o: &Outcome, diagnosis: &Diagnosis) -> String {
     }
 }
 
-fn status_tag(s: &Status, no_glyphs: bool) -> &'static str {
-    match (s, no_glyphs) {
-        (Status::Ok, false) => "[OK]  ",
+fn status_tag(o: &Outcome, no_glyphs: bool) -> &'static str {
+    use crate::config::Severity as RuleSeverity;
+    // NG with severity=Warn is rendered as [warn] / warn so the
+    // user can tell at a glance whether the failure will block CI.
+    let is_warn_failure = lint::is_failure(&o.status) && o.severity == RuleSeverity::Warn;
+    match (&o.status, no_glyphs, is_warn_failure) {
+        (Status::Ok, false, _) => "[OK]  ",
         (
             Status::NgWrongSource
             | Status::NgUnknownSource
             | Status::NgNotFound
             | Status::NgNotExecutable(_),
             false,
+            true,
+        ) => "[warn]",
+        (
+            Status::NgWrongSource
+            | Status::NgUnknownSource
+            | Status::NgNotFound
+            | Status::NgNotExecutable(_),
+            false,
+            false,
         ) => "[NG]  ",
-        (Status::Skip, false) => "[skip]",
-        (Status::NotApplicable, false) => "[n/a] ",
-        (Status::ConfigError(_), false) => "[ERR] ",
-        (Status::Ok, true) => "OK   ",
+        (Status::Skip, false, _) => "[skip]",
+        (Status::NotApplicable, false, _) => "[n/a] ",
+        (Status::ConfigError(_), false, _) => "[ERR] ",
+        (Status::Ok, true, _) => "OK   ",
         (
             Status::NgWrongSource
             | Status::NgUnknownSource
             | Status::NgNotFound
             | Status::NgNotExecutable(_),
             true,
+            true,
+        ) => "warn ",
+        (
+            Status::NgWrongSource
+            | Status::NgUnknownSource
+            | Status::NgNotFound
+            | Status::NgNotExecutable(_),
+            true,
+            false,
         ) => "NG   ",
-        (Status::Skip, true) => "skip ",
-        (Status::NotApplicable, true) => "n/a  ",
-        (Status::ConfigError(_), true) => "ERR  ",
+        (Status::Skip, true, _) => "skip ",
+        (Status::NotApplicable, true, _) => "n/a  ",
+        (Status::ConfigError(_), true, _) => "ERR  ",
     }
 }
 
@@ -262,6 +284,7 @@ mod tests {
             matched_sources: matched.iter().map(|s| s.to_string()).collect(),
             prefer: prefer.iter().map(|s| s.to_string()).collect(),
             avoid: avoid.iter().map(|s| s.to_string()).collect(),
+            severity: crate::config::Severity::Error,
         }
     }
 
@@ -274,6 +297,7 @@ mod tests {
             matched_sources: vec!["cargo".into()],
             prefer: vec!["cargo".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         assert!(explain_lines(&o).is_empty());
     }
@@ -314,6 +338,7 @@ mod tests {
             matched_sources: vec![],
             prefer: vec!["cargo".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         let lines = explain_lines(&o);
         assert!(
@@ -337,6 +362,7 @@ mod tests {
             matched_sources: vec![],
             prefer: vec!["cargo".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         let lines = explain_lines(&o);
         assert!(lines.iter().any(|l| l.contains("not found on any PATH")));
@@ -352,6 +378,7 @@ mod tests {
             matched_sources: vec!["custom".into()],
             prefer: vec!["custom".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         let lines = explain_lines(&o);
         assert!(
@@ -395,6 +422,32 @@ mod tests {
     }
 
     #[test]
+    fn warn_severity_failure_uses_warn_tag_instead_of_ng() {
+        let warn_outcome = Outcome {
+            severity: crate::config::Severity::Warn,
+            ..ng_wrong_source(&["scoop"], &["cargo"], &[])
+        };
+        let out = render(&[warn_outcome], style(false));
+        assert!(out.contains("[warn]"), "out: {out}");
+        assert!(!out.contains("[NG]"), "warn must not also tag NG: {out}");
+    }
+
+    #[test]
+    fn warn_severity_no_glyph_uses_lower_warn_tag() {
+        let warn_outcome = Outcome {
+            severity: crate::config::Severity::Warn,
+            ..ng_wrong_source(&["scoop"], &["cargo"], &[])
+        };
+        let s = Style {
+            no_glyphs: true,
+            ..style(false)
+        };
+        let out = render(&[warn_outcome], s);
+        assert!(out.contains("warn "), "out: {out}");
+        assert!(!out.contains("NG   "), "out: {out}");
+    }
+
+    #[test]
     fn render_explain_skips_ok_outcomes_unchanged() {
         let ok = Outcome {
             command: "rg".into(),
@@ -403,6 +456,7 @@ mod tests {
             matched_sources: vec!["cargo".into()],
             prefer: vec!["cargo".into()],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         let out = render(&[ok], style(true));
         assert!(out.contains("[OK]"), "out: {out:?}");
@@ -421,6 +475,7 @@ mod tests {
             matched_sources: vec![],
             prefer: vec![],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         };
         let lines = explain_lines(&o);
         assert!(lines[0].contains("undefined source name: typo"));
@@ -437,6 +492,7 @@ mod tests {
             matched_sources: vec![],
             prefer: vec![],
             avoid: vec![],
+            severity: crate::config::Severity::Error,
         }
     }
 

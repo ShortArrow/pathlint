@@ -557,6 +557,76 @@ prefer  = ["good"]
 }
 
 #[test]
+fn severity_warn_keeps_run_passing_with_warn_tag() {
+    // CI scenario: a `prefer = ["cargo"]` rule with severity = "warn"
+    // surfaces the diagnostic but does not block the build.
+    let tmp = tempfile::tempdir().unwrap();
+    let bad_dir = tmp.path().join("bad");
+    stub(&bad_dir, "tooly");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[[expect]]
+command  = "tooly"
+prefer   = ["good"]
+severity = "warn"
+
+[source.good]
+{key} = "{good}"
+
+[source.bad]
+{key} = "{bad}"
+"#,
+        good = "/this/path/does/not/exist",
+        bad = bad_dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run(&rules, &join_path(&[&bad_dir]));
+    assert_eq!(code, 0, "warn severity must keep exit 0; stdout: {stdout}");
+    assert!(stdout.contains("warn"), "warn tag missing: {stdout}");
+    assert!(stdout.contains("tooly"), "command missing: {stdout}");
+}
+
+#[test]
+fn severity_warn_visible_in_check_json() {
+    // The JSON view must surface severity so CI gates can be
+    // built on it (e.g. "warn lines OK, error lines fail").
+    let tmp = tempfile::tempdir().unwrap();
+    let bad_dir = tmp.path().join("bad");
+    stub(&bad_dir, "tooly");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[[expect]]
+command  = "tooly"
+prefer   = ["good"]
+severity = "warn"
+
+[source.good]
+{key} = "{good}"
+
+[source.bad]
+{key} = "{bad}"
+"#,
+        good = "/this/path/does/not/exist",
+        bad = bad_dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run_with_args(&rules, &join_path(&[&bad_dir]), &["check", "--json"]);
+    assert_eq!(
+        code, 0,
+        "warn severity must keep exit 0 even in JSON; stdout: {stdout}"
+    );
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    assert_eq!(v[0]["severity"], "warn");
+    assert_eq!(v[0]["status"], "ng_wrong_source");
+}
+
+#[test]
 fn explain_off_keeps_one_line_detail_for_ng() {
     // Sanity: without --explain the detail is still the one-liner.
     let tmp = tempfile::tempdir().unwrap();

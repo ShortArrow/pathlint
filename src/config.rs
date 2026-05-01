@@ -33,7 +33,7 @@ pub struct Config {
 }
 
 /// A single `[[expect]]` entry.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Expectation {
     pub command: String,
@@ -55,6 +55,29 @@ pub struct Expectation {
     /// addition to the source check. See PRD §7.6.
     #[serde(default)]
     pub kind: Option<Kind>,
+
+    /// How a failure on this rule should affect the run's exit
+    /// code. `error` (default, 0.0.x behaviour) escalates an NG to
+    /// exit 1 — appropriate for "this absolutely must come from
+    /// cargo" rules. `warn` keeps the diagnostic visible but lets
+    /// the run pass (exit 0) — appropriate for nudges and
+    /// preferences in CI where a single rogue path should not block
+    /// the build. The shape (NG variant, resolved path, etc.) is
+    /// unchanged; only the exit-code consequence differs.
+    #[serde(default)]
+    pub severity: Severity,
+}
+
+/// Per-rule severity for `[[expect]]`. Defaults to `Error` so 0.0.x
+/// rules behave exactly as before.
+#[derive(Debug, Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    /// NG escalates to exit 1. Default.
+    #[default]
+    Error,
+    /// NG is reported but does not change the exit code.
+    Warn,
 }
 
 /// Shape vocabulary for `[[expect]] kind = ...`. Only `executable`
@@ -288,5 +311,58 @@ command = "x"
         )
         .unwrap();
         assert_eq!(cfg.expectations[0].kind, None);
+    }
+
+    #[test]
+    fn severity_defaults_to_error() {
+        // Unspecified severity must keep 0.0.x behaviour: NG => exit 1.
+        let cfg = Config::parse_toml(
+            r#"
+[[expect]]
+command = "x"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.expectations[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn severity_warn_parses() {
+        let cfg = Config::parse_toml(
+            r#"
+[[expect]]
+command = "x"
+severity = "warn"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.expectations[0].severity, Severity::Warn);
+    }
+
+    #[test]
+    fn severity_error_parses_explicitly() {
+        let cfg = Config::parse_toml(
+            r#"
+[[expect]]
+command = "x"
+severity = "error"
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.expectations[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn severity_unknown_value_is_a_parse_error() {
+        let err = Config::parse_toml(
+            r#"
+[[expect]]
+command = "x"
+severity = "info"
+"#,
+        )
+        .unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("severity") || msg.contains("info"), "{msg}");
     }
 }
