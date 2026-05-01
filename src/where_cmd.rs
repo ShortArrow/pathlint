@@ -16,6 +16,7 @@ use crate::config::SourceDef;
 use crate::expand::{expand_and_normalize, normalize};
 use crate::os_detect::Os;
 use crate::resolve::Resolution;
+use crate::source_match;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum WhereOutcome {
@@ -86,7 +87,7 @@ where
     };
 
     let haystack = normalize(&resolution.full_path.to_string_lossy());
-    let mut matched = matched_sources_ranked(&haystack, sources, os);
+    let mut matched = source_match::names_only(&haystack, sources, os);
 
     // Plugin-aware provenance gets a chance BEFORE the generic
     // catalog-based uninstall lookup, because for mise plugins we
@@ -114,30 +115,6 @@ where
         uninstall,
         provenance,
     })
-}
-
-/// Like `lint::matched_sources` but ranked by needle length
-/// descending — the longest, most specific path wins the lead spot.
-fn matched_sources_ranked(
-    haystack: &str,
-    sources: &BTreeMap<String, SourceDef>,
-    os: Os,
-) -> Vec<String> {
-    let mut hits: Vec<(usize, String)> = Vec::new();
-    for (name, def) in sources {
-        let Some(raw) = def.path_for(os) else {
-            continue;
-        };
-        let needle = expand_and_normalize(raw);
-        if needle.is_empty() {
-            continue;
-        }
-        if haystack.contains(&needle) {
-            hits.push((needle.len(), name.clone()));
-        }
-    }
-    hits.sort_by_key(|h| std::cmp::Reverse(h.0));
-    hits.into_iter().map(|(_, n)| n).collect()
 }
 
 fn rank_mise_alias_last(matched: &mut [String]) {

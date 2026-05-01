@@ -8,9 +8,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::config::{Expectation, SourceDef};
-use crate::expand::{expand_and_normalize, normalize};
+use crate::expand::normalize;
 use crate::os_detect::Os;
 use crate::resolve::Resolution;
+use crate::source_match;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -184,7 +185,7 @@ fn evaluate_one<R: FnMut(&str) -> Option<Resolution>>(
     };
 
     let haystack = normalize(&resolution.full_path.to_string_lossy());
-    let matched = matched_sources(&haystack, sources, os);
+    let matched = source_match::names_only(&haystack, sources, os);
     let mut status = decide(&matched, &expect.prefer, &expect.avoid);
 
     // R2 shape check. Only run when the source check already passed —
@@ -267,27 +268,6 @@ fn first_undefined<'a>(
         }
     }
     None
-}
-
-fn matched_sources(
-    normalized_full_path: &str,
-    sources: &BTreeMap<String, SourceDef>,
-    os: Os,
-) -> Vec<String> {
-    let mut hits = Vec::new();
-    for (name, def) in sources {
-        let Some(raw) = def.path_for(os) else {
-            continue;
-        };
-        let needle = expand_and_normalize(raw);
-        if needle.is_empty() {
-            continue;
-        }
-        if normalized_full_path.contains(&needle) {
-            hits.push(name.clone());
-        }
-    }
-    hits
 }
 
 fn decide(matched: &[String], prefer: &[String], avoid: &[String]) -> Status {
