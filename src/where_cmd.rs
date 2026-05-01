@@ -10,6 +10,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::config::SourceDef;
 use crate::expand::{expand_and_normalize, normalize};
 use crate::os_detect::Os;
@@ -23,7 +25,7 @@ pub enum WhereOutcome {
     NotFound,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct Found {
     pub command: String,
     pub resolved: PathBuf,
@@ -40,10 +42,11 @@ pub struct Found {
     pub provenance: Option<Provenance>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UninstallHint {
     /// A concrete shell command the user can run.
-    Command(String),
+    Command { command: String },
     /// We matched a source but it has no `uninstall_command` template.
     NoTemplate { source: String },
     /// No source matched the resolved path at all.
@@ -53,7 +56,8 @@ pub enum UninstallHint {
 /// Best-guess provenance derived from path-segment heuristics rather
 /// than catalog `[source.<name>]` entries. Today only fires for
 /// binaries served through mise's plugin system.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Provenance {
     /// A binary mise installed via a third-party installer plugin.
     /// `installer` is the upstream tool name (`cargo`, `npm`, ...);
@@ -175,7 +179,9 @@ fn derive_uninstall(
             continue;
         };
         if let Some(template) = &def.uninstall_command {
-            return UninstallHint::Command(template.replace("{bin}", &bin));
+            return UninstallHint::Command {
+                command: template.replace("{bin}", &bin),
+            };
         }
     }
     UninstallHint::NoTemplate {
@@ -245,9 +251,11 @@ fn uninstall_for_provenance(prov: &Provenance) -> UninstallHint {
             let rest = plugin_segment
                 .strip_prefix(&format!("{installer}-"))
                 .unwrap_or(plugin_segment);
-            UninstallHint::Command(format!(
-                "mise uninstall {installer}:{rest}  (best-guess; verify with `mise plugins ls`)"
-            ))
+            UninstallHint::Command {
+                command: format!(
+                    "mise uninstall {installer}:{rest}  (best-guess; verify with `mise plugins ls`)"
+                ),
+            }
         }
     }
 }
@@ -311,7 +319,9 @@ mod tests {
                 assert_eq!(f.matched_sources, vec!["cargo".to_string()]);
                 assert_eq!(
                     f.uninstall,
-                    UninstallHint::Command("cargo uninstall lazygit".into())
+                    UninstallHint::Command {
+                        command: "cargo uninstall lazygit".into()
+                    }
                 );
             }
             other => panic!("expected Found, got {other:?}"),
@@ -346,10 +356,10 @@ mod tests {
                 // Plugin attribution: the cargo- prefix wins over
                 // the generic mise_installs uninstall_command.
                 match &f.uninstall {
-                    UninstallHint::Command(cmd) => {
+                    UninstallHint::Command { command } => {
                         assert!(
-                            cmd.contains("mise uninstall cargo:lazygit"),
-                            "uninstall: {cmd}"
+                            command.contains("mise uninstall cargo:lazygit"),
+                            "uninstall: {command}"
                         );
                     }
                     other => panic!("expected Command, got {other:?}"),
@@ -421,7 +431,9 @@ mod tests {
             WhereOutcome::Found(f) => {
                 assert_eq!(
                     f.uninstall,
-                    UninstallHint::Command("cargo uninstall lazygit".into())
+                    UninstallHint::Command {
+                        command: "cargo uninstall lazygit".into()
+                    }
                 );
             }
             other => panic!("expected Found, got {other:?}"),
@@ -454,8 +466,8 @@ mod tests {
                     }) if plugin_segment == "npm-google-gemini-cli"
                 ));
                 match &f.uninstall {
-                    UninstallHint::Command(cmd) => {
-                        assert!(cmd.starts_with("mise uninstall npm:google-gemini-cli"));
+                    UninstallHint::Command { command } => {
+                        assert!(command.starts_with("mise uninstall npm:google-gemini-cli"));
                     }
                     other => panic!("expected Command, got {other:?}"),
                 }
@@ -516,7 +528,9 @@ mod tests {
                 assert!(f.provenance.is_none());
                 assert_eq!(
                     f.uninstall,
-                    UninstallHint::Command("cargo uninstall cargo-lazygit".into())
+                    UninstallHint::Command {
+                        command: "cargo uninstall cargo-lazygit".into()
+                    }
                 );
             }
             other => panic!("expected Found, got {other:?}"),

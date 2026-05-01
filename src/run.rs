@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
-use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, InitArgs, WhereArgs};
+use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs};
 use crate::config::Config;
 use crate::doctor::{self, Diagnostic, Kind, Severity};
 use crate::init::{self, InitOptions, InitOutcome};
@@ -25,7 +25,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
         }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
-        Some(Command::Doctor) => return execute_doctor(&cli.global),
+        Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
         Some(Command::Where(args)) => return execute_where(&args, &cli.global),
         Some(Command::Check) | None => {}
     }
@@ -89,7 +89,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
     }
 }
 
-fn execute_doctor(global: &crate::cli::GlobalOpts) -> Result<u8> {
+fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
     let target: Target = global.target.into();
     let path_read = path_source::read_path(target);
     if let Some(w) = &path_read.warning {
@@ -98,20 +98,49 @@ fn execute_doctor(global: &crate::cli::GlobalOpts) -> Result<u8> {
     let entries = resolve::split_path(&path_read.value);
     let diags = doctor::analyze(&entries, Os::current());
 
+    // Validate filter inputs before running anything else so a typo
+    // is caught fast (exit 2 — config error, not a lint failure).
+    let known: std::collections::BTreeSet<&'static str> =
+        doctor::all_kind_names().iter().copied().collect();
+    for name in args.include.iter().chain(args.exclude.iter()) {
+        if !known.contains(name.as_str()) {
+            anyhow::bail!(
+                "unknown doctor kind `{name}`; valid values: {}",
+                doctor::all_kind_names().join(", ")
+            );
+        }
+    }
+
+    let kept: Vec<&Diagnostic> = diags
+        .iter()
+        .filter(|d| {
+            let name = doctor::kind_name(&d.kind);
+            if !args.include.is_empty() {
+                args.include.iter().any(|s| s == name)
+            } else if !args.exclude.is_empty() {
+                !args.exclude.iter().any(|s| s == name)
+            } else {
+                true
+            }
+        })
+        .collect();
+
     let printable: Vec<&Diagnostic> = if global.quiet {
-        diags
-            .iter()
+        kept.iter()
+            .copied()
             .filter(|d| d.severity == Severity::Error)
             .collect()
     } else {
-        diags.iter().collect()
+        kept.clone()
     };
 
     for d in &printable {
         println!("{}", format_diagnostic(d, &entries));
     }
 
-    let has_error = diags.iter().any(|d| d.severity == Severity::Error);
+    // Exit code reflects the *kept* set so excluding a Malformed
+    // diagnostic genuinely lets the run pass.
+    let has_error = kept.iter().any(|d| d.severity == Severity::Error);
     Ok(if has_error { 1 } else { 0 })
 }
 
@@ -210,6 +239,10 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
         resolve::resolve(cmd, &path_entries)
     });
 
+    if args.json {
+        return execute_where_json(&args.command, &outcome);
+    }
+
     match outcome {
         WhereOutcome::NotFound => {
             println!("{} — not found on PATH", args.command);
@@ -234,8 +267,8 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
                 }
             }
             match found.uninstall {
-                UninstallHint::Command(cmd) => {
-                    println!("  hint:     {cmd}");
+                UninstallHint::Command { command } => {
+                    println!("  hint:     {command}");
                 }
                 UninstallHint::NoTemplate { source } => {
                     println!("  hint:     (no uninstall template for source `{source}`)");
@@ -247,6 +280,44 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
             Ok(0)
         }
     }
+}
+
+fn execute_where_json(command: &str, outcome: &WhereOutcome) -> Result<u8> {
+    // For NotFound we emit `{ "command": "...", "found": false }`
+    // so a script can match on a stable shape; Found uses the
+    // serde-derived layout on `where_cmd::Found` plus an explicit
+    // `"found": true` discriminator.
+    #[derive(serde::Serialize)]
+    #[serde(untagged)]
+    enum Out<'a> {
+        NotFound {
+            command: &'a str,
+            found: bool,
+        },
+        Found {
+            found: bool,
+            #[serde(flatten)]
+            inner: &'a where_cmd::Found,
+        },
+    }
+
+    let payload = match outcome {
+        WhereOutcome::NotFound => Out::NotFound {
+            command,
+            found: false,
+        },
+        WhereOutcome::Found(f) => Out::Found {
+            found: true,
+            inner: f,
+        },
+    };
+    let json = serde_json::to_string_pretty(&payload)?;
+    println!("{json}");
+    let exit = match outcome {
+        WhereOutcome::NotFound => 1,
+        WhereOutcome::Found(_) => 0,
+    };
+    Ok(exit)
 }
 
 fn execute_init(args: &InitArgs) -> Result<u8> {

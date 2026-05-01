@@ -63,6 +63,38 @@ pub struct Diagnostic {
     pub kind: Kind,
 }
 
+/// Stable kebabless name for a `Kind` variant. Used by
+/// `pathlint doctor --include` / `--exclude`. Returning a `&'static
+/// str` (not formatting the Debug output) means the names are part
+/// of the public CLI surface and survive struct-field changes.
+pub fn kind_name(kind: &Kind) -> &'static str {
+    match kind {
+        Kind::Duplicate { .. } => "duplicate",
+        Kind::Missing => "missing",
+        Kind::Shortenable { .. } => "shortenable",
+        Kind::TrailingSlash => "trailing_slash",
+        Kind::CaseVariant { .. } => "case_variant",
+        Kind::ShortName => "short_name",
+        Kind::Malformed { .. } => "malformed",
+        Kind::MiseActivateBoth { .. } => "mise_activate_both",
+    }
+}
+
+/// Every name `kind_name` can return. Used for CLI input validation
+/// and help text.
+pub fn all_kind_names() -> &'static [&'static str] {
+    &[
+        "duplicate",
+        "missing",
+        "shortenable",
+        "trailing_slash",
+        "case_variant",
+        "short_name",
+        "malformed",
+        "mise_activate_both",
+    ]
+}
+
 /// Run every check on the PATH entry list.
 pub fn analyze(entries: &[String], os: Os) -> Vec<Diagnostic> {
     let mut out = Vec::new();

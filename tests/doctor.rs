@@ -149,6 +149,92 @@ fn doctor_quiet_hides_warnings_but_keeps_errors() {
     );
 }
 
+// ---- --include / --exclude (0.0.6+) -------------------------
+
+fn run_doctor_args(path_value: &str, extra: &[&str]) -> (i32, String, String) {
+    let mut cmd = Command::new(BIN);
+    cmd.arg("doctor")
+        .args(extra)
+        .env("PATH", path_value)
+        .env_remove("XDG_CONFIG_HOME");
+    let out = cmd.output().expect("failed to run pathlint binary");
+    let code = out.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    (code, stdout, stderr)
+}
+
+#[test]
+fn doctor_include_filters_to_named_kinds_only() {
+    // PATH carries one missing dir AND one duplicate. With
+    // `--include duplicate` the missing entry must be silenced.
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real");
+    fs::create_dir_all(&real).unwrap();
+    let absent = tmp.path().join("definitely_does_not_exist_xyz");
+    let path = join_path(&[&real, &real, &absent]);
+    let (code, stdout, _) = run_doctor_args(&path, &["--include", "duplicate"]);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("duplicate"), "stdout: {stdout}");
+    assert!(!stdout.contains("does not exist"), "stdout: {stdout}");
+}
+
+#[test]
+fn doctor_exclude_drops_diagnostics_and_affects_exit_code() {
+    // Force a malformed (Error severity) entry on Windows + a
+    // duplicate. Without --exclude this exits 1; with
+    // --exclude malformed the Error is suppressed and the run
+    // passes.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("d");
+    fs::create_dir_all(&dir).unwrap();
+    if !cfg!(windows) {
+        // Unix doesn't have a comparably easy malformed staging.
+        return;
+    }
+    let path = format!("{};C:\\foo|bar", dir.display());
+
+    let (default_code, default_stdout, _) = run_doctor_args(&path, &[]);
+    assert_eq!(default_code, 1, "stdout: {default_stdout}");
+    assert!(default_stdout.contains("[ERR]"), "stdout: {default_stdout}");
+
+    let (filtered_code, filtered_stdout, _) = run_doctor_args(&path, &["--exclude", "malformed"]);
+    assert_eq!(filtered_code, 0, "stdout: {filtered_stdout}");
+    assert!(
+        !filtered_stdout.contains("[ERR]"),
+        "stdout: {filtered_stdout}"
+    );
+}
+
+#[test]
+fn doctor_unknown_kind_is_a_config_error_with_exit_2() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("d");
+    fs::create_dir_all(&dir).unwrap();
+    let (code, _stdout, stderr) = run_doctor_args(&join_path(&[&dir]), &["--include", "nope"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("unknown doctor kind"), "stderr: {stderr}");
+    assert!(stderr.contains("nope"), "stderr: {stderr}");
+}
+
+#[test]
+fn doctor_include_and_exclude_together_is_a_clap_error() {
+    // clap's conflicts_with annotation should make the parse fail
+    // with exit 2 and a usage message before pathlint even runs.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("d");
+    fs::create_dir_all(&dir).unwrap();
+    let (code, _stdout, stderr) = run_doctor_args(
+        &join_path(&[&dir]),
+        &["--include", "duplicate", "--exclude", "missing"],
+    );
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.to_ascii_lowercase().contains("cannot be used"),
+        "stderr: {stderr}"
+    );
+}
+
 #[test]
 fn doctor_warns_when_mise_shim_and_install_coexist() {
     let tmp = tempfile::tempdir().unwrap();
