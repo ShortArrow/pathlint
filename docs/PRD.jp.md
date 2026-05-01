@@ -244,6 +244,11 @@ pathlint --quiet                      # 失敗のみ
   - ケース／slash 違い重複（同じ正規化形だが verbatim が違う）。
   - 環境変数で短縮できる候補（`%LocalAppData%` / `%UserProfile%` /
     `$HOME` 系）。提案文字列は元のケースと slash 向きを保つ。
+  - (0.0.5+) `MiseActivateBoth` — PATH 上に `mise/shims/` と
+    `mise/installs/` が同時に存在。`mise activate` が shim と
+    PATH-rewrite モード両方で設定されているか、過去の設定の残骸が
+    まだ PATH に残っているか。shim entries と install entries
+    すべてを列挙して、どちらを残すかユーザーが判断できるようにする。
 - `--quiet` で warn 抑制、error は常に表示。
 
 ### 7.6 `[[expect]] kind = "executable"`（R2、0.0.4 で実装）
@@ -696,11 +701,11 @@ Options（global）:
 
 - **[R3] mise activate vs shims モード。** `mise activate` は PATH
   先頭に `mise/shims/` を前置する形と、`installs/<lang>/<ver>/bin/`
-  を直接 PATH 書き換えする形の 2 通り。それぞれ resolve 結果は
-  `mise_shims` / `mise_installs` の別 source に当たる。ユーザーが
-  どちら使ってるかを expect 側で意識する、pathlint がモード自動
-  判別はしない。R3 は将来、両層が PATH 上に同時存在したら警告
-  しても良い。
+  を直接 PATH 書き換えする形の 2 通り。*(0.0.5 で「両層が同時存在
+  したら警告」の半分を解決 — `pathlint doctor` が `MiseActivateBoth`
+  diagnostic を出して shim / install 両方のエントリを列挙する。
+  expect ルール側でどちらを選ぶかはユーザーが決める、pathlint は
+  自動判別しない。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
   する PATH は `process` と違うことがある。MVP 外。R3 では R1 と
   違う形で出すかも：login services が見る PATH と、ユーザーが見る

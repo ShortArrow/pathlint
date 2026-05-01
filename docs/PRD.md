@@ -265,6 +265,12 @@ pathlint --quiet                      # only print failures
   - Shortenable entries — could be written using a known env var
     (`%LocalAppData%` / `%UserProfile%` / `$HOME` etc.); the
     suggestion preserves the original case + slash style.
+  - (0.0.5+) `MiseActivateBoth` — PATH exposes both `mise/shims/`
+    and `mise/installs/` simultaneously. Usually means
+    `mise activate` is configured in both shim and PATH-rewrite
+    modes, or stale entries from a past configuration are still
+    in PATH. Output enumerates every shim and install entry so
+    the user can pick which to remove.
 - `--quiet` hides warns; errors always print.
 
 ### 7.6 `[[expect]] kind = "executable"` (R2, implemented in 0.0.4)
@@ -727,11 +733,11 @@ Tagged with the role(s) each touches.
 
 - **[R3] mise activate vs shims.** `mise activate` can either
   prepend `mise/shims/` to PATH or rewrite PATH with the
-  per-runtime `installs/<lang>/<ver>/bin/` directly. The two modes
-  resolve to different sources (`mise_shims` vs `mise_installs`).
-  Users pick which they expect rather than pathlint detecting the
-  mode. R3 may eventually warn when both layers appear in PATH
-  simultaneously.
+  per-runtime `installs/<lang>/<ver>/bin/` directly. *(0.0.5
+  resolved the "warn when both layers coexist" half — `pathlint
+  doctor` now emits a `MiseActivateBoth` diagnostic listing every
+  shim entry alongside every install entry. Users still pick a
+  mode for `[[expect]]` rules; pathlint does not auto-detect.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP. R3 might
   expose this differently from R1: doctor could compare what the

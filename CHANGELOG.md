@@ -13,6 +13,14 @@ regular semver rules apply.
 
 ### Added
 
+- **R3 — `MiseActivateBoth` doctor diagnostic.** `pathlint doctor`
+  now warns when PATH simultaneously exposes `mise/shims/` and one
+  or more `mise/installs/...` entries. Common causes: `mise
+  activate` configured in both shim and PATH-rewrite modes, or
+  stale entries from a past configuration. Output enumerates
+  every shim entry alongside every install entry so the user can
+  pick which to remove. PRD §16 mise-activate-vs-shims question
+  marked resolved on the doctor side.
 - **R4 — mise plugin provenance.** `pathlint where <command>` now
   inspects mise plugin segments. When the resolved binary lives
   under `mise/installs/<segment>/...` and `<segment>` starts with
