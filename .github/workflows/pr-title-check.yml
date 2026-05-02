@@ -1,0 +1,50 @@
+name: pr-title-check
+
+# Verify PR titles follow Conventional Commits so the auto-generated
+# release notes (`gh release create --generate-notes` via
+# softprops/action-gh-release) come out grouped and readable.
+#
+# Allowed prefixes mirror what we use day-to-day in this repo. The
+# matcher accepts an optional scope and an optional `!` for breaking
+# changes, e.g.:
+#
+#   feat: add doctor --json
+#   fix(catalog): correct unix fallback for termux
+#   refactor!: drop bump-on-main flow
+#   chore(deps): bump clap to 4.6
+#
+# Runs only on PRs targeting main; failed checks block merge via
+# branch protection (configure that separately).
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            refactor
+            perf
+            test
+            docs
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          # Subject case is left up to the author; we only enforce
+          # the type prefix.
+          disallowScopes: |
+            release

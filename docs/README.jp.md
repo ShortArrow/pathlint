@@ -302,7 +302,7 @@ cargo install --git https://github.com/ShortArrow/pathlint
 - [README（英語）](../README.md)
 - [PRD（英語）](PRD.md)
 - [リリース手順（英語）](RELEASE.md)
-- [Changelog](../CHANGELOG.md)
+- [Releases](https://github.com/ShortArrow/pathlint/releases) — 自動生成のリリースノート付き履歴
 
 ## ライセンス
 

@@ -1,271 +1,167 @@
 # Release process
 
-How to cut a new pathlint release. Optimised for the `0.0.x` /
-`0.1.x` cadence — small, frequent, occasionally schema-breaking —
-and structured so each step has a concrete check you can paste into
-a terminal. The goal is **reproducible**: anyone with push rights
-should be able to follow this and produce a clean release without
-remembering what the last person did.
+How to cut a new pathlint release. Cutting a release is one
+button press: **Actions → release → Run workflow → enter the new
+version → Run**. Everything else (bump, tag, build, GitHub
+Release, crates.io publish) runs from `.github/workflows/release.yml`.
 
-## Prerequisites
+No `develop` branch. No `chore: release` commit you have to hand-
+write. No `CHANGELOG.md` to keep in sync — release notes are
+auto-generated from PR titles via Conventional Commits.
 
-- The work for the new version is on `develop`, CI green.
-- Working tree clean on both `develop` and `main`.
-- You have push rights to `origin`.
-- For a publishing release: `cargo login` set up locally if you
-  plan to `cargo publish` (the GitHub Release pipeline handles the
-  prebuilt binaries on its own).
+## TL;DR
+
+1. Open Actions → **release** → **Run workflow**.
+2. Enter the new version (e.g. `0.0.8`). Drop the `v`; the workflow
+   adds it for the tag.
+3. Click **Run workflow**.
+
+That's the whole user-facing flow. The rest of this document
+describes what the workflow does, what to do when it fails, and
+the one-time setup needed for a fresh repo.
 
 ## Versioning policy
 
 - `0.0.x` and `0.1.x` may both introduce breaking changes to the
-  TOML schema and CLI surface; this is documented in `CHANGELOG.md`.
-- A patch bump (`0.0.A` → `0.0.A+1`) is the default during
-  pre-1.0 — bump anytime there is shippable behaviour change.
+  TOML schema and CLI surface; this is announced in the GitHub
+  Release notes.
+- A patch bump (`0.0.A` → `0.0.A+1`) is the default during pre-1.0
+  — bump anytime there is shippable behaviour change.
 - A minor bump (`0.0.x` → `0.1.0`) is reserved for the moment we
   declare schema/CLI stable enough to call the regular semver
   contract into effect.
 
-## Two release shapes
+## What the workflow does
 
-There are two version-bump timings, and both leave a clean
-`first-parent main` history. Pick the one that matches how the work
-landed:
+`release.yml` runs four jobs in sequence:
 
-- **Bump-on-main (default).** `Cargo.toml` and `CHANGELOG.md` stay
-  on the previous version through the whole development cycle on
-  `develop`. The bump happens on `main` *after* the no-ff merge,
-  as the `chore: release` commit. This is what 0.0.2 – 0.0.6
-  used. Best when the version number isn't decided until cut time.
-- **Bump-on-develop.** `Cargo.toml` was bumped to `X.Y.Z` early in
-  the cycle (e.g. when the first feature commit defined the
-  release theme), and `CHANGELOG.md` already has a `## [X.Y.Z] -
-  YYYY-MM-DD` section above `[Unreleased]` (date may still be a
-  placeholder). The `chore: release` commit on `main` then only
-  fixes the date and refreshes `Cargo.lock`. This is what 0.0.7
-  used. Best when bumping early lets `cargo run --version` track
-  the in-progress release while you work.
+1. **prepare**: bumps `Cargo.toml` (and refreshes `Cargo.lock`) to
+   the input version using `cargo set-version`, runs the standard
+   gate (`fmt --check`, `clippy -D warnings`, `cargo test`,
+   `cargo package --allow-dirty`), commits as `chore: release
+   X.Y.Z`, tags `vX.Y.Z`, and pushes both back to `main` using the
+   auto-provided `GITHUB_TOKEN`.
+2. **build**: cross-builds release binaries on ubuntu-latest,
+   windows-latest, and macos-latest for `x86_64-unknown-linux-gnu`
+   / `x86_64-pc-windows-msvc` / `x86_64-apple-darwin` /
+   `aarch64-apple-darwin`. Termux users build from source.
+3. **publish-github**: assembles `SHA256SUMS`, creates the GitHub
+   Release, attaches every archive + checksums, and writes
+   release notes from the PR titles between the previous tag and
+   this one (`generate_release_notes: true`). Releases tagged
+   `v0.*` are marked prerelease.
+4. **publish-crates**: exchanges the workflow's OIDC identity for
+   a short-lived crates.io token via
+   `rust-lang/crates-io-auth-action@v1`, then runs `cargo
+   publish`. No long-lived `CARGO_REGISTRY_TOKEN` is stored.
 
-The steps below cover both — look for the **A: Bump-on-main** /
-**B: Bump-on-develop** call-outs at the version-bump step.
+## How release notes get good content
 
-## Steps
+The auto-generated notes are only as informative as the PR titles
+that feed them. To keep the output readable, every PR title must
+follow Conventional Commits, enforced by
+`.github/workflows/pr-title-check.yml`. Allowed types:
 
-### 1. Sanity-check `develop`
-
-Run the bundled checker; it gates everything below:
-
-```sh
-git switch develop
-git pull --ff-only
-./scripts/release-check.sh X.Y.Z
+```
+feat fix refactor perf test docs build ci chore revert
 ```
 
-`release-check.sh` runs:
+Examples:
 
-- `cargo fmt --all -- --check`
-- `cargo clippy --all-targets -- -D warnings`
-- `cargo test`
-- `cargo package --allow-dirty` (catches manifest / `exclude` slips)
-- For **bump-on-develop**: verifies `Cargo.toml` already says
-  `X.Y.Z` and `CHANGELOG.md` has a `## [X.Y.Z]` section.
-- For **bump-on-main**: verifies the *current* version is
-  `<X.Y.Z` and `CHANGELOG.md` has a `## [Unreleased]` section
-  ready to be renamed.
-
-If any of those fail, fix on `develop` first. Don't carry red into
-the merge.
-
-### 2. Merge `develop` into `main` with `--no-ff`
-
-```sh
-git switch main
-git pull --ff-only           # keep main aligned with origin first
-git merge --no-ff develop -m "Merge branch 'develop' for vX.Y.Z
-
-<one paragraph: what's notable in this version, why it's worth
-bumping, anything users should look out for>"
+```
+feat: pathlint sort --dry-run (R5 read-only PATH repair)
+fix(catalog): correct unix fallback for termux
+refactor!: drop bump-on-main flow
+chore(deps): bump clap to 4.6
 ```
 
-`--no-ff` matters: it leaves a single merge commit per release in
-`main`'s history, so `git log --first-parent main` reads as a
-release-by-release timeline. Squash or fast-forward would lose
-that shape.
+GitHub then groups the release body by section (`### Features` /
+`### Bug Fixes` / `### Other Changes`) automatically.
 
-Sanity check after the merge:
+## One-time setup
+
+Two things have to be configured outside this repo, both done
+once and forgotten:
+
+1. **crates.io Trusted Publishing.** Open the crate's settings on
+   crates.io → "Trusted Publishers" → "Add publisher". Fill in:
+   - Repository owner / name: `ShortArrow/pathlint`
+   - Workflow filename: `release.yml`
+   - Environment: leave blank (we don't gate on a GitHub
+     environment).
+   The first publish has to be done with a manual token *before*
+   Trusted Publishing can be set up; from 0.0.8 onward it's
+   workflow-driven.
+2. **Branch protection on `main`.** Require status checks `ci`
+   and `pr-title-check` to pass before merging, and disallow
+   force-pushes. The `prepare` job in `release.yml` pushes to
+   `main` directly on behalf of `github-actions[bot]`, which the
+   default protection rules already allow via `GITHUB_TOKEN`.
+
+## When something goes wrong
+
+The four jobs are sequenced so failure is easy to diagnose:
+
+- **prepare fails**: nothing was pushed. Fix on `main`, re-run
+  the workflow with the same version.
+- **build fails after prepare succeeded**: the tag is already on
+  `main` and pushed. Either fix forward and bump to `X.Y.Z+1`, or
+  delete the tag (`git push origin :refs/tags/vX.Y.Z`,
+  `git tag -d` locally) and re-run with the same version. The
+  `chore: release` commit on main can stay — it's harmless.
+- **publish-github fails**: the GitHub Release isn't visible. The
+  artifacts are still on the build job as workflow artifacts; you
+  can re-run just the publish-github job.
+- **publish-crates fails**: the GitHub Release exists but
+  crates.io is missing this version. Re-run only the
+  publish-crates job. crates.io rejects republishing the same
+  version, so you may need to bump to `X.Y.Z+1` if the failure
+  was a network hiccup that crates.io recorded.
+
+If you need to abandon a release entirely:
 
 ```sh
-git log --first-parent main -3 --oneline
+# Locally, undo the prepare commit + tag and force the remote.
+git switch main && git pull --ff-only
+git reset --hard HEAD~1                   # drop chore: release X.Y.Z
+git push --force-with-lease origin main
+git push origin :refs/tags/vX.Y.Z
 ```
 
-The top entry must be your new `Merge branch 'develop' for vX.Y.Z`.
+Use `--force-with-lease` rather than `--force` so you don't
+clobber anything else that landed in the meantime.
 
-### 3. Land the release commit on `main`
+## Verifying a release locally
 
-#### A. Bump-on-main (the version is still the old one)
-
-Edit:
-
-- `Cargo.toml` — `version = "X.Y.Z"`
-- `CHANGELOG.md`:
-  - Replace the leading `## [Unreleased]` section with
-    `## [X.Y.Z] - YYYY-MM-DD` (today, ISO-8601).
-  - Add a fresh empty `## [Unreleased]` above it.
-  - Update the comparison links at the bottom:
-    - `[Unreleased]: .../compare/vX.Y.Z...HEAD`
-    - `[X.Y.Z]: .../releases/tag/vX.Y.Z`
-
-Sync `Cargo.lock` and verify:
+Pull the published artifact on a clean machine:
 
 ```sh
-cargo build
-cargo test
-./target/debug/pathlint --version   # must print X.Y.Z
-```
-
-Commit:
-
-```sh
-git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "chore: release X.Y.Z
-
-<short summary>"
-```
-
-#### B. Bump-on-develop (Cargo.toml already says X.Y.Z)
-
-You only need to:
-
-- Confirm `CHANGELOG.md` `## [X.Y.Z]` line carries today's date
-  (fix it if a placeholder snuck in).
-- Confirm the comparison links at the bottom of `CHANGELOG.md`
-  point at `vX.Y.Z`.
-
-Then refresh `Cargo.lock` (no version diff, but `cargo build` may
-still touch it) and verify:
-
-```sh
-cargo build
-cargo test
-./target/debug/pathlint --version   # must print X.Y.Z
-```
-
-Commit (only the files you actually touched):
-
-```sh
-git add CHANGELOG.md  # plus Cargo.lock if it changed
-git commit -m "chore: release X.Y.Z
-
-<short summary>"
-```
-
-In both cases, the resulting `git log --first-parent main` should
-show `chore: release X.Y.Z` directly above
-`Merge branch 'develop' for vX.Y.Z`. That's the canonical shape.
-
-### 4. Forward-merge `main` back to `develop`
-
-So `develop` always contains everything `main` has plus the
-in-progress work for the next version.
-
-```sh
-git switch develop
-git merge --ff-only main
-```
-
-If this isn't a fast-forward (i.e. `develop` got commits while you
-were releasing), use a regular `git merge main` — but try to
-serialise releases to keep this simple.
-
-### 5. Push branches and the tag
-
-The tag triggers `release.yml`, which builds binaries for
-`x86_64-{linux,windows,darwin}` + `aarch64-darwin`, packages them
-into archives + checksums, and creates the GitHub Release.
-
-```sh
-git push origin main develop
-git tag -a vX.Y.Z -m "pathlint X.Y.Z"
-git push origin vX.Y.Z
-```
-
-Watch the Actions tab — `release.yml` should turn green within a
-few minutes. The release is marked as `prerelease: true` while the
-version starts with `v0.`; it flips to a normal release at
-`v1.0.0`.
-
-### 6. Publish to crates.io (optional, when ready)
-
-`0.0.x` is **not** auto-published. When you want to publish:
-
-```sh
-cargo publish --dry-run     # check the package layout first
-cargo publish
-```
-
-Don't `cargo publish` until `release.yml` has finished green —
-crates.io can't be unpublished, so binaries should land first as a
-sanity check.
-
-## Verification
-
-After step 5, fetch the published artifact on a clean machine:
-
-```sh
-# From GitHub Releases:
 curl -L -o pathlint.tar.gz \
   "https://github.com/ShortArrow/pathlint/releases/download/vX.Y.Z/pathlint-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz"
 tar -xzf pathlint.tar.gz
 ./pathlint-vX.Y.Z-x86_64-unknown-linux-gnu/pathlint --version
 ```
 
-The version printed must match the tag.
+The version printed must match the tag. Verify the checksum
+against `SHA256SUMS` from the same release.
 
-## Rollback
+## Manual fallback (if release.yml is broken)
 
-If something is wrong **before** the tag push: just delete the
-`chore: release` commit on `main`, force-push if already pushed
-(coordinate with anyone else who has fetched), and try again.
-
-If the tag is already pushed but `release.yml` failed mid-flight
-or produced a broken artifact:
-
-```sh
-# Delete the GitHub Release and the tag, both locally and remotely.
-gh release delete vX.Y.Z --yes
-git push origin :refs/tags/vX.Y.Z
-git tag -d vX.Y.Z
-```
-
-Then fix the issue on `develop`, bump to **X.Y.Z+1** (do NOT
-reuse the same number — even if no one downloaded the broken
-release, crates.io and people's local toolchain caches won't
-notice the overwrite), and run the process again.
-
-## Cheatsheet
+If the workflow itself is misbehaving and you need to ship anyway,
+`scripts/release-check.sh X.Y.Z` runs the same gate locally
+(`fmt --check`, `clippy -D warnings`, `cargo test`, `cargo
+package`). After it passes:
 
 ```sh
-# From develop, ready to cut X.Y.Z:
-./scripts/release-check.sh X.Y.Z
-
-git switch main && git pull --ff-only
-git merge --no-ff develop -m "Merge branch 'develop' for vX.Y.Z"
-
-# Bump-on-main: edit Cargo.toml + CHANGELOG.md.
-# Bump-on-develop: just refresh CHANGELOG date + Cargo.lock.
-cargo build && cargo test
-./target/debug/pathlint --version    # must print X.Y.Z
-
-git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "chore: release X.Y.Z"
-
-# Forward-merge to develop:
-git switch develop && git merge --ff-only main
-
-# Tag and push:
-git push origin main develop
-git tag -a vX.Y.Z -m "pathlint X.Y.Z" && git push origin vX.Y.Z
-
-# Optional, once the GitHub Release lands clean:
-cargo publish --dry-run && cargo publish
+cargo set-version X.Y.Z
+git commit -am "chore: release X.Y.Z"
+git tag -a vX.Y.Z -m "pathlint X.Y.Z"
+git push origin main vX.Y.Z
+gh release create vX.Y.Z --generate-notes ...
+cargo publish
 ```
+
+This is intentionally tedious. The whole point of `release.yml`
+is that you don't run these by hand on the regular path. Use the
+fallback only when the workflow is broken; fix the workflow first
+if you can.

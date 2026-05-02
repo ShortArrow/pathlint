@@ -1,266 +1,160 @@
 # リリース手順
 
-新しい pathlint バージョンを切り出すためのチェックリスト。
-0.0.x / 0.1.x の小刻みなリリースサイクル（時々 schema を壊す）に
-最適化されている。各ステップは「ターミナルにそのまま貼れる
-コマンド」と「green であることを確かめる方法」を持つ。目的は
-**再現可能性** — push 権を持つ人なら、誰がやっても同じ手順で
-クリーンなリリースを切り出せること。
+新しい pathlint バージョンを切り出す手順は **ボタン 1 つ**：
+**Actions → release → Run workflow → 新バージョンを入力 → Run**。
 
-## 前提条件
+それだけ。bump も tag もビルドも GitHub Release 作成も
+crates.io publish も `.github/workflows/release.yml` が全部やる。
 
-- 新バージョンに入れる作業が `develop` 上にあり、CI が green。
-- `develop` と `main` の作業ツリーがクリーン。
-- `origin` への push 権がある。
-- crates.io publish したい場合は `cargo login` 設定済み（バイナリ
-  は GitHub Release pipeline 側でやるので、これは optional）。
+`develop` ブランチ無し。手で書く `chore: release` commit 無し。
+`CHANGELOG.md` 無し（リリースノートは PR タイトルから自動生成）。
+
+## TL;DR
+
+1. Actions → **release** → **Run workflow** を開く。
+2. 新バージョンを入力（例: `0.0.8`）。`v` は付けない（workflow が
+   tag に付ける）。
+3. **Run workflow** を押す。
+
+ユーザーがやることはこれだけ。残りは workflow が何をするか、
+失敗したらどうするか、新規リポでの 1 回設定だけ。
 
 ## バージョン方針
 
 - `0.0.x` と `0.1.x` ではどちらも TOML schema や CLI 表面の互換を
-  壊しうる（`CHANGELOG.md` に明記）。
-- 1.0 前は **patch bump（`0.0.A` → `0.0.A+1`）** がデフォルト。出荷
-  したい振る舞い変更があれば bump する。
-- **minor bump（`0.0.x` → `0.1.0`）** は schema/CLI を「通常の semver
-  契約に乗せる」と宣言できる段階に予約する。
+  壊しうる（GitHub Release の本文に明記）。
+- 1.0 前は **patch bump（`0.0.A` → `0.0.A+1`）** がデフォルト。
+  出荷したい振る舞い変更があれば bump する。
+- **minor bump（`0.0.x` → `0.1.0`）** は schema/CLI を「通常の
+  semver 契約に乗せる」と宣言できる段階に予約する。
 
-## 2 つの bump タイミング
+## workflow が何をするか
 
-version bump のタイミングが 2 種類あり、どちらも `git log
---first-parent main` がクリーンに保たれる。作業の進め方に合わせて
-選ぶ：
+`release.yml` は 4 ジョブを順に走らせる：
 
-- **Bump-on-main（デフォルト）。** 開発サイクル中は `Cargo.toml` /
-  `CHANGELOG.md` を旧バージョンのまま develop で進める。bump は
-  no-ff merge の **後** に main 上で行い、それが
-  `chore: release` commit になる。0.0.2 – 0.0.6 はこの方式。
-  cut 直前までバージョン番号を確定したくないときに向く。
-- **Bump-on-develop。** サイクルの早い段階（最初の feature commit
-  でリリーステーマが決まるなど）で `Cargo.toml` を `X.Y.Z` に
-  bump し、`CHANGELOG.md` の `[Unreleased]` の上に
-  `## [X.Y.Z] - YYYY-MM-DD` セクションを既に用意してある（日付は
-  プレースホルダで OK）。main 上の `chore: release` commit は
-  日付を確定して `Cargo.lock` を整えるだけになる。0.0.7 はこの
-  方式。bump 済み状態で `cargo run --version` を見ながら開発
-  したいときに向く。
+1. **prepare**: `cargo set-version` で `Cargo.toml`（と
+   `Cargo.lock`）を入力 version に bump、標準ゲート（`fmt
+   --check` / `clippy -D warnings` / `cargo test` / `cargo
+   package --allow-dirty`）を走らせ、`chore: release X.Y.Z` で
+   commit、`vX.Y.Z` を tag、自動付与の `GITHUB_TOKEN` で `main`
+   に push。
+2. **build**: ubuntu-latest / windows-latest / macos-latest で
+   `x86_64-unknown-linux-gnu` / `x86_64-pc-windows-msvc` /
+   `x86_64-apple-darwin` / `aarch64-apple-darwin` のリリースバ
+   イナリをクロスビルド。Termux はソースから build。
+3. **publish-github**: `SHA256SUMS` を作り、GitHub Release を
+   作成、全アーカイブと checksum を添付、前の tag から今回の
+   tag までの PR タイトルを使ってリリースノートを自動生成
+   （`generate_release_notes: true`）。tag が `v0.*` なら
+   prerelease としてマーク。
+4. **publish-crates**: `rust-lang/crates-io-auth-action@v1` で
+   workflow の OIDC アイデンティティを crates.io の短期トークンに
+   交換し、`cargo publish` を走らせる。長期保存される
+   `CARGO_REGISTRY_TOKEN` は使わない。
 
-下記ステップは両方をカバー。version bump のステップに
-**A: Bump-on-main** / **B: Bump-on-develop** の分岐がある。
+## 良いリリースノートを出すには
 
-## 手順
+自動生成ノートは PR タイトルの質次第。読みやすく保つため、
+**全 PR タイトルが Conventional Commits 形式**であることを
+`.github/workflows/pr-title-check.yml` で強制する。許可される
+type：
 
-### 1. `develop` の sanity check
-
-同梱のチェッカが、以下のステップ全部の gate になっている：
-
-```sh
-git switch develop
-git pull --ff-only
-./scripts/release-check.sh X.Y.Z
+```
+feat fix refactor perf test docs build ci chore revert
 ```
 
-`release-check.sh` は次を実行：
+例：
 
-- `cargo fmt --all -- --check`
-- `cargo clippy --all-targets -- -D warnings`
-- `cargo test`
-- `cargo package --allow-dirty`（manifest や `exclude` のミスを検出）
-- **bump-on-develop** の場合: `Cargo.toml` が既に `X.Y.Z` で
-  `CHANGELOG.md` に `## [X.Y.Z]` セクションがあることを確認。
-- **bump-on-main** の場合: 現在の version が `<X.Y.Z` で
-  `CHANGELOG.md` に rename 対象の `## [Unreleased]` セクションが
-  あることを確認。
-
-どれか赤ければ先に `develop` で直す。赤いままマージしない。
-
-### 2. `develop` を `--no-ff` で `main` へマージ
-
-```sh
-git switch main
-git pull --ff-only           # まず origin に追いつかせる
-git merge --no-ff develop -m "Merge branch 'develop' for vX.Y.Z
-
-<1 段落: このリリースに何が入っているか、なぜ bump するのか、
-ユーザーが気をつけるべきことがあれば>"
+```
+feat: pathlint sort --dry-run (R5 read-only PATH repair)
+fix(catalog): correct unix fallback for termux
+refactor!: drop bump-on-main flow
+chore(deps): bump clap to 4.6
 ```
 
-`--no-ff` が肝。`main` のヒストリにリリースごとに 1 つ merge
-コミットが残るので、`git log --first-parent main` が「リリース
-単位のタイムライン」として読める。squash や fast-forward だと
-この形が失われる。
+GitHub はこれを `### Features` / `### Bug Fixes` /
+`### Other Changes` のセクションに自動分類する。
 
-merge 後の sanity check：
+## 1 回だけ設定するもの
 
-```sh
-git log --first-parent main -3 --oneline
-```
+リポ外で 1 回設定すれば終わるもの 2 つ：
 
-最上行が新しい `Merge branch 'develop' for vX.Y.Z` であること。
+1. **crates.io Trusted Publishing**。crates.io のクレート設定 →
+   「Trusted Publishers」 → 「Add publisher」を開いて入力：
+   - Repository owner / name: `ShortArrow/pathlint`
+   - Workflow filename: `release.yml`
+   - Environment: 空欄（GitHub environment では gate しない）。
 
-### 3. `main` 上にリリースコミットを置く
+   最初の publish は手動 token で済ませる必要がある。
+   そのあと 0.0.8 以降は workflow 駆動になる。
+2. **`main` の branch protection**。`ci` と `pr-title-check` を
+   merge 前 status check として必須にし、force push を不許可。
+   `release.yml` の `prepare` ジョブは `github-actions[bot]` と
+   して `main` に直接 push するが、デフォルトの保護ルールは
+   `GITHUB_TOKEN` 経由なら許可している。
 
-#### A. Bump-on-main（version はまだ旧版）
+## 失敗したとき
 
-編集する：
+4 ジョブが順序立っているので、どこで失敗したかが診断しやすい：
 
-- `Cargo.toml` — `version = "X.Y.Z"`
-- `CHANGELOG.md`:
-  - 先頭の `## [Unreleased]` を `## [X.Y.Z] - YYYY-MM-DD`（今日の
-    日付、ISO-8601）に置き換え。
-  - その上に新しい空の `## [Unreleased]` を追加。
-  - 末尾の比較リンク：
-    - `[Unreleased]: .../compare/vX.Y.Z...HEAD`
-    - `[X.Y.Z]: .../releases/tag/vX.Y.Z`
+- **prepare 失敗**: 何も push されていない。`main` で直して、
+  同じバージョンで workflow を再実行。
+- **prepare 成功後、build 失敗**: tag は既に `main` に乗って push
+  されている。fix-forward して `X.Y.Z+1` に bump するか、tag を
+  消す（`git push origin :refs/tags/vX.Y.Z`、ローカルは
+  `git tag -d`）して同じ version で再実行。`chore: release`
+  commit は main に残しても害はない。
+- **publish-github 失敗**: GitHub Release が見えない。アーティ
+  ファクトは build ジョブの workflow artifact に残っているので、
+  publish-github ジョブだけ再実行できる。
+- **publish-crates 失敗**: GitHub Release はあるが crates.io に
+  この version が無い状態。publish-crates ジョブだけ再実行する。
+  crates.io は同じ version の再 publish を拒否するので、ネット
+  ワーク的に crates.io 側に記録された失敗だった場合は
+  `X.Y.Z+1` に bump する必要がある。
 
-`Cargo.lock` を同期して確認：
-
-```sh
-cargo build
-cargo test
-./target/debug/pathlint --version   # X.Y.Z を表示するはず
-```
-
-コミット：
-
-```sh
-git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "chore: release X.Y.Z
-
-<短い要約>"
-```
-
-#### B. Bump-on-develop（Cargo.toml は既に X.Y.Z）
-
-やることは：
-
-- `CHANGELOG.md` の `## [X.Y.Z]` 行が今日の日付か確認（プレース
-  ホルダのままなら今日に直す）。
-- `CHANGELOG.md` 末尾の比較リンクが `vX.Y.Z` を指しているか確認。
-
-その後 `Cargo.lock` をリフレッシュ（version 差分は無いが
-`cargo build` でも触れる場合あり）して確認：
+リリース全体を取り消したい場合：
 
 ```sh
-cargo build
-cargo test
-./target/debug/pathlint --version   # X.Y.Z を表示するはず
+# ローカルで prepare commit + tag を取り消して remote に反映。
+git switch main && git pull --ff-only
+git reset --hard HEAD~1                   # chore: release X.Y.Z を消す
+git push --force-with-lease origin main
+git push origin :refs/tags/vX.Y.Z
 ```
 
-実際に触れたファイルだけコミット：
-
-```sh
-git add CHANGELOG.md  # Cargo.lock が変わったらそれも
-git commit -m "chore: release X.Y.Z
-
-<短い要約>"
-```
-
-どちらの場合も結果として `git log --first-parent main` は
-`chore: release X.Y.Z` の直下に `Merge branch 'develop' for
-vX.Y.Z` が来る形になる。これが正規の形。
-
-### 4. `main` を `develop` に forward-merge
-
-`develop` が常に「`main` に入ってるすべて + 次バージョンの
-作業中」という状態を保つため。
-
-```sh
-git switch develop
-git merge --ff-only main
-```
-
-fast-forward にならない（リリース中に `develop` に commit が乗った）
-場合は通常の `git merge main` でよい — でもリリースは serialize
-させた方がシンプル。
-
-### 5. ブランチと tag を push
-
-tag が `release.yml` を起動して `x86_64-{linux,windows,darwin}` +
-`aarch64-darwin` のバイナリをビルドし、アーカイブと checksum を
-固めて GitHub Release を作る。
-
-```sh
-git push origin main develop
-git tag -a vX.Y.Z -m "pathlint X.Y.Z"
-git push origin vX.Y.Z
-```
-
-Actions タブを監視。`release.yml` が数分以内に green になるはず。
-バージョンが `v0.` で始まる間は `prerelease: true` で公開され、
-`v1.0.0` で通常リリースに切り替わる。
-
-### 6. crates.io へ publish（任意、準備が整ったとき）
-
-`0.0.x` は **自動 publish しない**。publish したいときに：
-
-```sh
-cargo publish --dry-run     # まずパッケージレイアウトを確認
-cargo publish
-```
-
-`release.yml` が green になるまで `cargo publish` しないこと。
-crates.io は **取り消し不可** なので、まずバイナリを sanity check
-の意味で先に出す。
+`--force` ではなく `--force-with-lease` を使うこと。
 
 ## 検証
 
-ステップ 5 後、別のクリーンマシンで成果物を取得：
+別マシンで実物を取得：
 
 ```sh
-# GitHub Releases から：
 curl -L -o pathlint.tar.gz \
   "https://github.com/ShortArrow/pathlint/releases/download/vX.Y.Z/pathlint-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz"
 tar -xzf pathlint.tar.gz
 ./pathlint-vX.Y.Z-x86_64-unknown-linux-gnu/pathlint --version
 ```
 
-表示される version が tag と一致すること。
+表示される version が tag と一致すること。同じ Release の
+`SHA256SUMS` で checksum を検証する。
 
-## ロールバック
+## release.yml が壊れているときの手動 fallback
 
-tag を push する **前** に問題が見つかったら：`main` 上の
-`chore: release` コミットを消し、すでに push されていれば force
-push（同じ ref を引いてる人と調整しつつ）して、やり直す。
-
-tag は push 済みだが `release.yml` が途中で失敗した、または壊れた
-成果物が出来たら：
-
-```sh
-# GitHub Release と tag をローカル + リモート両方から消す
-gh release delete vX.Y.Z --yes
-git push origin :refs/tags/vX.Y.Z
-git tag -d vX.Y.Z
-```
-
-そのあと `develop` で問題を直し、**X.Y.Z+1** に bump して
-（同じ番号は再利用しない — たとえ誰もダウンロードしていなくても、
-crates.io と各人の toolchain キャッシュは「上書き」を認識しない）、
-プロセスをやり直す。
-
-## チートシート
+workflow 自体に問題があってどうしても出さなければならないとき、
+`scripts/release-check.sh X.Y.Z` がローカルで同じゲート
+（`fmt --check` / `clippy -D warnings` / `cargo test` /
+`cargo package`）を走らせる。pass したら：
 
 ```sh
-# develop 上、X.Y.Z を切る準備が整っている：
-./scripts/release-check.sh X.Y.Z
-
-git switch main && git pull --ff-only
-git merge --no-ff develop -m "Merge branch 'develop' for vX.Y.Z"
-
-# Bump-on-main: Cargo.toml + CHANGELOG.md を編集。
-# Bump-on-develop: CHANGELOG の日付と Cargo.lock を整えるだけ。
-cargo build && cargo test
-./target/debug/pathlint --version    # X.Y.Z を表示するはず
-
-git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "chore: release X.Y.Z"
-
-# develop に forward-merge：
-git switch develop && git merge --ff-only main
-
-# tag + push：
-git push origin main develop
-git tag -a vX.Y.Z -m "pathlint X.Y.Z" && git push origin vX.Y.Z
-
-# 任意、GitHub Release が無事に出てから：
-cargo publish --dry-run && cargo publish
+cargo set-version X.Y.Z
+git commit -am "chore: release X.Y.Z"
+git tag -a vX.Y.Z -m "pathlint X.Y.Z"
+git push origin main vX.Y.Z
+gh release create vX.Y.Z --generate-notes ...
+cargo publish
 ```
+
+意図的に面倒にしてある。`release.yml` の存在意義は「これを
+手動でやらなくて済む」こと。手動 fallback は workflow が
+壊れているときだけ使い、可能なら先に workflow を直すこと。

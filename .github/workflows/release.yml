@@ -1,29 +1,94 @@
 name: release
 
+# Triggered by hand from the Actions tab. The single input is the
+# new version number (e.g. 0.0.8). The job sequence is:
+#
+#   prepare → build (matrix) → publish-github → publish-crates
+#
+# 1. prepare:        bumps Cargo.toml to the input version, commits
+#                    that as `chore: release X.Y.Z`, tags `vX.Y.Z`,
+#                    pushes both back to main using GITHUB_TOKEN.
+# 2. build:          cross-builds release binaries on three OS
+#                    runners.
+# 3. publish-github: assembles checksums and creates the GitHub
+#                    Release with auto-generated notes (PR titles).
+# 4. publish-crates: exchanges an OIDC token via
+#                    rust-lang/crates-io-auth-action and runs
+#                    `cargo publish`. Requires Trusted Publishing
+#                    to be configured on crates.io for this repo +
+#                    workflow filename (one-time setup).
+#
+# No long-lived secrets. GITHUB_TOKEN is auto-provided; crates.io
+# trust is established via OIDC, not via CARGO_REGISTRY_TOKEN.
+
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
-      tag:
-        description: Tag name to build (e.g. v0.0.7)
+      version:
+        description: 'New version (e.g. 0.0.8). The "v" prefix is added automatically for the tag.'
         required: true
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  prepare:
+    name: bump, commit, tag, push
+    runs-on: ubuntu-latest
+    outputs:
+      tag: v${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          set -euo pipefail
+          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "error: version must be in X.Y.Z form (got: ${{ inputs.version }})" >&2
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-edit (for `cargo set-version`)
+        run: cargo install cargo-edit --locked
+
+      - name: Bump Cargo.toml
+        run: cargo set-version "${{ inputs.version }}"
+
+      - name: Sanity-check the build at the new version
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+          cargo package --allow-dirty >/dev/null
+
+      - name: Commit, tag, and push
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release ${{ inputs.version }}"
+          git tag -a "v${{ inputs.version }}" -m "pathlint ${{ inputs.version }}"
+          git push origin HEAD:main
+          git push origin "v${{ inputs.version }}"
+
   build:
     name: build ${{ matrix.target }}
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Desktop targets: native runners, no cross needed.
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive: tar.gz
@@ -40,13 +105,13 @@ jobs:
             os: macos-latest
             archive: tar.gz
             bin: pathlint
-          # Note: Termux (aarch64-linux-android) is not pre-built. The cross
-          # pipeline needs a custom NDK setup; Termux users can instead
-          # `pkg install rust && cargo install pathlint` from source.
+          # Termux (aarch64-linux-android) builds from source via
+          # `pkg install rust && cargo install pathlint`. NDK setup
+          # for cross is not worth a prebuilt binary today.
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -63,7 +128,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          name="pathlint-${GITHUB_REF_NAME:-${{ inputs.tag }}}-${{ matrix.target }}"
+          name="pathlint-${{ needs.prepare.outputs.tag }}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
@@ -83,9 +148,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  release:
+  publish-github:
     name: publish GitHub Release
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -104,11 +169,34 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
           draft: false
-          prerelease: ${{ startsWith(inputs.tag || github.ref_name, 'v0.') }}
+          prerelease: ${{ startsWith(needs.prepare.outputs.tag, 'v0.') }}
           generate_release_notes: true
           files: |
             dist/*.tar.gz
             dist/*.zip
             dist/SHA256SUMS
+
+  publish-crates:
+    name: publish to crates.io (OIDC)
+    needs: [prepare, publish-github]
+    runs-on: ubuntu-latest
+    # The `id-token: write` permission is inherited from the
+    # top-level block; this job exchanges that token for a
+    # short-lived crates.io token via Trusted Publishing.
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Exchange OIDC token for crates.io token
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish
