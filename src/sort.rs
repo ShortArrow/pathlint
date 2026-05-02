@@ -105,87 +105,58 @@ pub fn sort_path(
     // Index every entry by which sources it matches.
     let entry_sources: Vec<Vec<String>> = entries
         .iter()
-        .map(|e| {
-            let haystack = normalize(e);
-            source_match::names_only(&haystack, sources, os)
-        })
+        .map(|e| source_match::names_only(&normalize(e), sources, os))
         .collect();
 
-    // For each expectation that applies on this OS, collect the
-    // PATH-entry indices that match `prefer`. We use these later to
-    // promote those entries past competing avoid entries.
-    let mut preferred_for: Vec<(usize, String)> = Vec::new();
-    let mut notes: Vec<SortNote> = Vec::new();
+    // Walk every applicable expectation and gather both promotion
+    // (prefer) and demotion (avoid) intents per entry. `avoid` wins
+    // when a single entry hits both, mirroring `lint::decide`.
+    let intents = collect_intents(expectations, &entry_sources, os);
 
-    for expect in expectations {
-        if !os_filter_applies(expect, os) {
-            continue;
-        }
-        if expect.prefer.is_empty() {
-            continue;
-        }
-        let preferred_idx: Vec<usize> = entry_sources
-            .iter()
-            .enumerate()
-            .filter(|(_, srcs)| srcs.iter().any(|s| expect.prefer.iter().any(|p| p == s)))
-            .map(|(i, _)| i)
-            .collect();
+    let preferred_set: std::collections::BTreeSet<usize> = intents
+        .iter()
+        .filter_map(|(i, intent, _)| matches!(intent, Intent::Prefer).then_some(*i))
+        .collect();
+    let avoided_set: std::collections::BTreeSet<usize> = intents
+        .iter()
+        .filter_map(|(i, intent, _)| matches!(intent, Intent::Avoid).then_some(*i))
+        .collect();
 
-        if preferred_idx.is_empty() {
-            notes.push(SortNote::UnsatisfiablePrefer {
-                command: expect.command.clone(),
-                prefer: expect.prefer.clone(),
-            });
-            continue;
-        }
+    // Three buckets in order: preferred → neutral → avoided. Each
+    // bucket preserves the entries' original relative order, so the
+    // diff only contains the moves the user has to think about.
+    let preferred_idx = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(i, _)| preferred_set.contains(&i).then_some(i));
+    let neutral_idx = entries.iter().enumerate().filter_map(|(i, _)| {
+        (!preferred_set.contains(&i) && !avoided_set.contains(&i)).then_some(i)
+    });
+    let avoided_idx = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(i, _)| avoided_set.contains(&i).then_some(i));
 
-        for i in preferred_idx {
-            preferred_for.push((i, expect.command.clone()));
-        }
-    }
-
-    // Build the sorted order. Strategy: preferred entries keep their
-    // mutual relative order, then everything else keeps its mutual
-    // relative order. This is the simplest stable promotion rule;
-    // future revisions may consider per-rule precedence.
-    let preferred_set: std::collections::BTreeSet<usize> =
-        preferred_for.iter().map(|(i, _)| *i).collect();
-
-    let mut new_order: Vec<usize> = Vec::with_capacity(entries.len());
-    for (i, _) in entries.iter().enumerate() {
-        if preferred_set.contains(&i) {
-            new_order.push(i);
-        }
-    }
-    for (i, _) in entries.iter().enumerate() {
-        if !preferred_set.contains(&i) {
-            new_order.push(i);
-        }
-    }
-
+    let new_order: Vec<usize> = preferred_idx
+        .chain(neutral_idx)
+        .chain(avoided_idx)
+        .collect();
     let sorted: Vec<String> = new_order.iter().map(|&i| entries[i].clone()).collect();
 
-    // Compute moves: an entry moved if its old index is different
-    // from its new index. The reason picks the first command this
-    // entry is preferred for; multiple commands per entry collapse
-    // to one move with a single reason for compactness.
-    let mut moves: Vec<EntryMove> = Vec::new();
-    for (new_idx, &old_idx) in new_order.iter().enumerate() {
-        if new_idx == old_idx {
-            continue;
-        }
-        let reason = preferred_for
-            .iter()
-            .find(|(i, _)| *i == old_idx)
-            .map(|(_, cmd)| format!("preferred source for `{cmd}`"))
-            .unwrap_or_else(|| "displaced by a preferred entry".to_string());
-        moves.push(EntryMove {
+    let moves: Vec<EntryMove> = new_order
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(new_idx, old_idx)| new_idx != old_idx)
+        .map(|(new_idx, old_idx)| EntryMove {
             entry: entries[old_idx].clone(),
             from: old_idx,
             to: new_idx,
-            reason,
-        });
-    }
+            reason: reason_for(old_idx, &intents),
+        })
+        .collect();
+
+    let notes = collect_notes(expectations, &entry_sources, os);
 
     SortPlan {
         original,
@@ -195,11 +166,80 @@ pub fn sort_path(
     }
 }
 
-fn os_filter_applies(expect: &Expectation, os: Os) -> bool {
-    match &expect.os {
-        None => true,
-        Some(tags) => tags.iter().any(|t| os.matches_tag(t)),
+/// Per-entry intent the rule set asks for. `Avoid` shadows
+/// `Prefer` when both fire on a single entry — mirrors
+/// `lint::decide`'s avoid-overrides-prefer policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Intent {
+    Prefer,
+    Avoid,
+}
+
+/// Gather `(entry_index, intent, command)` triples. Multiple rules
+/// can target the same entry; the bucket builder later resolves
+/// conflicts by checking `avoided_set` first.
+fn collect_intents(
+    expectations: &[Expectation],
+    entry_sources: &[Vec<String>],
+    os: Os,
+) -> Vec<(usize, Intent, String)> {
+    let mut out = Vec::new();
+    for expect in expectations {
+        if !crate::os_detect::os_filter_applies(&expect.os, os) {
+            continue;
+        }
+        for (i, srcs) in entry_sources.iter().enumerate() {
+            if srcs.iter().any(|s| expect.avoid.iter().any(|a| a == s)) {
+                out.push((i, Intent::Avoid, expect.command.clone()));
+            } else if srcs.iter().any(|s| expect.prefer.iter().any(|p| p == s)) {
+                out.push((i, Intent::Prefer, expect.command.clone()));
+            }
+        }
     }
+    out
+}
+
+/// Pick a human-readable reason for the move at `old_idx`. Avoid
+/// intents win when both apply (consistent with the bucket order).
+fn reason_for(old_idx: usize, intents: &[(usize, Intent, String)]) -> String {
+    let avoid_hit = intents
+        .iter()
+        .find(|(i, intent, _)| *i == old_idx && matches!(intent, Intent::Avoid));
+    if let Some((_, _, cmd)) = avoid_hit {
+        return format!("matches `avoid` for `{cmd}`");
+    }
+    let prefer_hit = intents
+        .iter()
+        .find(|(i, intent, _)| *i == old_idx && matches!(intent, Intent::Prefer));
+    if let Some((_, _, cmd)) = prefer_hit {
+        return format!("preferred source for `{cmd}`");
+    }
+    "displaced by a preferred entry".to_string()
+}
+
+/// Build `notes` independently from the intent gathering so the
+/// note logic stays self-contained: `UnsatisfiablePrefer` fires
+/// only when an applicable rule's `prefer` is non-empty and no
+/// PATH entry matches any preferred source.
+fn collect_notes(
+    expectations: &[Expectation],
+    entry_sources: &[Vec<String>],
+    os: Os,
+) -> Vec<SortNote> {
+    expectations
+        .iter()
+        .filter(|expect| crate::os_detect::os_filter_applies(&expect.os, os))
+        .filter(|expect| !expect.prefer.is_empty())
+        .filter(|expect| {
+            !entry_sources
+                .iter()
+                .any(|srcs| srcs.iter().any(|s| expect.prefer.iter().any(|p| p == s)))
+        })
+        .map(|expect| SortNote::UnsatisfiablePrefer {
+            command: expect.command.clone(),
+            prefer: expect.prefer.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -383,5 +423,98 @@ mod tests {
         // stays at the back.
         assert_eq!(plan.sorted[0], "/home/u/.cargo/bin");
         assert_eq!(plan.sorted[1], "/opt/custom");
+    }
+
+    fn expect_prefer_avoid(command: &str, prefer: &[&str], avoid: &[&str]) -> Expectation {
+        Expectation {
+            command: command.into(),
+            prefer: prefer.iter().map(|s| s.to_string()).collect(),
+            avoid: avoid.iter().map(|s| s.to_string()).collect(),
+            os: None,
+            optional: false,
+            kind: None,
+            severity: crate::config::Severity::Error,
+        }
+    }
+
+    #[test]
+    fn avoid_only_demotes_matching_entry_to_the_back() {
+        // No prefer set, just avoid. The avoid entry should sink
+        // below the neutral entry. This is the symmetric mirror of
+        // promotion: avoid wants the entry *not* to win first.
+        let sources = cat(&[
+            ("winget", src("/winget/links")),
+            ("plain", src("/usr/local/bin")),
+        ]);
+        let path = entries(&["/winget/links", "/usr/local/bin"]);
+        let expects = vec![expect_prefer_avoid("rg", &[], &["winget"])];
+        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        // winget entry sinks below plain entry.
+        assert_eq!(
+            plan.sorted,
+            vec!["/usr/local/bin".to_string(), "/winget/links".to_string(),]
+        );
+    }
+
+    #[test]
+    fn avoid_wins_when_entry_matches_both_prefer_and_avoid() {
+        // Mirrors lint::decide's avoid-overrides-prefer rule. If a
+        // single entry is both preferred (matches some prefer) and
+        // avoided (matches some avoid), it should sink — sort must
+        // not promote a path the rule explicitly forbids.
+        let sources = cat(&[
+            ("mise", src("/home/u/.local/share/mise")),
+            (
+                "dangerous",
+                src("/home/u/.local/share/mise/installs/python/3.10"),
+            ),
+            ("plain", src("/usr/bin")),
+        ]);
+        let path = entries(&[
+            "/home/u/.local/share/mise/installs/python/3.10/bin",
+            "/usr/bin",
+        ]);
+        let expects = vec![expect_prefer_avoid("python", &["mise"], &["dangerous"])];
+        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        // The mise/dangerous entry sinks past /usr/bin.
+        assert_eq!(plan.sorted[0], "/usr/bin");
+        assert!(plan.sorted[1].contains("dangerous") || plan.sorted[1].contains("python/3.10"));
+    }
+
+    #[test]
+    fn avoid_with_no_match_is_silent() {
+        // The avoid set names a source no PATH entry matches.
+        // Nothing to demote; plan is a noop. No spurious note.
+        let sources = cat(&[
+            ("winget", src("/winget/links")),
+            ("cargo", src("/home/u/.cargo/bin")),
+        ]);
+        let path = entries(&["/home/u/.cargo/bin", "/usr/bin"]);
+        let expects = vec![expect_prefer_avoid("rg", &["cargo"], &["winget"])];
+        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        assert!(plan.is_noop(), "plan was: {plan:?}");
+    }
+
+    #[test]
+    fn prefer_promotes_above_avoid_in_three_way_layout() {
+        // Three entries: a preferred one, a neutral one, and an
+        // avoided one. The order should be preferred → neutral →
+        // avoided regardless of original layout.
+        let sources = cat(&[
+            ("cargo", src("/home/u/.cargo/bin")),
+            ("winget", src("/winget/links")),
+            ("plain", src("/usr/bin")),
+        ]);
+        let path = entries(&["/winget/links", "/usr/bin", "/home/u/.cargo/bin"]);
+        let expects = vec![expect_prefer_avoid("rg", &["cargo"], &["winget"])];
+        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        assert_eq!(
+            plan.sorted,
+            vec![
+                "/home/u/.cargo/bin".to_string(),
+                "/usr/bin".to_string(),
+                "/winget/links".to_string(),
+            ]
+        );
     }
 }

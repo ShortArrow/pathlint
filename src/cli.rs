@@ -47,6 +47,15 @@ pub enum Command {
 
 #[derive(Debug, clap::Args)]
 pub struct SortArgs {
+    /// Print the proposal without touching PATH. This is the only
+    /// mode `sort` ships in 0.0.8; the flag exists so scripts and
+    /// CI configs can be explicit, and so that adding `--apply`
+    /// later (post-1.0) is a non-breaking change. Always true; a
+    /// future `--apply` would have to live behind its own flag and
+    /// override this.
+    #[arg(long, default_value_t = true)]
+    pub dry_run: bool,
+
     /// Emit the proposal as a JSON object (`SortPlan`) instead of
     /// the default before / after diff. Schema is stable through
     /// 0.0.x; notes carry a `kind` discriminator so consumers can

@@ -267,7 +267,7 @@ where
 {
     let base = Outcome::initial(expect);
 
-    if !os_filter_applies(expect, os) {
+    if !crate::os_detect::os_filter_applies(&expect.os, os) {
         return base.with_status(Status::NotApplicable);
     }
 
@@ -349,13 +349,6 @@ fn check_executable(path: &std::path::Path) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-fn os_filter_applies(expect: &Expectation, os: Os) -> bool {
-    match &expect.os {
-        None => true,
-        Some(tags) => tags.iter().any(|t| os.matches_tag(t)),
-    }
 }
 
 fn first_undefined<'a>(

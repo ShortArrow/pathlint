@@ -54,6 +54,19 @@ fn is_termux() -> bool {
         .unwrap_or(false)
 }
 
+/// Decide whether an `[[expect]] os = [...]` filter accepts the
+/// current OS. `None` means "applies on every OS"; otherwise any
+/// matching tag wins. Pure: takes the rule's optional tag list and
+/// the current OS, no globals. Used by both `lint::evaluate_one`
+/// and `sort::sort_path` so the filter contract stays in one
+/// place.
+pub fn os_filter_applies(os_filter: &Option<Vec<String>>, os: Os) -> bool {
+    match os_filter {
+        None => true,
+        Some(tags) => tags.iter().any(|t| os.matches_tag(t)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
