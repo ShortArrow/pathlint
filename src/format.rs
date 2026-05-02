@@ -7,6 +7,7 @@
 
 use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::{self, Diagnosis, Outcome, Status};
+use crate::sort::{SortNote, SortPlan};
 use crate::where_cmd::{Found, Provenance, UninstallHint, WhereOutcome};
 
 /// Render a single doctor diagnostic into a multi-line block
@@ -133,6 +134,106 @@ pub fn where_outcome(outcome: &WhereOutcome) -> String {
             String::new()
         }
     }
+}
+
+/// Render a `SortPlan` as a multi-line human-readable block. The
+/// layout shows the *original* PATH on the left numbered column,
+/// the *proposed* PATH on the right column, and a list of
+/// "moved entries" with the reason each one was promoted. Notes
+/// (e.g. unsatisfiable `prefer`) follow as fyi lines.
+///
+/// No trailing newline; callers add their own. Pure.
+pub fn sort_human(plan: &SortPlan) -> String {
+    let mut buf = String::new();
+    if plan.is_noop() {
+        buf.push_str("pathlint sort: PATH is already in a satisfying order.\n");
+        for note in &plan.notes {
+            push_sort_note(&mut buf, note);
+        }
+        // strip trailing newline so behaviour matches the other
+        // human formatters.
+        if buf.ends_with('\n') {
+            buf.pop();
+        }
+        return buf;
+    }
+
+    buf.push_str("pathlint sort: proposed PATH order (--dry-run; not applied).\n\n");
+    let width = plan.original.len().max(plan.sorted.len()).to_string().len();
+    let original_header = "before".to_string();
+    let sorted_header = "after".to_string();
+    let col_w = plan
+        .original
+        .iter()
+        .chain(plan.sorted.iter())
+        .map(|s| s.len())
+        .max()
+        .unwrap_or(0)
+        .max(original_header.len());
+
+    buf.push_str(&format!(
+        "  {:>w$}  {:<col$}    {:>w$}  {:<col$}\n",
+        "#",
+        original_header,
+        "#",
+        sorted_header,
+        w = width,
+        col = col_w,
+    ));
+    let rows = plan.original.len().max(plan.sorted.len());
+    for i in 0..rows {
+        let lhs = plan.original.get(i).cloned().unwrap_or_default();
+        let rhs = plan.sorted.get(i).cloned().unwrap_or_default();
+        buf.push_str(&format!(
+            "  {:>w$}  {:<col$}    {:>w$}  {:<col$}\n",
+            i,
+            lhs,
+            i,
+            rhs,
+            w = width,
+            col = col_w,
+        ));
+    }
+
+    if !plan.moves.is_empty() {
+        buf.push_str("\nmoved:\n");
+        for m in &plan.moves {
+            buf.push_str(&format!(
+                "  #{from} -> #{to}: {entry}\n      reason: {reason}\n",
+                from = m.from,
+                to = m.to,
+                entry = m.entry,
+                reason = m.reason,
+            ));
+        }
+    }
+
+    for note in &plan.notes {
+        push_sort_note(&mut buf, note);
+    }
+
+    if buf.ends_with('\n') {
+        buf.pop();
+    }
+    buf
+}
+
+fn push_sort_note(buf: &mut String, note: &SortNote) {
+    match note {
+        SortNote::UnsatisfiablePrefer { command, prefer } => {
+            buf.push_str(&format!(
+                "\nnote: `{command}` cannot be satisfied by reordering — no PATH entry matches `prefer = [{}]`. Install via one of those sources, or relax the rule.\n",
+                prefer.join(", "),
+            ));
+        }
+    }
+}
+
+/// Render a `SortPlan` as pretty-printed JSON. Schema is the
+/// `SortPlan` value verbatim; `notes` carry a `kind` discriminator
+/// so machine consumers can pattern-match. Stable through `0.0.x`.
+pub fn sort_json(plan: &SortPlan) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(plan)
 }
 
 /// Render doctor diagnostics as a pretty-printed JSON array — the
@@ -433,6 +534,90 @@ mod tests {
             avoid: vec![],
             severity: crate::config::Severity::Error,
         }
+    }
+
+    fn sort_plan_noop() -> SortPlan {
+        SortPlan {
+            original: vec!["/usr/bin".into(), "/home/u/.cargo/bin".into()],
+            sorted: vec!["/usr/bin".into(), "/home/u/.cargo/bin".into()],
+            moves: vec![],
+            notes: vec![],
+        }
+    }
+
+    fn sort_plan_swap() -> SortPlan {
+        SortPlan {
+            original: vec!["/usr/bin".into(), "/home/u/.cargo/bin".into()],
+            sorted: vec!["/home/u/.cargo/bin".into(), "/usr/bin".into()],
+            moves: vec![
+                crate::sort::EntryMove {
+                    entry: "/home/u/.cargo/bin".into(),
+                    from: 1,
+                    to: 0,
+                    reason: "preferred source for `rg`".into(),
+                },
+                crate::sort::EntryMove {
+                    entry: "/usr/bin".into(),
+                    from: 0,
+                    to: 1,
+                    reason: "displaced by a preferred entry".into(),
+                },
+            ],
+            notes: vec![],
+        }
+    }
+
+    #[test]
+    fn sort_human_noop_says_already_sorted() {
+        let out = sort_human(&sort_plan_noop());
+        assert!(out.contains("already in a satisfying order"), "out: {out}");
+        assert!(!out.ends_with('\n'), "no trailing newline");
+    }
+
+    #[test]
+    fn sort_human_swap_renders_both_columns_and_moved_section() {
+        let out = sort_human(&sort_plan_swap());
+        assert!(out.contains("before"), "out: {out}");
+        assert!(out.contains("after"), "out: {out}");
+        assert!(out.contains("--dry-run"), "must mention dry-run: {out}");
+        assert!(out.contains("moved:"), "must list moves: {out}");
+        assert!(out.contains("preferred source for `rg`"));
+    }
+
+    #[test]
+    fn sort_human_unsatisfiable_note_appears_after_diff() {
+        let mut plan = sort_plan_noop();
+        plan.notes.push(SortNote::UnsatisfiablePrefer {
+            command: "rg".into(),
+            prefer: vec!["cargo".into()],
+        });
+        let out = sort_human(&plan);
+        assert!(out.contains("`rg` cannot be satisfied"));
+        assert!(out.contains("`prefer = [cargo]`"));
+    }
+
+    #[test]
+    fn sort_json_serializes_plan_verbatim() {
+        let out = sort_json(&sort_plan_swap()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["original"][0], "/usr/bin");
+        assert_eq!(v["sorted"][0], "/home/u/.cargo/bin");
+        assert_eq!(v["moves"][0]["from"], 1);
+        assert_eq!(v["moves"][0]["to"], 0);
+        assert_eq!(v["moves"][0]["entry"], "/home/u/.cargo/bin");
+    }
+
+    #[test]
+    fn sort_json_note_carries_kind_discriminator() {
+        let mut plan = sort_plan_noop();
+        plan.notes.push(SortNote::UnsatisfiablePrefer {
+            command: "rg".into(),
+            prefer: vec!["cargo".into()],
+        });
+        let out = sort_json(&plan).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["notes"][0]["kind"], "unsatisfiable_prefer");
+        assert_eq!(v["notes"][0]["command"], "rg");
     }
 
     #[test]

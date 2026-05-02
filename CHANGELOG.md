@@ -11,6 +11,27 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+### Added
+
+- **`pathlint sort --dry-run`.** Proposes a PATH order that
+  satisfies every applicable `[[expect]]` rule, printed as a
+  before / after diff with a `moved:` section explaining why each
+  entry was promoted. Read-only by design — `sort` never rewrites
+  PATH; pair it with the user's own shell snippet or registry
+  edit to actually apply the change.
+  - `--json` swaps the diff for a `SortPlan` JSON object
+    (`original` / `sorted` / `moves` / `notes`). `notes` carry a
+    `kind` discriminator (currently only `unsatisfiable_prefer`)
+    so CI consumers can pattern-match.
+  - The algorithm keeps mutual relative order of preferred entries
+    among themselves and of non-preferred entries among
+    themselves, so reading the diff only surfaces changes the
+    user needs to think about.
+  - Implements PRD §7.8 (R5 — repair, the inverse of R1 resolve
+    order). `--apply` is *not* shipped in 0.0.8; see
+    [PRD §4](docs/PRD.md#4-non-goals) for why pathlint stays
+    read-only.
+
 ## [0.0.7] - 2026-05-02
 
 ### Added

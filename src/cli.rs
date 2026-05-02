@@ -38,6 +38,21 @@ pub enum Command {
     /// Show where a command resolves from, which sources it matches,
     /// and the most plausible uninstall command.
     Where(WhereArgs),
+
+    /// Propose a PATH order that satisfies every applicable
+    /// `[[expect]]` rule. Read-only by design — pathlint never
+    /// rewrites PATH, just prints the diff (default) or JSON.
+    Sort(SortArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct SortArgs {
+    /// Emit the proposal as a JSON object (`SortPlan`) instead of
+    /// the default before / after diff. Schema is stable through
+    /// 0.0.x; notes carry a `kind` discriminator so consumers can
+    /// pattern-match on them.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, clap::Args, Default)]

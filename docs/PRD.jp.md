@@ -355,12 +355,28 @@ plugin provenance は path-segment の heuristic で、R4 専用の
 / `"no_source"`。 `provenance` は heuristic が発火しないとき `null`。
 NotFound は `{ "command": "...", "found": false }` を出して exit 1。
 
-### 7.8 `pathlint sort`（post-MVP）
+### 7.8 `pathlint sort`（R5 — 修正、0.0.8 で読み取り専用版を実装）
 
-- 全 expectation を満たす PATH 順序を計算し、表示
-  （`--dry-run` がデフォルト）または OS に応じた API で適用
-  （`--apply`、Windows レジストリ／shell-rc 挿入）。0.0.x ではスコー
-  プ外。
+- 適用可能な全 expectation を満たす PATH 順序を計算する。読み取り
+  専用：before / after 差分（デフォルト）または `SortPlan` JSON
+  （`--json`）を出力。pathlint は PATH を書き換えない — 出力を
+  shell snippet、レジストリ編集、dotfiles diff と組み合わせて適用
+  するのはユーザー側。
+- アルゴリズム（0.0.8）：`os` フィルタが当てはまる各 `[[expect]]`
+  について、`prefer` set にマッチする PATH エントリを、マッチしない
+  エントリより前に昇格させる。安定ソート：preferred エントリ同士は
+  元の相対順序を保ち、non-preferred 同士も保つ。差分には「考える
+  価値のある変化」だけが残る。`prefer` が空のルールは寄与しない。
+  どの定義済 source にもマッチしないエントリは動かない。
+- `prefer` が並べ替えで満たせない場合（PATH エントリの誰一人として
+  該当 source にマッチしない）、`SortNote::UnsatisfiablePrefer` を
+  出して command と prefer set を提示する。修正方法は「該当 source
+  からインストールする」か「ルールを緩める」のいずれか。
+- 常に exit 0。`sort` は **提案** コマンドであって go / no-go チェック
+  ではない。go / no-go には `pathlint check` を使う。
+- `--apply` は 0.0.8 には入らない。PRD §4 の「PATH を書き換えない」
+  方針を維持する。`--apply` を入れる検討は post-1.0 議題で、
+  明示的なフラグを必要とする形で再検討する。
 
 ## 8. `pathlint.toml` スキーマ
 
@@ -657,7 +673,9 @@ Options（global）:
   -V, --version
 ```
 
-`pathlint sort` は post-MVP に予約。
+`pathlint sort` は 0.0.8 で読み取り専用版を実装ずみ（§7.8 参照）。
+`--apply` モードは PRD §4 の「PATH を書き換えない」方針により
+未実装。検討は post-1.0 議題。
 
 ## 12. 非機能要件
 

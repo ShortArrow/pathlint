@@ -120,6 +120,10 @@ pathlint where lazygit --json     # 0.0.6+: machine-readable output
 pathlint doctor --exclude shortenable,missing
 pathlint doctor --include duplicate,malformed
 pathlint doctor --json            # 0.0.7+: machine-readable output
+
+# Propose a PATH order satisfying every [[expect]] rule (read-only)
+pathlint sort                     # 0.0.8+: before/after diff
+pathlint sort --json              # 0.0.8+: SortPlan JSON
 ```
 
 ## `pathlint.toml` (minimal example)

@@ -404,12 +404,32 @@ output is provenance-focused and clearly distinct in style. If the
 overlap proves too confusing in practice the name will be revisited
 before 0.1.0.
 
-### 7.8 `pathlint sort` (post-MVP)
+### 7.8 `pathlint sort` (R5 — repair, implemented in 0.0.8 as
+read-only)
 
-- Computes a PATH order that satisfies every applicable expectation,
-  prints it (`--dry-run` default) or applies it via OS-appropriate
-  APIs (`--apply`, Windows registry / shell-rc insertion). Out of
-  scope for 0.0.x.
+- Computes a PATH order that satisfies every applicable
+  expectation. Read-only: prints a before / after diff (default)
+  or a `SortPlan` JSON object (`--json`). pathlint never rewrites
+  PATH itself — pair the output with a shell snippet, registry
+  edit, or dotfiles diff to apply.
+- Algorithm (0.0.8): for each `[[expect]]` whose `os` filter
+  applies, every PATH entry matching the rule's `prefer` set is
+  promoted ahead of every entry that does not. Stable: preferred
+  entries keep their mutual relative order, and so do
+  non-preferred entries, so the diff only contains the moves the
+  user actually needs to think about. Rules with `prefer` empty
+  do not contribute. Entries matching no defined source stay in
+  place.
+- When `prefer` cannot be satisfied by reordering (no PATH entry
+  matches any of the listed sources), the plan emits a
+  `SortNote::UnsatisfiablePrefer` listing the command and the
+  prefer set — the only fix is to install via one of those
+  sources or relax the rule.
+- Always exits 0; `sort` is a *suggestion* command, not a
+  pass / fail check. Use `pathlint check` for go / no-go.
+- `--apply` is not shipped in 0.0.8. PRD §4 forbids PATH
+  mutation; revisiting `--apply` is on the post-1.0 list and
+  would live behind an explicit flag.
 
 ## 8. `pathlint.toml` schema
 
@@ -706,7 +726,9 @@ Options (global):
   -V, --version
 ```
 
-`pathlint sort` is reserved for post-MVP.
+`pathlint sort` ships in 0.0.8 as a read-only proposal (see §7.8).
+The `--apply` mode is held back by PRD §4's "no PATH mutation"
+policy and is on the post-1.0 list.
 
 ## 12. Non-functional requirements
 

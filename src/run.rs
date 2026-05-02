@@ -7,7 +7,8 @@ use anyhow::Result;
 use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
 use crate::cli::{
-    CatalogCommand, CatalogListArgs, CheckArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs,
+    CatalogCommand, CatalogListArgs, CheckArgs, Cli, Command, DoctorArgs, InitArgs, SortArgs,
+    WhereArgs,
 };
 use crate::config::Config;
 use crate::doctor::{self, Diagnostic, Filter, Severity};
@@ -43,6 +44,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
         Some(Command::Where(args)) => return execute_where(&args, &cli.global),
+        Some(Command::Sort(args)) => return execute_sort(&args, &cli.global),
         Some(Command::Check(args)) => args,
         None => CheckArgs::default(),
     };
@@ -187,6 +189,34 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
             Ok(0)
         }
     }
+}
+
+fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+    // sort reads the same merged catalog and rules as `check`, so
+    // its proposal aligns with the rules the user is already
+    // running against. The rules-file `[[expect]]` block is the
+    // input — `prefer` rules drive the reordering.
+    let rules_path = locate_rules(global.rules.as_deref())?;
+    let cfg = match rules_path.as_ref() {
+        Some(p) => crate::config::Config::from_path(p)?,
+        None => crate::config::Config::default(),
+    };
+    let catalog = catalog::merge_with_user(&cfg.source);
+    let path_entries = read_path_entries(global);
+
+    let plan = crate::sort::sort_path(&path_entries, &cfg.expectations, &catalog, Os::current());
+
+    if args.json {
+        let json = format::sort_json(&plan)?;
+        println!("{json}");
+    } else {
+        println!("{}", format::sort_human(&plan));
+    }
+
+    // sort is a *suggestion* command — it never reports failure,
+    // even when the plan would change the order. Use `pathlint
+    // check` for go/no-go.
+    Ok(0)
 }
 
 fn execute_init(args: &InitArgs) -> Result<u8> {

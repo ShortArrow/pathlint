@@ -125,6 +125,10 @@ pathlint where lazygit --json     # 0.0.6+: 機械可読出力
 pathlint doctor --exclude shortenable,missing
 pathlint doctor --include duplicate,malformed
 pathlint doctor --json            # 0.0.7+: 機械可読出力
+
+# 全 [[expect]] を満たす PATH 順を提案する（読み取り専用）
+pathlint sort                     # 0.0.8+: before/after の差分
+pathlint sort --json              # 0.0.8+: SortPlan JSON
 ```
 
 ## `pathlint.toml`（最小例）
