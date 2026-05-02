@@ -11,7 +11,7 @@ regular semver rules apply.
 
 ## [Unreleased]
 
-## [0.0.7] - 2026-04-29
+## [0.0.7] - 2026-05-02
 
 ### Added
 
