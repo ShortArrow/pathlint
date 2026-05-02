@@ -28,6 +28,48 @@ crates.io publish も `.github/workflows/release.yml` が全部やる。
 - **minor bump（`0.0.x` → `0.1.0`）** は schema/CLI を「通常の
   semver 契約に乗せる」と宣言できる段階に予約する。
 
+## ブランチ運用と merge ポリシー
+
+長く維持するブランチは `main` 1 本だけ。日常作業は feature
+ブランチで行い、`main` には PR の **squash merge** で入れる。
+結果として `git log --oneline main` は PR の一覧として読める
+形になり、加えて release ワークフローが打つ
+`chore: release X.Y.Z` がときどき混じる。
+
+- **feature ブランチ。** `feat/<name>` / `fix/<name>` /
+  `refactor/<name>` / `chore/<name>` などを使う。fork に push
+  するか、`origin` の topic ブランチに上げて、`main` に対する
+  PR を開く。
+- **squash merge だけ。** PR は **Squash and merge** で `main`
+  に入れる。merge commit や rebase merge は無効。squash 後の
+  commit subject は **PR タイトル**そのもの（GitHub の
+  「Default to PR title for squash merge commits」設定）。PR
+  タイトルは Conventional Commits 必須
+  （`.github/workflows/pr-title-check.yml` で強制）。
+- **`main` への直接 push は禁止。** 唯一の例外は `release.yml`
+  の `prepare` ジョブで、`github-actions[bot]` として
+  `GITHUB_TOKEN` 経由で `chore: release X.Y.Z` commit と tag を
+  push する。branch protection でこの bot だけ push 許可する。
+- **linear history。** "Require linear history" を on にする
+  ので、`main` に乗りうるのは squash commit と release bot の
+  commit だけ。merge commit やローカルブランチの fast-forward
+  は混ざらない。
+
+リポ設定の推奨（1 回設定）：
+
+- Settings → General → Pull Requests:
+  - Allow merge commits: **off**
+  - Allow squash merging: **on**
+  - Allow rebase merging: **off**
+  - Default to PR title for squash merge commits: **on**
+- Settings → Branches → main → Branch protection:
+  - Require a pull request before merging: **on**
+  - Require status checks to pass: `ci`, `pr-title-check`
+  - Require linear history: **on**
+  - Restrict who can push to matching branches: `github-actions`
+    を許可（release bot が bump commit + tag を push できる
+    ようにするため）。
+
 ## workflow が何をするか
 
 `release.yml` は 4 ジョブを順に走らせる：

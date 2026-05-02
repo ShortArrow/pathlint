@@ -31,6 +31,48 @@ the one-time setup needed for a fresh repo.
   declare schema/CLI stable enough to call the regular semver
   contract into effect.
 
+## Branch and merge policy
+
+`main` is the only long-lived branch. Day-to-day work happens on
+feature branches and lands on `main` via squash-merged PRs. The
+result: `git log --oneline main` reads as a list of PRs, one
+commit per PR, plus the occasional `chore: release X.Y.Z` from
+the release workflow.
+
+- **Feature branches.** Use `feat/<name>` / `fix/<name>` /
+  `refactor/<name>` / `chore/<name>` etc. Push them to your fork
+  or to a topic branch on `origin`; open a PR against `main`.
+- **Squash merge only.** PRs land on `main` with **Squash and
+  merge**. Merge commits and rebase merging are off. The squash
+  commit's subject is the **PR title**, and the body is whatever
+  GitHub's "Default to PR title for squash merge commits" puts
+  there. PR titles must follow Conventional Commits — enforced
+  by `.github/workflows/pr-title-check.yml`.
+- **No direct push to `main`.** The single exception is the
+  `release.yml` workflow's `prepare` job, which pushes
+  `chore: release X.Y.Z` (and the matching tag) on behalf of
+  `github-actions[bot]` via `GITHUB_TOKEN`. Branch protection
+  should allow that bot account to bypass push restrictions.
+- **Linear history.** "Require linear history" is on, so the only
+  shapes that can appear on `main` are squash commits and the
+  release bot's commits — no merge commits, no fast-forward of
+  arbitrary local branches.
+
+The recommended GitHub repo settings (one-time):
+
+- Settings → General → Pull Requests:
+  - Allow merge commits: **off**
+  - Allow squash merging: **on**
+  - Allow rebase merging: **off**
+  - Default to PR title for squash merge commits: **on**
+- Settings → Branches → main → Branch protection:
+  - Require a pull request before merging: **on**
+  - Require status checks to pass: `ci`, `pr-title-check`
+  - Require linear history: **on**
+  - Restrict who can push to matching branches: allow
+    `github-actions` (so the release bot can push the bump commit
+    + tag).
+
 ## What the workflow does
 
 `release.yml` runs four jobs in sequence:
