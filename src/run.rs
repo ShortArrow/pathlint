@@ -112,17 +112,24 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     let diags = doctor::analyze_real(&entries, Os::current());
     let kept = filter.apply(&diags);
 
-    let printable: Vec<&Diagnostic> = if global.quiet {
-        kept.iter()
-            .copied()
-            .filter(|d| d.severity == Severity::Error)
-            .collect()
+    if args.json {
+        // JSON view ignores --quiet on purpose: the consumer is a
+        // tool, not a human, and intermediate filtering would
+        // surprise pipelines that expect "filter == include/exclude".
+        let json = format::doctor_json(&kept)?;
+        println!("{json}");
     } else {
-        kept.clone()
-    };
-
-    for d in &printable {
-        println!("{}", format::doctor_line(d, &entries));
+        let printable: Vec<&Diagnostic> = if global.quiet {
+            kept.iter()
+                .copied()
+                .filter(|d| d.severity == Severity::Error)
+                .collect()
+        } else {
+            kept.clone()
+        };
+        for d in &printable {
+            println!("{}", format::doctor_line(d, &entries));
+        }
     }
 
     Ok(if doctor::has_error(&kept) { 1 } else { 0 })

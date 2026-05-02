@@ -15,6 +15,15 @@ regular semver rules apply.
 
 ### Added
 
+- **`pathlint doctor --json`.** Machine-readable companion to the
+  human view, completing the 3-way `check / where / doctor` JSON
+  surface. Emits a JSON array; each element carries `index`,
+  `entry`, `severity`, the discriminator `kind`, and any per-kind
+  payload (`suggestion`, `canonical`, `first_index`, `reason`,
+  `shim_indices` / `install_indices`). The include / exclude
+  filters still apply; `--quiet` is ignored in JSON mode (the
+  output is intended to be complete for tooling). Schema is stable
+  through 0.0.x.
 - **`[[expect]] severity = "warn"`.** Per-rule severity knob for
   CI scenarios where a `prefer` mismatch should be surfaced but
   not block the build. `severity = "error"` (default) keeps 0.0.x

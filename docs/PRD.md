@@ -312,6 +312,16 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
   reported as a config error (exit 2). The exit code reflects
   the *kept* set, so `--exclude malformed` genuinely lets a run
   pass even when the underlying analysis would have escalated.
+- (0.0.7+) `--json` swaps the human view for a JSON array. Each
+  element has `index`, `entry`, `severity` (`"warn"` / `"error"`),
+  the discriminator `kind`, and any per-kind payload fields
+  (`suggestion` for shortenable, `canonical` for case_variant,
+  `first_index` for duplicate, `reason` for malformed, and
+  `shim_indices` / `install_indices` for mise_activate_both).
+  Schema is stable through 0.0.x and parallels `check --json` /
+  `where --json`, completing the 3-way machine-readable surface.
+  The include / exclude filters still apply; `--quiet` is ignored
+  in JSON mode (the output is intended to be complete).
 
 ### 7.6 `[[expect]] kind = "executable"` (R2, implemented in 0.0.4)
 

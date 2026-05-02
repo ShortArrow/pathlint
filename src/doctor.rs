@@ -36,13 +36,20 @@ pub fn analyze_real(entries: &[String], os: Os) -> Vec<Diagnostic> {
     analyze(entries, os, fs_exists_real, env_lookup_real)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Severity {
     Warn,
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Discriminated union of every doctor diagnostic kind. The
+/// `kind` field is the discriminator and the variant payload is
+/// flattened alongside it for JSON consumers — e.g. `Shortenable`
+/// emits `{"kind":"shortenable","suggestion":"..."}` rather than
+/// nesting the suggestion under a wrapper.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Kind {
     Duplicate {
         first_index: usize,
@@ -72,11 +79,15 @@ pub enum Kind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Diagnostic {
     pub index: usize,
     pub entry: String,
     pub severity: Severity,
+    /// Flattened so the discriminator (`kind`) and any per-variant
+    /// payload sit at the top level next to `index` / `entry` /
+    /// `severity`.
+    #[serde(flatten)]
     pub kind: Kind,
 }
 

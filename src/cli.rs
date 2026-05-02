@@ -85,6 +85,17 @@ pub struct DoctorArgs {
     /// longer escalates to exit 1.
     #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,
+
+    /// Emit the (already-filtered) diagnostics as a JSON array —
+    /// machine-readable counterpart of the human view. Each element
+    /// has `index`, `entry`, `severity`, `kind`, plus any per-kind
+    /// payload fields (`suggestion`, `canonical`, `first_index`,
+    /// `reason`, `shim_indices` / `install_indices`). Schema is
+    /// stable through 0.0.x, parallels `check --json`. The
+    /// include / exclude filters still apply; `--quiet` is ignored
+    /// in JSON mode (the output is intended to be complete).
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Subcommand)]

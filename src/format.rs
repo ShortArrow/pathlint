@@ -135,6 +135,21 @@ pub fn where_outcome(outcome: &WhereOutcome) -> String {
     }
 }
 
+/// Render doctor diagnostics as a pretty-printed JSON array — the
+/// machine-readable counterpart of `pathlint doctor`'s human view.
+/// Each element carries `index`, `entry`, `severity`, the
+/// discriminator `kind`, and any per-variant payload fields
+/// (e.g. `suggestion` for shortenable, `canonical` for
+/// case_variant, `shim_indices` / `install_indices` for
+/// mise_activate_both).
+///
+/// The schema parallels `check --json`: top-level array, every
+/// failure carries enough structured detail that CI consumers
+/// don't need to parse human strings. Stable through `0.0.x`.
+pub fn doctor_json(diags: &[&Diagnostic]) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(diags)
+}
+
 /// Render `check` outcomes as a pretty-printed JSON array — the
 /// machine-readable counterpart of `--explain`. Each element
 /// carries the per-expectation status, resolved path (when known),
@@ -418,6 +433,93 @@ mod tests {
             avoid: vec![],
             severity: crate::config::Severity::Error,
         }
+    }
+
+    #[test]
+    fn doctor_json_emits_top_level_array_with_kind_discriminator() {
+        let d_missing = Diagnostic {
+            index: 3,
+            entry: "/usr/bin".into(),
+            severity: Severity::Warn,
+            kind: Kind::Missing,
+        };
+        let d_short = Diagnostic {
+            index: 5,
+            entry: "C:\\Users\\who\\.cargo\\bin".into(),
+            severity: Severity::Warn,
+            kind: Kind::Shortenable {
+                suggestion: "%UserProfile%\\.cargo\\bin".into(),
+            },
+        };
+        let out = doctor_json(&[&d_missing, &d_short]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.is_array());
+        assert_eq!(v[0]["index"], 3);
+        assert_eq!(v[0]["entry"], "/usr/bin");
+        assert_eq!(v[0]["severity"], "warn");
+        assert_eq!(v[0]["kind"], "missing");
+        // Missing has no payload — no extra fields beyond the four above.
+        assert!(v[0].get("suggestion").is_none());
+        assert_eq!(v[1]["kind"], "shortenable");
+        assert_eq!(v[1]["suggestion"], "%UserProfile%\\.cargo\\bin");
+    }
+
+    #[test]
+    fn doctor_json_malformed_carries_error_severity_and_reason() {
+        let d = Diagnostic {
+            index: 0,
+            entry: "C:\\foo|bar".into(),
+            severity: Severity::Error,
+            kind: Kind::Malformed {
+                reason: "illegal character '|' in path".into(),
+            },
+        };
+        let out = doctor_json(&[&d]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v[0]["severity"], "error");
+        assert_eq!(v[0]["kind"], "malformed");
+        assert!(v[0]["reason"].as_str().unwrap().contains("illegal"));
+    }
+
+    #[test]
+    fn doctor_json_duplicate_carries_first_index() {
+        let d = Diagnostic {
+            index: 2,
+            entry: "/usr/bin".into(),
+            severity: Severity::Warn,
+            kind: Kind::Duplicate { first_index: 0 },
+        };
+        let out = doctor_json(&[&d]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v[0]["kind"], "duplicate");
+        assert_eq!(v[0]["first_index"], 0);
+    }
+
+    #[test]
+    fn doctor_json_mise_activate_both_carries_both_layers() {
+        let d = Diagnostic {
+            index: 0,
+            entry: "/home/u/.local/share/mise/shims".into(),
+            severity: Severity::Warn,
+            kind: Kind::MiseActivateBoth {
+                shim_indices: vec![0],
+                install_indices: vec![1, 2],
+            },
+        };
+        let out = doctor_json(&[&d]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v[0]["kind"], "mise_activate_both");
+        assert_eq!(v[0]["shim_indices"][0], 0);
+        assert_eq!(v[0]["install_indices"][0], 1);
+        assert_eq!(v[0]["install_indices"][1], 2);
+    }
+
+    #[test]
+    fn doctor_json_empty_diagnostics_yields_empty_array() {
+        let out = doctor_json(&[]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.is_array());
+        assert_eq!(v.as_array().unwrap().len(), 0);
     }
 
     #[test]

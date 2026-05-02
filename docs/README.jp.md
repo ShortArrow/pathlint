@@ -124,6 +124,7 @@ pathlint where lazygit --json     # 0.0.6+: 機械可読出力
 # CI 用に doctor の診断を絞る
 pathlint doctor --exclude shortenable,missing
 pathlint doctor --include duplicate,malformed
+pathlint doctor --json            # 0.0.7+: 機械可読出力
 ```
 
 ## `pathlint.toml`（最小例）

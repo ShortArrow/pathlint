@@ -270,6 +270,15 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
   名前は config エラー (exit 2)。exit code は **絞られたあとの**
   集合に対して計算されるので、`--exclude malformed` で
   Error も含めて抑制すると本当に exit 0 で通る。
+- (0.0.7+) `--json` で human view を JSON 配列に切り替え。各要素
+  は `index` / `entry` / `severity`（`"warn"` / `"error"`）/
+  `kind` 判別子 + kind ごとの payload フィールド（shortenable の
+  `suggestion`、case_variant の `canonical`、duplicate の
+  `first_index`、malformed の `reason`、mise_activate_both の
+  `shim_indices` / `install_indices`）を持つ。schema は 0.0.x で
+  stable、`check --json` / `where --json` と並ぶ 3-way の機械可読
+  サーフェス。include / exclude は JSON でも有効。`--quiet` は
+  JSON mode では無視（情報を欠落させない設計）。
 
 ### 7.6 `[[expect]] kind = "executable"`（R2、0.0.4 で実装）
 
