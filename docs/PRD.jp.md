@@ -86,7 +86,11 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 
 - **R1（解決順）。** 失敗 expectation はコマンド名、実解決パス、
   マッチした source、`prefer` / `avoid` の違反内容を示す。他の
-  デバッグツール無しで直せる程度に。
+  デバッグツール無しで直せる程度に。`pathlint check --explain`
+  （0.0.7+）は NG ごとに 6 行（resolved / matched / prefer / avoid
+  / diagnosis / hint）の詳細表示に切り替え、`avoid` ヒット時には
+  違反 source 名を、`prefer` 不一致時には候補一覧を出し、
+  `pathlint where <command>` への follow-up を案内する。
 - **R2（存在と形状）。** コマンドが path に解決されるとき、その path
   は本当に実行可能ファイルを指している必要がある。symlink は生き
   ていて、「実行可能」が嘘でないこと。今は `not_found` しか報告
@@ -180,6 +184,8 @@ pathlint --target user                # 明示的なターゲット
 pathlint --rules ./other.toml
 pathlint --verbose                    # n/a 含む全 expectation と解決後 PATH を表示
 pathlint --quiet                      # 失敗のみ
+pathlint check --explain              # NG ごとに多行詳細を表示（0.0.7+）
+pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 ```
 
 - `--target` のデフォルトは `process`。`user` / `machine` はどの OS
@@ -204,7 +210,13 @@ pathlint --quiet                      # 失敗のみ
 - expectation 1 つにつき 1 行のステータス。失敗時はインデントされた
   詳細行が続く。
 - exit code: `NG` も `not_found` もなければ `0`、それ以外 `1`
-  （`optional` は除く）。
+  （`optional` および `severity = "warn"` は除く）。
+- **ルールごとの severity（0.0.7+）。** `[[expect]]` は optional な
+  `severity` を取る（`"error"` デフォルト、`"warn"`）。`error` は
+  0.0.x 通りで NG → exit 1。`warn` は同じ診断を `[warn]` タグで
+  表示し exit 0 を保つ。CI で「1 件の逸脱でビルドを止めたくないが
+  気付きは欲しい」ケース用。`error` ルールと `warn` ルールは同じ
+  `pathlint.toml` に混在可能。`check --json` でも severity を出力。
 
 ### 7.2 source カタログのマージ
 
@@ -258,6 +270,15 @@ pathlint --quiet                      # 失敗のみ
   名前は config エラー (exit 2)。exit code は **絞られたあとの**
   集合に対して計算されるので、`--exclude malformed` で
   Error も含めて抑制すると本当に exit 0 で通る。
+- (0.0.7+) `--json` で human view を JSON 配列に切り替え。各要素
+  は `index` / `entry` / `severity`（`"warn"` / `"error"`）/
+  `kind` 判別子 + kind ごとの payload フィールド（shortenable の
+  `suggestion`、case_variant の `canonical`、duplicate の
+  `first_index`、malformed の `reason`、mise_activate_both の
+  `shim_indices` / `install_indices`）を持つ。schema は 0.0.x で
+  stable、`check --json` / `where --json` と並ぶ 3-way の機械可読
+  サーフェス。include / exclude は JSON でも有効。`--quiet` は
+  JSON mode では無視（情報を欠落させない設計）。
 
 ### 7.6 `[[expect]] kind = "executable"`（R2、0.0.4 で実装）
 

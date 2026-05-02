@@ -6,55 +6,60 @@ use anyhow::Result;
 
 use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
-use crate::cli::{CatalogCommand, CatalogListArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs};
+use crate::cli::{
+    CatalogCommand, CatalogListArgs, CheckArgs, Cli, Command, DoctorArgs, InitArgs, WhereArgs,
+};
 use crate::config::Config;
-use crate::doctor::{self, Diagnostic, Kind, Severity};
+use crate::doctor::{self, Diagnostic, Filter, Severity};
+use crate::format;
 use crate::init::{self, InitOptions, InitOutcome};
 use crate::lint;
 use crate::os_detect::Os;
 use crate::path_source::{self, Target};
 use crate::report;
 use crate::resolve;
-use crate::where_cmd::{self, Provenance, UninstallHint, WhereOutcome};
+use crate::where_cmd::{self, WhereOutcome};
+
+/// Read PATH for the chosen `--target`, surface any warning, and
+/// split it into entries. The three caller sites (`check`,
+/// `doctor`, `where`) all run the same sequence; centralising it
+/// keeps the warning prefix consistent.
+fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<String> {
+    let target: Target = global.target.into();
+    let path_read = path_source::read_path(target);
+    if let Some(w) = &path_read.warning {
+        eprintln!("pathlint: warning: {w}");
+    }
+    resolve::split_path(&path_read.value)
+}
 
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
-    match cli.command {
+    let check_args = match cli.command {
         Some(Command::Init(args)) => return execute_init(&args),
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
         }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
         Some(Command::Where(args)) => return execute_where(&args, &cli.global),
-        Some(Command::Check) | None => {}
-    }
+        Some(Command::Check(args)) => args,
+        None => CheckArgs::default(),
+    };
     let rules_path = locate_rules(cli.global.rules.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
     };
 
-    if let Some(required) = cfg.require_catalog {
-        let embedded = catalog::embedded_version();
-        if embedded < required {
-            eprintln!(
-                "pathlint: rules require catalog_version >= {required}, but this binary embeds version {embedded}. Upgrade pathlint or lower require_catalog."
-            );
-            return Ok(2);
-        }
+    if let Err(msg) = catalog::version_check(cfg.require_catalog, catalog::embedded_version()) {
+        eprintln!("pathlint: {msg}");
+        return Ok(2);
     }
 
     let catalog = catalog::merge_with_user(&cfg.source);
     let os = Os::current();
-    let target: Target = cli.global.target.into();
-    let path_read = path_source::read_path(target);
-
-    if let Some(w) = &path_read.warning {
-        eprintln!("pathlint: warning: {w}");
-    }
-
-    let path_entries = resolve::split_path(&path_read.value);
+    let path_entries = read_path_entries(&cli.global);
 
     if cli.global.verbose {
         if let Some(p) = &rules_path {
@@ -68,136 +73,66 @@ pub fn execute(cli: Cli) -> Result<u8> {
         }
     }
 
-    let outcomes = lint::evaluate(&cfg.expectations, &catalog, os, |cmd| {
-        resolve::resolve(cmd, &path_entries)
-    });
+    let outcomes = lint::evaluate(
+        &cfg.expectations,
+        &catalog,
+        os,
+        |cmd| resolve::resolve(cmd, &path_entries),
+        lint::check_shape_filesystem,
+    );
 
-    let style = report::Style {
-        no_glyphs: cli.global.no_glyphs,
-        verbose: cli.global.verbose,
-        quiet: cli.global.quiet,
-    };
-    print!("{}", report::render(&outcomes, style));
-
-    if report::has_config_error(&outcomes) {
-        return Ok(2);
-    }
-    if outcomes.iter().any(|o| report::is_failure(&o.status)) {
-        Ok(1)
+    if check_args.json {
+        let json = format::check_json(&outcomes)?;
+        println!("{json}");
     } else {
-        Ok(0)
+        let style = report::Style {
+            no_glyphs: cli.global.no_glyphs,
+            verbose: cli.global.verbose,
+            quiet: cli.global.quiet,
+            explain: check_args.explain,
+        };
+        print!("{}", report::render(&outcomes, style));
     }
+
+    Ok(lint::exit_code(&outcomes))
 }
 
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
-    let target: Target = global.target.into();
-    let path_read = path_source::read_path(target);
-    if let Some(w) = &path_read.warning {
-        eprintln!("pathlint: warning: {w}");
-    }
-    let entries = resolve::split_path(&path_read.value);
-    let diags = doctor::analyze(&entries, Os::current());
-
-    // Validate filter inputs before running anything else so a typo
-    // is caught fast (exit 2 — config error, not a lint failure).
-    let known: std::collections::BTreeSet<&'static str> =
-        doctor::all_kind_names().iter().copied().collect();
-    for name in args.include.iter().chain(args.exclude.iter()) {
-        if !known.contains(name.as_str()) {
-            anyhow::bail!(
-                "unknown doctor kind `{name}`; valid values: {}",
-                doctor::all_kind_names().join(", ")
-            );
-        }
+    let filter = Filter {
+        include: args.include.clone(),
+        exclude: args.exclude.clone(),
+    };
+    // Validate before running anything else so a typo is caught
+    // fast (exit 2 — config error, not a lint failure).
+    if let Err(msg) = doctor::validate_filter_names(&filter) {
+        anyhow::bail!(msg);
     }
 
-    let kept: Vec<&Diagnostic> = diags
-        .iter()
-        .filter(|d| {
-            let name = doctor::kind_name(&d.kind);
-            if !args.include.is_empty() {
-                args.include.iter().any(|s| s == name)
-            } else if !args.exclude.is_empty() {
-                !args.exclude.iter().any(|s| s == name)
-            } else {
-                true
-            }
-        })
-        .collect();
+    let entries = read_path_entries(global);
+    let diags = doctor::analyze_real(&entries, Os::current());
+    let kept = filter.apply(&diags);
 
-    let printable: Vec<&Diagnostic> = if global.quiet {
-        kept.iter()
-            .copied()
-            .filter(|d| d.severity == Severity::Error)
-            .collect()
+    if args.json {
+        // JSON view ignores --quiet on purpose: the consumer is a
+        // tool, not a human, and intermediate filtering would
+        // surprise pipelines that expect "filter == include/exclude".
+        let json = format::doctor_json(&kept)?;
+        println!("{json}");
     } else {
-        kept.clone()
-    };
-
-    for d in &printable {
-        println!("{}", format_diagnostic(d, &entries));
-    }
-
-    // Exit code reflects the *kept* set so excluding a Malformed
-    // diagnostic genuinely lets the run pass.
-    let has_error = kept.iter().any(|d| d.severity == Severity::Error);
-    Ok(if has_error { 1 } else { 0 })
-}
-
-fn format_diagnostic(d: &Diagnostic, entries: &[String]) -> String {
-    let tag = match d.severity {
-        Severity::Error => "[ERR] ",
-        Severity::Warn => "[warn]",
-    };
-    let detail = match &d.kind {
-        Kind::Duplicate { first_index } => format!(
-            "duplicate of entry #{first} ({first_path})",
-            first = first_index,
-            first_path = entries.get(*first_index).cloned().unwrap_or_default(),
-        ),
-        Kind::Missing => "directory does not exist".into(),
-        Kind::Shortenable { suggestion } => format!("could be written as {suggestion}"),
-        Kind::TrailingSlash => "trailing slash; some shells handle this oddly".into(),
-        Kind::CaseVariant { canonical } => {
-            format!("case / slash variant of {canonical}; OS treats them as one directory")
+        let printable: Vec<&Diagnostic> = if global.quiet {
+            kept.iter()
+                .copied()
+                .filter(|d| d.severity == Severity::Error)
+                .collect()
+        } else {
+            kept.clone()
+        };
+        for d in &printable {
+            println!("{}", format::doctor_line(d, &entries));
         }
-        Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
-        Kind::Malformed { reason } => format!("malformed entry: {reason}"),
-        Kind::MiseActivateBoth {
-            shim_indices,
-            install_indices,
-        } => return format_mise_activate_both(d, entries, shim_indices, install_indices),
-    };
-    format!(
-        "{tag} #{idx:>3} {entry}\n      {detail}",
-        idx = d.index,
-        entry = d.entry
-    )
-}
+    }
 
-fn format_mise_activate_both(
-    d: &Diagnostic,
-    entries: &[String],
-    shim_indices: &[usize],
-    install_indices: &[usize],
-) -> String {
-    let tag = "[warn]";
-    let mut buf =
-        format!("{tag} mise activate exposes both shim and install layers (PATH order matters)\n");
-    buf.push_str("      shims:\n");
-    for &i in shim_indices {
-        let entry = entries.get(i).cloned().unwrap_or_default();
-        buf.push_str(&format!("        #{i:>3} {entry}\n"));
-    }
-    buf.push_str("      installs:\n");
-    for &i in install_indices {
-        let entry = entries.get(i).cloned().unwrap_or_default();
-        buf.push_str(&format!("        #{i:>3} {entry}\n"));
-    }
-    // strip the trailing newline so the outer renderer can add its own
-    buf.pop();
-    let _ = d; // keep parameter for symmetry with other format funcs
-    buf
+    Ok(if doctor::has_error(&kept) { 1 } else { 0 })
 }
 
 fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {
@@ -227,97 +162,31 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
         None => Config::default(),
     };
     let merged = catalog::merge_with_user(&cfg.source);
-
-    let target: Target = global.target.into();
-    let path_read = path_source::read_path(target);
-    if let Some(w) = &path_read.warning {
-        eprintln!("pathlint: warning: {w}");
-    }
-    let path_entries = resolve::split_path(&path_read.value);
+    let path_entries = read_path_entries(global);
 
     let outcome = where_cmd::locate(&args.command, &merged, Os::current(), |cmd| {
         resolve::resolve(cmd, &path_entries)
     });
 
     if args.json {
-        return execute_where_json(&args.command, &outcome);
+        let json = format::where_json(&args.command, &outcome)?;
+        println!("{json}");
+        return Ok(match outcome {
+            WhereOutcome::NotFound => 1,
+            WhereOutcome::Found(_) => 0,
+        });
     }
 
     match outcome {
         WhereOutcome::NotFound => {
-            println!("{} — not found on PATH", args.command);
+            println!("{}", format::where_not_found(&args.command));
             Ok(1)
         }
         WhereOutcome::Found(found) => {
-            println!("{}", found.command);
-            println!("  resolved: {}", found.resolved.display());
-            if found.matched_sources.is_empty() {
-                println!("  sources:  (no source matched)");
-            } else {
-                println!("  sources:  {}", found.matched_sources.join(", "));
-            }
-            if let Some(prov) = &found.provenance {
-                match prov {
-                    Provenance::MiseInstallerPlugin {
-                        installer,
-                        plugin_segment,
-                    } => {
-                        println!("  provenance: {installer} (via mise plugin `{plugin_segment}`)");
-                    }
-                }
-            }
-            match found.uninstall {
-                UninstallHint::Command { command } => {
-                    println!("  hint:     {command}");
-                }
-                UninstallHint::NoTemplate { source } => {
-                    println!("  hint:     (no uninstall template for source `{source}`)");
-                }
-                UninstallHint::NoSource => {
-                    println!("  hint:     (no source matched — pathlint cannot guess)");
-                }
-            }
+            println!("{}", format::where_human(&found));
             Ok(0)
         }
     }
-}
-
-fn execute_where_json(command: &str, outcome: &WhereOutcome) -> Result<u8> {
-    // For NotFound we emit `{ "command": "...", "found": false }`
-    // so a script can match on a stable shape; Found uses the
-    // serde-derived layout on `where_cmd::Found` plus an explicit
-    // `"found": true` discriminator.
-    #[derive(serde::Serialize)]
-    #[serde(untagged)]
-    enum Out<'a> {
-        NotFound {
-            command: &'a str,
-            found: bool,
-        },
-        Found {
-            found: bool,
-            #[serde(flatten)]
-            inner: &'a where_cmd::Found,
-        },
-    }
-
-    let payload = match outcome {
-        WhereOutcome::NotFound => Out::NotFound {
-            command,
-            found: false,
-        },
-        WhereOutcome::Found(f) => Out::Found {
-            found: true,
-            inner: f,
-        },
-    };
-    let json = serde_json::to_string_pretty(&payload)?;
-    println!("{json}");
-    let exit = match outcome {
-        WhereOutcome::NotFound => 1,
-        WhereOutcome::Found(_) => 0,
-    };
-    Ok(exit)
 }
 
 fn execute_init(args: &InitArgs) -> Result<u8> {

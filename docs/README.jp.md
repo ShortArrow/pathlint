@@ -97,6 +97,13 @@ pathlint --target machine
 # 詳細：n/a の expectation や解決後 PATH も表示
 pathlint --verbose
 
+# NG ごとに resolved / matched / prefer / avoid / diagnosis / hint
+# を多行表示（0.0.7+）
+pathlint check --explain
+
+# 同じ情報を機械可読出力（CI 連携、0.0.7+）
+pathlint check --json
+
 # starter pathlint.toml をカレントに作る
 pathlint init
 pathlint init --emit-defaults     # 組み込みカタログ全体も書き出す
@@ -117,6 +124,7 @@ pathlint where lazygit --json     # 0.0.6+: 機械可読出力
 # CI 用に doctor の診断を絞る
 pathlint doctor --exclude shortenable,missing
 pathlint doctor --include duplicate,malformed
+pathlint doctor --json            # 0.0.7+: 機械可読出力
 ```
 
 ## `pathlint.toml`（最小例）
@@ -141,6 +149,16 @@ command = "gcc"
 prefer  = ["mingw", "msys"]
 avoid   = ["strawberry"]
 os      = ["windows"]
+```
+
+`severity = "warn"` をルールに付ければ、NG を表示するが exit 0
+を保つ（CI を止めずに気付きだけ得る用途、0.0.7+）：
+
+```toml
+[[expect]]
+command  = "rg"
+prefer   = ["cargo"]
+severity = "warn"   # 軽い警告、強制ではない
 ```
 
 `kind = "executable"` を足せば、resolve したパスが実際に実行可能

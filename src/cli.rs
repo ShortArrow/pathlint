@@ -19,7 +19,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Lint PATH against expectations (default).
-    Check,
+    Check(CheckArgs),
 
     /// Write a starter `pathlint.toml` in the current directory.
     Init(InitArgs),
@@ -38,6 +38,24 @@ pub enum Command {
     /// Show where a command resolves from, which sources it matches,
     /// and the most plausible uninstall command.
     Where(WhereArgs),
+}
+
+#[derive(Debug, clap::Args, Default)]
+pub struct CheckArgs {
+    /// Expand each NG outcome into a multi-line breakdown — resolved
+    /// path, matched sources, prefer / avoid lists, the underlying
+    /// diagnosis, and a follow-up hint. Use this when the one-line
+    /// detail is not enough to figure out why a rule failed.
+    #[arg(long, conflicts_with = "json")]
+    pub explain: bool,
+
+    /// Emit one JSON array describing every expectation: status,
+    /// resolved path, matched sources, prefer / avoid, and a
+    /// `diagnosis` object on failures. Schema is stable through
+    /// 0.0.x; the diagnosis uses a `kind` discriminator so consumers
+    /// can match on it. Mutually exclusive with --explain.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -67,6 +85,17 @@ pub struct DoctorArgs {
     /// longer escalates to exit 1.
     #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,
+
+    /// Emit the (already-filtered) diagnostics as a JSON array —
+    /// machine-readable counterpart of the human view. Each element
+    /// has `index`, `entry`, `severity`, `kind`, plus any per-kind
+    /// payload fields (`suggestion`, `canonical`, `first_index`,
+    /// `reason`, `shim_indices` / `install_indices`). Schema is
+    /// stable through 0.0.x, parallels `check --json`. The
+    /// include / exclude filters still apply; `--quiet` is ignored
+    /// in JSON mode (the output is intended to be complete).
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Subcommand)]

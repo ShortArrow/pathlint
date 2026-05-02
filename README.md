@@ -96,6 +96,13 @@ pathlint --target machine
 # Verbose: also show n/a expectations and the resolved PATH
 pathlint --verbose
 
+# Explain why each NG fired (resolved / matched / prefer / avoid /
+# diagnosis / hint), 0.0.7+
+pathlint check --explain
+
+# Same data, machine-readable (CI), 0.0.7+
+pathlint check --json
+
 # Drop a starter pathlint.toml in the current directory
 pathlint init
 pathlint init --emit-defaults     # also embeds the full source catalog
@@ -112,6 +119,7 @@ pathlint where lazygit --json     # 0.0.6+: machine-readable output
 # Filter doctor diagnostics for CI
 pathlint doctor --exclude shortenable,missing
 pathlint doctor --include duplicate,malformed
+pathlint doctor --json            # 0.0.7+: machine-readable output
 ```
 
 ## `pathlint.toml` (minimal example)
@@ -136,6 +144,17 @@ command = "gcc"
 prefer  = ["mingw", "msys"]
 avoid   = ["strawberry"]
 os      = ["windows"]
+```
+
+Add `severity = "warn"` to a rule to keep its NG visible without
+blocking CI (exit stays 0; the line is tagged `[warn]` instead of
+`[NG]`):
+
+```toml
+[[expect]]
+command  = "rg"
+prefer   = ["cargo"]
+severity = "warn"   # 0.0.7+ — nudge, not a hard fail
 ```
 
 Add `kind = "executable"` to also verify the resolved path is an

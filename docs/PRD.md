@@ -94,7 +94,10 @@ Per-role:
 - **R1 (resolve order).** A failing expectation shows the command,
   its resolved full path, the matched source(s), and the
   `prefer` / `avoid` mismatch. It must be enough to fix without
-  another debugging tool.
+  another debugging tool. `pathlint check --explain` (0.0.7+) opts
+  in to a multi-line breakdown that names the offending `avoid`
+  source, lists the `prefer` candidates that didn't match, and
+  points at `pathlint where <command>` for the uninstall hint.
 - **R2 (existence and shape).** When a command resolves to a path,
   the path must point at an actually-executable file. Symlinks
   must be alive; "executable" must mean it. Today only `not_found`
@@ -193,6 +196,8 @@ pathlint --target user                # explicit target
 pathlint --rules ./other.toml
 pathlint --verbose                    # also show n/a expectations and resolved PATH
 pathlint --quiet                      # only print failures
+pathlint check --explain              # multi-line NG breakdown (0.0.7+)
+pathlint check --json                 # JSON array of every outcome (0.0.7+)
 ```
 
 - `--target` default is `process`. `user` / `machine` are accepted
@@ -216,9 +221,35 @@ pathlint --quiet                      # only print failures
   6. **NG** otherwise — print the actual resolved path and the
      mismatch reason.
 - One status line per expectation. Failures get a second indented
-  line with details.
+  line with details. Pass `--explain` to expand each NG line into
+  six rows (`resolved:` / `matched sources:` / `prefer:` / `avoid:` /
+  `diagnosis:` / `hint:`); the diagnosis sentence is variant-
+  specific (NgWrongSource names the offending `avoid` source if
+  any, NgUnknownSource says the path is outside every defined
+  source, NgNotFound advises install / `optional = true`,
+  NgNotExecutable carries the underlying reason).
+- `--json` swaps the human output for a single pretty-printed
+  array: each element has `command`, `status` (snake_case
+  `Status` variant), optional `resolved` / `matched_sources` /
+  `prefer` / `avoid`, and on failures a tagged `diagnosis` object
+  with `kind` ∈ {`wrong_source`, `unknown_source`, `not_found`,
+  `not_executable`, `config`} plus the matching payload fields
+  (`matched`, `prefer_missed`, `avoid_hits`, `reason`, `message`).
+  The JSON view is the single source of truth in machine
+  pipelines, mirroring the human view exactly. `--explain` and
+  `--json` are mutually exclusive.
 - Exit code: `0` if no expectation has status `NG` or `not_found`
-  (excluding `optional`), `1` otherwise.
+  (excluding `optional` and `severity = "warn"` rules), `1`
+  otherwise. Same exit codes apply to `--json` output.
+- **Per-rule severity (0.0.7+).** Each `[[expect]]` accepts an
+  optional `severity` field with values `"error"` (default) or
+  `"warn"`. `error` keeps 0.0.x semantics: NG escalates to exit 1.
+  `warn` reports the same diagnostic with a `[warn]` tag and
+  leaves the exit code at 0 — appropriate for CI nudges where a
+  single rogue path should not block the build. The choice is
+  per-rule; an `error` rule and a `warn` rule may coexist in the
+  same `pathlint.toml`. The severity is surfaced in
+  `check --json` for tooling.
 
 ### 7.2 Source catalog merge
 
@@ -281,6 +312,16 @@ pathlint --quiet                      # only print failures
   reported as a config error (exit 2). The exit code reflects
   the *kept* set, so `--exclude malformed` genuinely lets a run
   pass even when the underlying analysis would have escalated.
+- (0.0.7+) `--json` swaps the human view for a JSON array. Each
+  element has `index`, `entry`, `severity` (`"warn"` / `"error"`),
+  the discriminator `kind`, and any per-kind payload fields
+  (`suggestion` for shortenable, `canonical` for case_variant,
+  `first_index` for duplicate, `reason` for malformed, and
+  `shim_indices` / `install_indices` for mise_activate_both).
+  Schema is stable through 0.0.x and parallels `check --json` /
+  `where --json`, completing the 3-way machine-readable surface.
+  The include / exclude filters still apply; `--quiet` is ignored
+  in JSON mode (the output is intended to be complete).
 
 ### 7.6 `[[expect]] kind = "executable"` (R2, implemented in 0.0.4)
 

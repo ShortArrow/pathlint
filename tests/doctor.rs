@@ -236,6 +236,56 @@ fn doctor_include_and_exclude_together_is_a_clap_error() {
 }
 
 #[test]
+fn doctor_json_emits_array_with_kind_discriminator() {
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real");
+    fs::create_dir_all(&real).unwrap();
+    let absent = tmp.path().join("definitely_does_not_exist_xyz");
+    let path = join_path(&[&real, &real, &absent]);
+    let (code, stdout, _) = run_doctor_args(&path, &["--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    assert!(v.is_array(), "stdout: {stdout}");
+
+    let kinds: Vec<&str> = v
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"duplicate"), "kinds: {kinds:?}");
+    assert!(kinds.contains(&"missing"), "kinds: {kinds:?}");
+    // Each diagnostic carries the four common fields.
+    for d in v.as_array().unwrap() {
+        assert!(d["index"].is_number(), "{d}");
+        assert!(d["entry"].is_string(), "{d}");
+        assert!(d["severity"].is_string(), "{d}");
+        assert!(d["kind"].is_string(), "{d}");
+    }
+}
+
+#[test]
+fn doctor_json_respects_include_filter() {
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real");
+    fs::create_dir_all(&real).unwrap();
+    let absent = tmp.path().join("definitely_does_not_exist_xyz");
+    let path = join_path(&[&real, &real, &absent]);
+    // Same setup as the human-view filter test, but in JSON.
+    let (code, stdout, _) = run_doctor_args(&path, &["--include", "duplicate", "--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    let arr = v.as_array().unwrap();
+    assert!(!arr.is_empty(), "expected at least one diagnostic");
+    for d in arr {
+        assert_eq!(
+            d["kind"], "duplicate",
+            "include filter should keep duplicate-only: {d}"
+        );
+    }
+}
+
+#[test]
 fn doctor_warns_when_mise_shim_and_install_coexist() {
     let tmp = tempfile::tempdir().unwrap();
     let mise_root = tmp.path().join("mise");

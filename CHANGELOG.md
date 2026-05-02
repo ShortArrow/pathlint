@@ -11,6 +11,64 @@ regular semver rules apply.
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-04-29
+
+### Added
+
+- **`pathlint doctor --json`.** Machine-readable companion to the
+  human view, completing the 3-way `check / where / doctor` JSON
+  surface. Emits a JSON array; each element carries `index`,
+  `entry`, `severity`, the discriminator `kind`, and any per-kind
+  payload (`suggestion`, `canonical`, `first_index`, `reason`,
+  `shim_indices` / `install_indices`). The include / exclude
+  filters still apply; `--quiet` is ignored in JSON mode (the
+  output is intended to be complete for tooling). Schema is stable
+  through 0.0.x.
+- **`[[expect]] severity = "warn"`.** Per-rule severity knob for
+  CI scenarios where a `prefer` mismatch should be surfaced but
+  not block the build. `severity = "error"` (default) keeps 0.0.x
+  behaviour: NG escalates to exit 1. `severity = "warn"` reports
+  the diagnostic with a `[warn]` tag and keeps exit 0. The shape
+  of the failure (status, resolved path, matched sources) is
+  unchanged — only the exit-code consequence differs. The
+  `severity` field is also surfaced in `check --json` so CI gates
+  can pattern-match on it.
+- **`pathlint check --explain`.** Expands every NG outcome into a
+  multi-line breakdown (resolved path / matched sources /
+  prefer / avoid / diagnosis / hint) instead of the single-line
+  detail. Each NG variant gets a tailored diagnosis: `NgWrongSource`
+  names the offending `avoid` source if there is one, otherwise
+  states which `prefer` names were missed; `NgUnknownSource` says
+  the path lies outside every defined `[source.<name>]` and points
+  at adding one; `NgNotFound` advises installing or marking the
+  rule `optional = true`; `NgNotExecutable` carries the underlying
+  reason (directory shadow / broken symlink / missing +x bit) and
+  points at the most plausible cause. Off by default — the existing
+  one-line detail is unchanged.
+- **`pathlint check --json`.** Machine-readable companion to
+  `--explain`: emits a single pretty-printed JSON array, one
+  element per expectation, carrying `command`, `status`,
+  `resolved`, `matched_sources`, `prefer`, `avoid`, and a tagged
+  `diagnosis` object (`kind = "wrong_source"` /
+  `"unknown_source"` / `"not_found"` / `"not_executable"` /
+  `"config"`) on failures. The schema is stable through 0.0.x and
+  parallels `where --json`. `--explain` and `--json` are mutually
+  exclusive.
+
+### Changed
+
+- (Internal) Introduced `lint::Diagnosis`, a pure-data view of the
+  *why* behind each NG status. Both the human (`--explain`,
+  one-line detail) and JSON (`--json`) views now derive from this
+  single value via `lint::diagnose`, eliminating the previous risk
+  that the two presentations could drift out of sync.
+- (Internal) Presentation logic factored into `src/format.rs`
+  (doctor / where formatters) and `src/report.rs` gained
+  `explain_lines` plus a new `Style.explain` flag. `run.rs` shrunk
+  from 384 to 264 lines. Pure formatters, fully unit-tested. No
+  observable CLI behaviour change other than `--explain` /
+  `--json` themselves.
+
 ## [0.0.6] - 2026-05-02
 
 ### Added
@@ -205,7 +263,8 @@ actually fetch.
     `$HOME` and friends — case and slash style preserved).
   - `--quiet` hides warns; errors always print.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.7
 [0.0.6]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.6
 [0.0.5]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.5
 [0.0.4]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.4
