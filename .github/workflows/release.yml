@@ -42,7 +42,7 @@ jobs:
     outputs:
       tag: v${{ inputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -109,7 +109,7 @@ jobs:
           # `pkg install rust && cargo install pathlint`. NDK setup
           # for cross is not worth a prebuilt binary today.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.tag }}
 
@@ -141,7 +141,7 @@ jobs:
           ls -la
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pathlint-${{ matrix.target }}
           path: dist/*.${{ matrix.archive }}
@@ -186,7 +186,7 @@ jobs:
     # top-level block; this job exchanges that token for a
     # short-lived crates.io token via Trusted Publishing.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.tag }}
 
