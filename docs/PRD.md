@@ -413,14 +413,17 @@ read-only)
   or a `SortPlan` JSON object (`--json`). pathlint never rewrites
   PATH itself — pair the output with a shell snippet, registry
   edit, or dotfiles diff to apply.
-- Algorithm (0.0.8): for each `[[expect]]` whose `os` filter
-  applies, every PATH entry matching the rule's `prefer` set is
-  promoted ahead of every entry that does not. Stable: preferred
-  entries keep their mutual relative order, and so do
-  non-preferred entries, so the diff only contains the moves the
-  user actually needs to think about. Rules with `prefer` empty
-  do not contribute. Entries matching no defined source stay in
-  place.
+- Algorithm: for each `[[expect]]` whose `os` filter applies,
+  every PATH entry is classified as **preferred** (matches the
+  rule's `prefer`), **avoided** (matches `avoid`), or neutral.
+  `avoid` wins when an entry matches both sets, mirroring
+  `lint::decide`. The plan then concatenates three buckets in
+  order: preferred entries, neutral entries, avoided entries.
+  Each bucket preserves the entries' original relative order, so
+  the diff only contains moves the user actually needs to think
+  about. Rules with both `prefer` and `avoid` empty do not
+  contribute. Entries matching no defined source stay in their
+  bucket.
 - When `prefer` cannot be satisfied by reordering (no PATH entry
   matches any of the listed sources), the plan emits a
   `SortNote::UnsatisfiablePrefer` listing the command and the
@@ -437,7 +440,9 @@ read-only)
 ```toml
 # ---- [[expect]]: per-command expectations ----
 
-# Untagged: applies on every OS where the named sources are defined.
+# Untagged: applies on every OS. Add `os = [...]` to restrict it.
+# (pathlint does NOT auto-skip rules whose preferred sources happen
+# to lack a per-OS path on the current OS — the rule still runs.)
 [[expect]]
 command = "runex"
 prefer  = ["cargo"]            # at least one matched source must be in this list
@@ -557,8 +562,8 @@ The current set, grouped:
 | OS baseline | `system_windows`, `system_macos`, `system_linux` |
 
 Run `pathlint catalog list` to dump the resolved catalog with
-each source's per-OS path and uninstall command, including any
-overrides the user added. The TOML for any individual plugin is
+each source's per-OS path, including any overrides the user
+added. The TOML for any individual plugin is
 in `plugins/<name>.toml` in the source tree.
 
 Notes on the design:
@@ -595,9 +600,10 @@ Four `kind`s are recognised:
   `guest_provider` via paths matching `guest_pattern`.
   `pathlint where` uses this to attribute provenance through
   wrapper installers.
-- **`depends_on`** — `source` is a hard prerequisite of `target`.
-  Surfaced by `pathlint where` so users know that uninstalling a
-  wrapper does not remove the underlying tool.
+- **`depends_on`** — `target` is a hard prerequisite of `source`.
+  Reads "`source` depends on `target`". Example: `paru` depends on
+  `pacman`, so uninstalling `paru` does not remove pacman-managed
+  binaries. Surfaced by `pathlint where`.
 
 Example (built into `plugins/mise.toml`):
 
@@ -620,8 +626,8 @@ guest_provider = "cargo"
 ```
 
 `served_by_via` and `depends_on` describe directed edges; pathlint
-checks that the merged graph is acyclic at startup. A cycle is a
-configuration error (exit 2). `alias_of` and
+checks that the merged graph is acyclic when running `pathlint
+catalog relations`. A cycle is a configuration error (exit 2). `alias_of` and
 `conflicts_when_both_in_path` are symmetric and never participate
 in the DAG check.
 
@@ -687,8 +693,9 @@ by built-in plugins and any user `[[relation]]` blocks (see §9.1).
   PATH of ~100 entries and ~20 expectations.
 - **Stable exit codes.** `0` clean, `1` expectation failure, `2`
   config / I/O error.
-- **Encoding.** All paths are treated as UTF-8 strings on every OS;
-  rare non-UTF-8 PATH entries are reported with a warning and skipped.
+- **Encoding.** All paths are treated as UTF-8 strings on every OS.
+  If `PATH` is not valid UTF-8, pathlint reads it as if empty; a
+  warning + per-entry skip is a future improvement.
 - **Built-in catalog versioning.** The catalog is embedded at compile
   time; bumps to it are called out in the GitHub Release notes so
   users know when defaults change.

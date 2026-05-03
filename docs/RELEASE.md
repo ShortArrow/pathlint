@@ -93,6 +93,7 @@ If the workflow itself is broken:
 
 ```sh
 ./scripts/release-check.sh X.Y.Z   # local fmt/clippy/test/package
+cargo install cargo-edit --locked  # provides `cargo set-version`
 cargo set-version X.Y.Z
 git commit -am "chore: release X.Y.Z"
 git tag -a vX.Y.Z -m "pathlint X.Y.Z"

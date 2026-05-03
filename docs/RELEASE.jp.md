@@ -94,6 +94,7 @@ git push origin :refs/tags/vX.Y.Z
 
 ```sh
 ./scripts/release-check.sh X.Y.Z   # ローカルで fmt/clippy/test/package
+cargo install cargo-edit --locked  # `cargo set-version` を提供
 cargo set-version X.Y.Z
 git commit -am "chore: release X.Y.Z"
 git tag -a vX.Y.Z -m "pathlint X.Y.Z"
