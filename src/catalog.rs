@@ -1,6 +1,7 @@
 //! Built-in source catalog and merge with user-defined sources.
 
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use crate::config::{Config, Relation, SourceDef};
 
@@ -8,20 +9,27 @@ use crate::config::{Config, Relation, SourceDef};
 // are the source of truth; do not edit the generated file.
 const EMBEDDED: &str = include_str!(concat!(env!("OUT_DIR"), "/embedded_catalog.toml"));
 
-/// Parse the embedded catalog (panics on failure — would be a build bug).
+/// Parse the embedded catalog once and reuse the result. The TOML
+/// is constant for the lifetime of the process, so the three
+/// public read functions below all share a single parse.
+fn embedded() -> &'static Config {
+    static CACHE: OnceLock<Config> = OnceLock::new();
+    CACHE.get_or_init(|| Config::parse_toml(EMBEDDED).expect("embedded_catalog.toml must parse"))
+}
+
+/// Built-in source catalog. Cloned out of the cached `Config` so
+/// callers can mutate the result (e.g. merge user overrides) without
+/// affecting the singleton.
 pub fn builtin() -> BTreeMap<String, SourceDef> {
-    let cfg: Config = Config::parse_toml(EMBEDDED).expect("embedded_catalog.toml must parse");
-    cfg.source
+    embedded().source.clone()
 }
 
 /// Version of the catalog embedded in this binary. Bumped whenever
-/// an existing source's path or semantics changes — see
-/// `embedded_catalog.toml` for the policy. Defaults to `0` if the
-/// embedded file forgets to declare one (which would be a build bug
-/// caught at code review).
+/// an existing source's path or semantics changes. Defaults to `0`
+/// if the embedded file forgets to declare one (which would be a
+/// build bug caught at code review).
 pub fn embedded_version() -> u32 {
-    let cfg: Config = Config::parse_toml(EMBEDDED).expect("embedded_catalog.toml must parse");
-    cfg.catalog_version.unwrap_or(0)
+    embedded().catalog_version.unwrap_or(0)
 }
 
 /// Pure compatibility check: does this binary's embedded catalog
@@ -64,8 +72,7 @@ pub fn merge_with_user(user: &BTreeMap<String, SourceDef>) -> BTreeMap<String, S
 /// in the order they appear in the embedded catalog (which is the
 /// order set by `plugins/_index.toml`).
 pub fn builtin_relations() -> Vec<Relation> {
-    let cfg: Config = Config::parse_toml(EMBEDDED).expect("embedded_catalog.toml must parse");
-    cfg.relations
+    embedded().relations.clone()
 }
 
 /// Combined relation list: built-ins followed by anything the user

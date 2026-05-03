@@ -108,6 +108,116 @@ fn catalog_list_default_includes_catalog_version() {
     );
 }
 
+// ---- catalog relations (0.0.9+) ----------------------------------
+
+fn run_catalog_relations(cwd: &Path, global: &[&str], args: &[&str]) -> (i32, String, String) {
+    let mut cmd = Command::new(BIN);
+    cmd.args(global)
+        .arg("catalog")
+        .arg("relations")
+        .args(args)
+        .current_dir(cwd)
+        .env_remove("XDG_CONFIG_HOME");
+    let out = cmd.output().expect("failed to run pathlint binary");
+    let code = out.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    (code, stdout, stderr)
+}
+
+#[test]
+fn catalog_relations_default_includes_builtin_mise_relations() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (code, stdout, _) = run_catalog_relations(tmp.path(), &[], &[]);
+    assert_eq!(code, 0);
+    // Built-in mise plugin declares all four kinds we care about.
+    assert!(stdout.contains("alias_of"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("conflicts_when_both_in_path"),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("served_by_via"), "stdout: {stdout}");
+    assert!(stdout.contains("`mise`"));
+    assert!(stdout.contains("mise_activate_both"));
+}
+
+#[test]
+fn catalog_relations_json_emits_array_with_kind_discriminator() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (code, stdout, _) = run_catalog_relations(tmp.path(), &[], &["--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    let arr = v.as_array().expect("must be an array");
+    assert!(!arr.is_empty(), "built-in relations must not be empty");
+    // Every element carries `kind`.
+    for r in arr {
+        assert!(r["kind"].is_string(), "missing kind discriminator: {r}");
+    }
+    // Built-in catalog declares the alias_of for mise.
+    assert!(
+        arr.iter()
+            .any(|r| r["kind"] == "alias_of" && r["parent"] == "mise"),
+        "built-in alias_of mise missing"
+    );
+}
+
+#[test]
+fn catalog_relations_appends_user_relations_at_the_end() {
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = tmp.path().join("pathlint.toml");
+    fs::write(
+        &rules,
+        r#"
+[[relation]]
+kind = "depends_on"
+source = "paru"
+target = "pacman"
+"#,
+    )
+    .unwrap();
+
+    let (code, stdout, _) = run_catalog_relations(
+        tmp.path(),
+        &["--rules", rules.to_str().unwrap()],
+        &["--json"],
+    );
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    let arr = v.as_array().unwrap();
+    let last = arr.last().unwrap();
+    assert_eq!(last["kind"], "depends_on");
+    assert_eq!(last["source"], "paru");
+    assert_eq!(last["target"], "pacman");
+}
+
+#[test]
+fn catalog_relations_rejects_user_cycle_with_exit_2() {
+    // A two-node cycle through depends_on must be caught at startup
+    // and reported as a config error (exit 2).
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = tmp.path().join("pathlint.toml");
+    fs::write(
+        &rules,
+        r#"
+[[relation]]
+kind = "depends_on"
+source = "a"
+target = "b"
+
+[[relation]]
+kind = "depends_on"
+source = "b"
+target = "a"
+"#,
+    )
+    .unwrap();
+
+    let (code, _stdout, stderr) =
+        run_catalog_relations(tmp.path(), &["--rules", rules.to_str().unwrap()], &[]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("cycle"), "stderr: {stderr}");
+}
+
 #[test]
 fn catalog_list_rejects_unknown_subcommand() {
     let tmp = tempfile::tempdir().unwrap();

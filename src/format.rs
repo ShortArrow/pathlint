@@ -845,4 +845,132 @@ mod tests {
         // No trailing newline (caller adds its own)
         assert!(!out.ends_with('\n'));
     }
+
+    // ---- Relation formatters ----------------------------------------
+
+    fn alias_of(parent: &str, children: &[&str]) -> Relation {
+        Relation::AliasOf {
+            parent: parent.into(),
+            children: children.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn conflicts(sources: &[&str], diagnostic: &str) -> Relation {
+        Relation::ConflictsWhenBothInPath {
+            sources: sources.iter().map(|s| s.to_string()).collect(),
+            diagnostic: diagnostic.into(),
+        }
+    }
+
+    fn served(host: &str, pattern: &str, provider: &str) -> Relation {
+        Relation::ServedByVia {
+            host: host.into(),
+            guest_pattern: pattern.into(),
+            guest_provider: provider.into(),
+        }
+    }
+
+    fn depends(source: &str, target: &str) -> Relation {
+        Relation::DependsOn {
+            source: source.into(),
+            target: target.into(),
+        }
+    }
+
+    #[test]
+    fn relations_human_empty_says_no_relations() {
+        let out = relations_human(&[]);
+        assert_eq!(out, "no relations declared");
+    }
+
+    #[test]
+    fn relations_human_renders_alias_of_with_arrow_and_children() {
+        let rels = vec![alias_of("mise", &["mise_shims", "mise_installs"])];
+        let out = relations_human(&rels);
+        assert!(out.starts_with("alias_of:"), "out: {out}");
+        assert!(out.contains("`mise`"), "out: {out}");
+        assert!(out.contains("mise_shims, mise_installs"), "out: {out}");
+    }
+
+    #[test]
+    fn relations_human_renders_conflicts_with_diagnostic_name() {
+        let rels = vec![conflicts(
+            &["mise_shims", "mise_installs"],
+            "mise_activate_both",
+        )];
+        let out = relations_human(&rels);
+        assert!(out.starts_with("conflicts_when_both_in_path:"));
+        assert!(out.contains("mise_shims, mise_installs"));
+        assert!(out.contains("`mise_activate_both`"));
+    }
+
+    #[test]
+    fn relations_human_renders_served_by_via_with_pattern_and_provider() {
+        let rels = vec![served("mise_installs", "cargo-*", "cargo")];
+        let out = relations_human(&rels);
+        assert!(out.starts_with("served_by_via:"));
+        assert!(out.contains("`mise_installs`"));
+        assert!(out.contains("`cargo-*`"));
+        assert!(out.contains("`cargo`"));
+    }
+
+    #[test]
+    fn relations_human_renders_depends_on_with_source_and_target() {
+        let rels = vec![depends("paru", "pacman")];
+        let out = relations_human(&rels);
+        assert!(out.starts_with("depends_on:"));
+        assert!(out.contains("`paru`"));
+        assert!(out.contains("`pacman`"));
+    }
+
+    #[test]
+    fn relations_human_separates_multiple_relations_by_newline() {
+        // Each relation occupies one line; the joiner is a single
+        // newline. No trailing newline (caller adds it).
+        let rels = vec![alias_of("mise", &["mise_shims"]), depends("paru", "pacman")];
+        let out = relations_human(&rels);
+        assert_eq!(out.lines().count(), 2, "out:\n{out}");
+        assert!(!out.ends_with('\n'));
+    }
+
+    #[test]
+    fn relations_json_is_an_array_with_kind_discriminator() {
+        let rels = vec![
+            alias_of("mise", &["mise_shims"]),
+            conflicts(&["a", "b"], "x"),
+            served("h", "p-*", "g"),
+            depends("a", "b"),
+        ];
+        let out = relations_json(&rels).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let arr = v.as_array().unwrap();
+        assert_eq!(arr.len(), 4);
+        assert_eq!(arr[0]["kind"], "alias_of");
+        assert_eq!(arr[1]["kind"], "conflicts_when_both_in_path");
+        assert_eq!(arr[2]["kind"], "served_by_via");
+        assert_eq!(arr[3]["kind"], "depends_on");
+    }
+
+    #[test]
+    fn relations_json_alias_of_carries_parent_and_children_at_top_level() {
+        // The TOML schema and the JSON output mirror each other
+        // (no nesting under `payload` etc.) — this is the contract
+        // CI consumers depend on.
+        let rels = vec![alias_of("mise", &["mise_shims", "mise_installs"])];
+        let out = relations_json(&rels).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v[0]["parent"], "mise");
+        assert_eq!(v[0]["children"][0], "mise_shims");
+        assert_eq!(v[0]["children"][1], "mise_installs");
+    }
+
+    #[test]
+    fn relations_json_served_by_via_keeps_pattern_field() {
+        let rels = vec![served("mise_installs", "cargo-*", "cargo")];
+        let out = relations_json(&rels).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v[0]["host"], "mise_installs");
+        assert_eq!(v[0]["guest_pattern"], "cargo-*");
+        assert_eq!(v[0]["guest_provider"], "cargo");
+    }
 }
