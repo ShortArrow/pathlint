@@ -78,24 +78,38 @@ fn doctor_mise_activate_both(
 /// Render a `Found` outcome from `pathlint where` as a multi-line
 /// human block. Order: command header, resolved path, sources,
 /// optional provenance, uninstall hint. No trailing newline.
+///
+/// Every attacker-controllable string (command name, resolved
+/// path, matched source names, plugin segment) is run through
+/// `strip_control_chars` so a hostile PATH or config can't paint
+/// the terminal with ANSI escapes. The uninstall hint comes from
+/// `derive_uninstall` already shell-quoted, so it does not need
+/// stripping again.
 pub fn where_human(found: &Found) -> String {
     let mut buf = String::new();
-    buf.push_str(&found.command);
+    buf.push_str(&strip_control_chars(&found.command));
     buf.push('\n');
-    buf.push_str(&format!("  resolved: {}\n", found.resolved.display()));
+    buf.push_str(&format!(
+        "  resolved: {}\n",
+        strip_control_chars(&found.resolved.to_string_lossy())
+    ));
     if found.matched_sources.is_empty() {
         buf.push_str("  sources:  (no source matched)\n");
     } else {
-        buf.push_str(&format!(
-            "  sources:  {}\n",
-            found.matched_sources.join(", ")
-        ));
+        let cleaned: Vec<String> = found
+            .matched_sources
+            .iter()
+            .map(|s| strip_control_chars(s).into_owned())
+            .collect();
+        buf.push_str(&format!("  sources:  {}\n", cleaned.join(", ")));
     }
     if let Some(Provenance::MiseInstallerPlugin {
         installer,
         plugin_segment,
     }) = &found.provenance
     {
+        let installer = strip_control_chars(installer);
+        let plugin_segment = strip_control_chars(plugin_segment);
         buf.push_str(&format!(
             "  provenance: {installer} (via mise plugin `{plugin_segment}`)\n"
         ));
@@ -398,6 +412,35 @@ pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde
         },
     };
     serde_json::to_string_pretty(&payload)
+}
+
+/// Strip ANSI / control characters from `s`, replacing each one
+/// with `?`. `\t` and `\n` are preserved because human-mode
+/// formatters rely on them. Pure; returns the input unchanged
+/// (`Cow::Borrowed`) when nothing needed replacement.
+///
+/// Used by `pathlint where`'s human renderer so a hostile PATH
+/// segment containing `\x1b[31m...` cannot recolor or rewrite the
+/// terminal output.
+pub fn strip_control_chars(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.bytes().all(|b| !is_disallowed_byte(b)) {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '\t' || c == '\n' {
+            out.push(c);
+        } else if (c as u32) < 0x20 || c as u32 == 0x7F {
+            out.push('?');
+        } else {
+            out.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+fn is_disallowed_byte(b: u8) -> bool {
+    matches!(b, 0..=0x08 | 0x0B..=0x1F | 0x7F)
 }
 
 /// POSIX shell single-quote escape. Wraps the input in single
@@ -1072,5 +1115,49 @@ mod tests {
         assert_eq!(quote_for(Os::Macos, "it's"), "'it'\\''s'");
         assert_eq!(quote_for(Os::Termux, "it's"), "'it'\\''s'");
         assert_eq!(quote_for(Os::Windows, "it's"), "'it''s'");
+    }
+
+    // ---- control char stripping (0.0.10) ----
+
+    #[test]
+    fn strip_control_chars_keeps_plain_text() {
+        let s = "Hello, world!";
+        let out = strip_control_chars(s);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(out, s);
+    }
+
+    #[test]
+    fn strip_control_chars_replaces_ansi_escape() {
+        let out = strip_control_chars("rg\x1b[31m");
+        assert_eq!(out, "rg?[31m");
+    }
+
+    #[test]
+    fn strip_control_chars_preserves_tab_and_newline() {
+        let out = strip_control_chars("a\tb\nc");
+        assert_eq!(out, "a\tb\nc");
+    }
+
+    #[test]
+    fn strip_control_chars_replaces_del() {
+        let out = strip_control_chars("x\x7Fy");
+        assert_eq!(out, "x?y");
+    }
+
+    #[test]
+    fn where_human_strips_ansi_escape_in_command() {
+        let f = Found {
+            command: "rg\x1b[31m".into(),
+            resolved: PathBuf::from("/usr/bin/rg"),
+            matched_sources: vec!["apt".into()],
+            uninstall: UninstallHint::NoTemplate {
+                source: "apt".into(),
+            },
+            provenance: None,
+        };
+        let out = where_human(&f);
+        assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
+        assert!(out.contains("rg?[31m"));
     }
 }
