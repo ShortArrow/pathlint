@@ -284,7 +284,14 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     enforce_source_validation(&catalog, Os::current())?;
     let path_entries = read_path_entries(global);
 
-    let plan = crate::sort::sort_path(&path_entries, &cfg.expectations, &catalog, Os::current());
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
+    let plan = crate::sort::sort_path(
+        &path_entries,
+        &cfg.expectations,
+        &catalog,
+        &relations,
+        Os::current(),
+    );
 
     if args.json {
         let json = format::sort_json(&plan)?;
