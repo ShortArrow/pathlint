@@ -1,0 +1,3 @@
+[source.snap]
+linux = "/snap/bin"
+uninstall_command = "sudo snap remove {bin}"

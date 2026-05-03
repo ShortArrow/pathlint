@@ -1,0 +1,3 @@
+[source.flatpak]
+linux = "/var/lib/flatpak/exports/bin"
+uninstall_command = "flatpak uninstall {bin}"

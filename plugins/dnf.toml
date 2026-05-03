@@ -1,0 +1,3 @@
+[source.dnf]
+linux = "/usr/bin"
+uninstall_command = "sudo dnf remove {bin}"

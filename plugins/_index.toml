@@ -1,0 +1,38 @@
+# Built-in catalog index. The `plugins` array decides the load
+# order; each name corresponds to `plugins/<name>.toml`. Adding a
+# package manager means adding a TOML file and listing its name
+# here.
+#
+# `catalog_version` is the embedded catalog's schema version,
+# bumped whenever an existing source's per-OS path or semantics
+# changes. Users who pin `require_catalog = N` in their
+# `pathlint.toml` get a config error if the running binary's
+# version is below N. See docs/PRD.md §9.
+catalog_version = 2
+
+plugins = [
+    "user-binaries",
+    "cargo",
+    "go",
+    "npm",
+    "pip",
+    "mise",
+    "volta",
+    "aqua",
+    "asdf",
+    "winget",
+    "choco",
+    "scoop",
+    "windows-apps",
+    "perl",
+    "mingw",
+    "brew",
+    "macports",
+    "apt",
+    "pacman",
+    "dnf",
+    "flatpak",
+    "snap",
+    "termux",
+    "system",
+]

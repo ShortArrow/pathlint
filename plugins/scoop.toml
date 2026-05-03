@@ -1,0 +1,3 @@
+[source.scoop]
+windows = "$UserProfile/scoop"
+uninstall_command = "scoop uninstall {bin}"

@@ -1,0 +1,3 @@
+[source.choco]
+windows = "$ProgramData/chocolatey"
+uninstall_command = "choco uninstall {bin}"

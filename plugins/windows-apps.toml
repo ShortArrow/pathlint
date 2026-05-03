@@ -1,0 +1,3 @@
+[source.WindowsApps]
+description = "Microsoft Store stub layer"
+windows = "Microsoft/WindowsApps"

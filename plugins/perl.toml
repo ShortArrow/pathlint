@@ -1,0 +1,5 @@
+# Strawberry Perl on Windows. Substring "Strawberry" matches the
+# typical install at C:\Strawberry.
+
+[source.strawberry]
+windows = "Strawberry"

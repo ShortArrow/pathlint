@@ -1,0 +1,6 @@
+[source.go]
+description = "binaries from `go install`"
+windows = "$UserProfile/go/bin"
+unix    = "$HOME/go/bin"
+# `go install` doesn't ship a remove command — `rm $GOBIN/<bin>`
+# is the practical answer, but it depends on the shell.

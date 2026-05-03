@@ -1,0 +1,4 @@
+[source.pip_user]
+windows = "$AppData/Python"
+unix    = "$HOME/.local/bin"
+uninstall_command = "pip uninstall {bin}"

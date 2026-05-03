@@ -1,0 +1,10 @@
+# Generic user-installed bin directories. These are not tied to a
+# specific package manager — they're places people put scripts and
+# manually built binaries.
+
+[source.user_bin]
+windows = "$UserProfile/bin"
+unix    = "$HOME/bin"
+
+[source.user_local_bin]
+unix    = "$HOME/.local/bin"

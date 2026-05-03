@@ -9,7 +9,9 @@ use anyhow::Result;
 
 use crate::os_detect::Os;
 
-const EMBEDDED_CATALOG: &str = include_str!("embedded_catalog.toml");
+// The same generated catalog catalog.rs uses. Plugin TOMLs in
+// `plugins/` are the source of truth; build.rs concatenates them.
+const EMBEDDED_CATALOG: &str = include_str!(concat!(env!("OUT_DIR"), "/embedded_catalog.toml"));
 
 #[derive(Debug)]
 pub struct InitOptions {
@@ -70,7 +72,18 @@ const HEADER: &str = "\
 #
 # Each [[expect]] declares a command and which installer(s) it should
 # come from. Run `pathlint` to evaluate every expectation against the
-# current PATH.
+# current PATH. Other useful commands:
+#
+#   pathlint check --explain   show the full diagnosis for each NG
+#   pathlint check --json      machine-readable for CI
+#   pathlint where <command>   look up provenance + uninstall hint
+#   pathlint sort              propose a PATH order (read-only)
+#   pathlint doctor            lint PATH itself (duplicates, etc.)
+#
+# Per-rule knobs:
+#   severity = \"warn\"          report NG but don't change exit code
+#   kind     = \"executable\"    also verify the resolved file is real
+#   optional = true            skip rather than NG when not on PATH
 ";
 
 const DEFAULTS_HEADER: &str = "\
@@ -112,6 +125,21 @@ os      = ["windows"]
 command = "git"
 optional = true
 prefer  = ["winget", "scoop"]
+
+# severity = "warn" surfaces the NG without blocking exit 0 — use
+# this for nudges where a single rogue path shouldn't fail CI.
+[[expect]]
+command  = "rg"
+prefer   = ["cargo", "scoop", "winget"]
+severity = "warn"
+
+# kind = "executable" also verifies the resolved path is a real
+# executable file (not a directory shadowing the binary, not a
+# broken symlink).
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
 "#;
 
 const MACOS_STARTER: &str = r#"# ---- Cross-OS examples ----
@@ -132,6 +160,21 @@ command = "gcc"
 prefer  = ["brew_arm", "brew_intel"]
 avoid   = ["system_macos"]
 os      = ["macos"]
+
+# severity = "warn" surfaces the NG without blocking exit 0 — use
+# this for nudges where a single rogue path shouldn't fail CI.
+[[expect]]
+command  = "rg"
+prefer   = ["cargo", "brew_arm", "brew_intel"]
+severity = "warn"
+
+# kind = "executable" also verifies the resolved path is a real
+# executable file (not a directory shadowing the binary, not a
+# broken symlink).
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
 "#;
 
 const LINUX_STARTER: &str = r#"# ---- Cross-OS examples ----
@@ -160,6 +203,21 @@ prefer  = ["mise_shims", "volta"]
 avoid   = ["snap"]
 os      = ["linux"]
 
+# severity = "warn" surfaces the NG without blocking exit 0 — use
+# this for nudges where a single rogue path shouldn't fail CI.
+[[expect]]
+command  = "rg"
+prefer   = ["cargo", "apt", "pacman", "dnf"]
+severity = "warn"
+
+# kind = "executable" also verifies the resolved path is a real
+# executable file (not a directory shadowing the binary, not a
+# broken symlink).
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
+
 [source.usr_sbin]
 linux = "/usr/sbin"
 "#;
@@ -181,6 +239,21 @@ os      = ["termux"]
 command = "git"
 prefer  = ["pkg"]
 os      = ["termux"]
+
+# severity = "warn" surfaces the NG without blocking exit 0 — use
+# this for nudges where a single rogue path shouldn't fail CI.
+[[expect]]
+command  = "rg"
+prefer   = ["cargo", "pkg"]
+severity = "warn"
+
+# kind = "executable" also verifies the resolved path is a real
+# executable file (not a directory shadowing the binary, not a
+# broken symlink).
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
 "#;
 
 #[cfg(test)]

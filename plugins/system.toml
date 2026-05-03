@@ -1,0 +1,14 @@
+# OS-baseline directories. These match the binaries that ship with
+# the OS itself (Win32 system DLLs etc., macOS /usr/bin, the
+# distro's /usr/bin on Linux). Distro package managers also drop
+# their binaries here, so apt / pacman / dnf overlap with
+# system_linux on the same path — that's by design.
+
+[source.system_windows]
+windows = "$SystemRoot/System32"
+
+[source.system_macos]
+macos = "/usr/bin"
+
+[source.system_linux]
+linux = "/usr/bin"

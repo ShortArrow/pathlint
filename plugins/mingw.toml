@@ -1,0 +1,8 @@
+# Windows GCC toolchains. Substring matches recognise the typical
+# C:\mingw* and C:\msys* install layouts.
+
+[source.mingw]
+windows = "mingw"
+
+[source.msys]
+windows = "msys"

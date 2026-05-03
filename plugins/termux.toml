@@ -1,0 +1,10 @@
+# Termux uses /data/data/com.termux/files/usr/bin via $PREFIX, and
+# user binaries live alongside under $PREFIX/../home/bin.
+
+[source.pkg]
+description = "Termux pkg installs"
+termux = "$PREFIX/bin"
+uninstall_command = "pkg uninstall {bin}"
+
+[source.termux_user_bin]
+termux = "$PREFIX/../home/bin"

@@ -1,0 +1,3 @@
+[source.winget]
+windows = "$LocalAppData/Microsoft/WinGet"
+uninstall_command = "winget uninstall {bin}"

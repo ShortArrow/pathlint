@@ -535,155 +535,37 @@ fire on Termux.
 
 ## 9. Built-in source catalog
 
-pathlint embeds a default catalog, equivalent to the following TOML.
-Every entry can be overridden field-by-field in the user's
-`pathlint.toml`.
+The default catalog ships as one TOML file per package manager
+under `plugins/`. `build.rs` concatenates them into a single
+embedded string at compile time. Adding a package manager means
+adding a TOML file there and listing its name in
+`plugins/_index.toml`.
 
-```toml
-# ---- Cross-OS user-installed binaries ----
+The current set, grouped:
 
-[source.cargo]
-description = "binaries from `cargo install`"
-windows = "$UserProfile/.cargo/bin"
-unix    = "$HOME/.cargo/bin"
+| Group | Plugins / sources |
+|---|---|
+| Generic user dirs | `user_bin`, `user_local_bin` |
+| Language toolchains | `cargo`, `go`, `npm_global`, `pip_user` |
+| Polyglot version managers | `mise` / `mise_shims` / `mise_installs`, `volta`, `aqua`, `asdf` |
+| Windows package managers | `winget`, `choco`, `scoop` |
+| Windows-specific | `WindowsApps`, `strawberry`, `mingw`, `msys` |
+| macOS package managers | `brew_arm`, `brew_intel`, `macports` |
+| Linux package managers | `apt`, `pacman`, `dnf`, `flatpak`, `snap` |
+| Termux | `pkg`, `termux_user_bin` |
+| OS baseline | `system_windows`, `system_macos`, `system_linux` |
 
-[source.go]
-description = "binaries from `go install`"
-windows = "$UserProfile/go/bin"
-unix    = "$HOME/go/bin"
+Run `pathlint catalog list` to dump the resolved catalog with
+each source's per-OS path and uninstall command, including any
+overrides the user added. The TOML for any individual plugin is
+in `plugins/<name>.toml` in the source tree.
 
-[source.npm_global]
-windows = "$AppData/npm"
-unix    = "$HOME/.npm-global/bin"
-
-[source.pip_user]
-windows = "$AppData/Python"
-unix    = "$HOME/.local/bin"
-
-[source.user_bin]
-windows = "$UserProfile/bin"
-unix    = "$HOME/bin"
-
-[source.user_local_bin]
-unix    = "$HOME/.local/bin"
-
-# ---- Polyglot version managers ----
-
-# Catch-all alias: matches anything served by mise (shims OR
-# installs). Kept for rules that don't care which layer.
-[source.mise]
-description = "any binary served by mise (alias matching shims + installs)"
-windows = "$LocalAppData/mise"
-unix    = "$HOME/.local/share/mise"
-
-# Recommended for most rules — mise's shim layer is what shells
-# `mise activate` front-loads onto PATH.
-[source.mise_shims]
-description = "mise shim layer"
-windows = "$LocalAppData/mise/shims"
-unix    = "$HOME/.local/share/mise/shims"
-
-# Per-runtime install dirs. Hit either when mise activates a
-# runtime via PATH-rewriting (no shim layer in front), or when a
-# plugin (cargo-*, npm-*, ...) ships its own bin under
-# `installs/<plugin>/<ver>/bin`.
-[source.mise_installs]
-description = "mise per-runtime install dirs"
-windows = "$LocalAppData/mise/installs"
-unix    = "$HOME/.local/share/mise/installs"
-
-[source.volta]
-windows = "$LocalAppData/Volta"
-unix    = "$HOME/.volta/bin"
-
-[source.aqua]
-windows = "$LocalAppData/aquaproj-aqua"
-unix    = "$HOME/.local/share/aquaproj-aqua"
-
-[source.asdf]
-unix    = "$HOME/.asdf/shims"
-
-# ---- Windows-only package managers ----
-
-[source.winget]
-windows = "$LocalAppData/Microsoft/WinGet"
-
-[source.choco]
-windows = "$ProgramData/chocolatey"
-
-[source.scoop]
-windows = "$UserProfile/scoop"
-
-[source.WindowsApps]
-description = "Microsoft Store stub layer"
-windows = "Microsoft/WindowsApps"
-
-[source.strawberry]
-windows = "Strawberry"
-
-[source.mingw]
-windows = "mingw"
-
-[source.msys]
-windows = "msys"
-
-# ---- macOS-only package managers ----
-
-[source.brew_arm]
-description = "Homebrew on Apple Silicon"
-macos = "/opt/homebrew"
-
-[source.brew_intel]
-description = "Homebrew on Intel macOS"
-macos = "/usr/local"
-
-[source.macports]
-macos = "/opt/local"
-
-# ---- Linux-only package managers ----
-
-[source.apt]
-linux = "/usr/bin"
-
-[source.pacman]
-linux = "/usr/bin"
-
-[source.dnf]
-linux = "/usr/bin"
-
-[source.flatpak]
-linux = "/var/lib/flatpak/exports/bin"
-
-[source.snap]
-linux = "/snap/bin"
-
-# ---- Termux ----
-
-[source.pkg]
-description = "Termux pkg installs"
-termux = "$PREFIX/bin"
-
-[source.termux_user_bin]
-termux = "$PREFIX/../home/bin"
-
-# ---- OS baseline (catch-all "system PATH" sources) ----
-
-[source.system_windows]
-windows = "$SystemRoot/System32"
-
-[source.system_macos]
-macos = "/usr/bin"
-
-[source.system_linux]
-linux = "/usr/bin"
-```
-
-Notes:
+Notes on the design:
 
 - `apt` / `pacman` / `dnf` all point at `/usr/bin` because that is
   where their installed binaries land. They are aliases of "the
-  Linux distro" from pathlint's perspective; users typically pick
-  whichever name reads best in their `pathlint.toml`.
+  Linux distro" from pathlint's perspective; users pick whichever
+  name reads best in their `pathlint.toml`.
 - `brew_arm` and `brew_intel` are split because `/opt/homebrew/bin`
   vs `/usr/local/bin` ordering on a single Mac is itself a typical
   source of bugs.

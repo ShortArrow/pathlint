@@ -1,0 +1,4 @@
+[source.volta]
+windows = "$LocalAppData/Volta"
+unix    = "$HOME/.volta/bin"
+uninstall_command = "volta uninstall {bin}"

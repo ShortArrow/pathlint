@@ -1,0 +1,13 @@
+# Homebrew has two install prefixes: /opt/homebrew on Apple
+# Silicon and /usr/local on Intel. Both can coexist on a migrated
+# machine, so they're separate sources.
+
+[source.brew_arm]
+description = "Homebrew on Apple Silicon"
+macos = "/opt/homebrew"
+uninstall_command = "brew uninstall {bin}"
+
+[source.brew_intel]
+description = "Homebrew on Intel macOS"
+macos = "/usr/local"
+uninstall_command = "brew uninstall {bin}"

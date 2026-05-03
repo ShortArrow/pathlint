@@ -1,0 +1,3 @@
+[source.macports]
+macos = "/opt/local"
+uninstall_command = "sudo port uninstall {bin}"

@@ -1,0 +1,3 @@
+[source.pacman]
+linux = "/usr/bin"
+uninstall_command = "sudo pacman -Rns {bin}"

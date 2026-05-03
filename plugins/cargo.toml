@@ -1,0 +1,5 @@
+[source.cargo]
+description = "binaries from `cargo install`"
+windows = "$UserProfile/.cargo/bin"
+unix    = "$HOME/.cargo/bin"
+uninstall_command = "cargo uninstall {bin}"

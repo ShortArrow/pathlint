@@ -1,0 +1,4 @@
+[source.npm_global]
+windows = "$AppData/npm"
+unix    = "$HOME/.npm-global/bin"
+uninstall_command = "npm uninstall -g {bin}"

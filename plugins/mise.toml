@@ -1,0 +1,22 @@
+# mise has three sources, intentional split:
+# - mise: catch-all for backwards compatibility
+# - mise_shims: the shim layer mise activate front-loads
+# - mise_installs: the per-runtime install dirs
+#
+# Pre-0.0.3 rules used `prefer = ["mise"]` and still work because
+# the catch-all matches both layers.
+
+[source.mise]
+description = "any binary served by mise (alias matching shims + installs)"
+windows = "$LocalAppData/mise"
+unix    = "$HOME/.local/share/mise"
+
+[source.mise_shims]
+description = "mise shim layer"
+windows = "$LocalAppData/mise/shims"
+unix    = "$HOME/.local/share/mise/shims"
+
+[source.mise_installs]
+description = "mise per-runtime install dirs"
+windows = "$LocalAppData/mise/installs"
+unix    = "$HOME/.local/share/mise/installs"

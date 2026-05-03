@@ -1,0 +1,3 @@
+[source.asdf]
+unix    = "$HOME/.asdf/shims"
+# asdf removes tools by plugin: `asdf uninstall <plugin> <version>`.
