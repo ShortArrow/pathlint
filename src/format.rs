@@ -277,13 +277,25 @@ pub fn relations_human(relations: &[Relation]) -> String {
                 host,
                 guest_pattern,
                 guest_provider,
+                installer_token,
             } => {
+                let via = match installer_token {
+                    Some(tok) if tok != guest_provider => {
+                        format!(" (installer token `{tok}`)")
+                    }
+                    _ => String::new(),
+                };
                 buf.push_str(&format!(
-                    "served_by_via: `{host}` serves `{guest_pattern}` from `{guest_provider}`",
+                    "served_by_via: `{host}` serves `{guest_pattern}` from `{guest_provider}`{via}",
                 ));
             }
             Relation::DependsOn { source, target } => {
                 buf.push_str(&format!("depends_on: `{source}` → `{target}`"));
+            }
+            Relation::PreferOrderOver { earlier, later } => {
+                buf.push_str(&format!(
+                    "prefer_order_over: `{earlier}` should appear before `{later}`",
+                ));
             }
         }
     }
@@ -867,6 +879,7 @@ mod tests {
             host: host.into(),
             guest_pattern: pattern.into(),
             guest_provider: provider.into(),
+            installer_token: None,
         }
     }
 

@@ -68,10 +68,19 @@ pub enum Relation {
     /// `guest_provider` via paths matching `guest_pattern`. Used by
     /// `pathlint where` to attribute provenance through wrapper
     /// installers (e.g. mise installing a cargo binary).
+    ///
+    /// `installer_token` (0.0.10+) is the human-facing installer
+    /// name that uninstall hints quote — it can differ from the
+    /// `guest_provider` source name. For example,
+    /// `guest_provider = "pip_user"` but `installer_token = "pipx"`
+    /// because `mise uninstall pipx:black` is what the user runs.
+    /// `None` falls back to `guest_provider`.
     ServedByVia {
         host: String,
         guest_pattern: String,
         guest_provider: String,
+        #[serde(default)]
+        installer_token: Option<String>,
     },
 
     /// `target` is a hard prerequisite of the source declaring this
@@ -79,6 +88,13 @@ pub enum Relation {
     /// Surfaced by `pathlint where` so users know that uninstalling
     /// a wrapper does not remove the underlying tool.
     DependsOn { source: String, target: String },
+
+    /// `earlier` should come before `later` in PATH for the user's
+    /// preferred resolution order. Consumed by `pathlint sort` to
+    /// break ties within the same preferred/neutral/avoided bucket.
+    /// Forms a directed edge (`earlier` -> `later`) for cycle
+    /// detection.
+    PreferOrderOver { earlier: String, later: String },
 }
 
 /// A single `[[expect]]` entry.
@@ -485,12 +501,57 @@ guest_provider = "cargo"
                 host,
                 guest_pattern,
                 guest_provider,
+                installer_token,
             } => {
                 assert_eq!(host, "mise_installs");
                 assert_eq!(guest_pattern, "cargo-*");
                 assert_eq!(guest_provider, "cargo");
+                assert!(installer_token.is_none());
             }
             other => panic!("expected ServedByVia, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_served_by_via_parses_installer_token() {
+        let cfg = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "pipx-*"
+guest_provider = "pip_user"
+installer_token = "pipx"
+"#,
+        )
+        .unwrap();
+        match &cfg.relations[0] {
+            Relation::ServedByVia {
+                installer_token, ..
+            } => {
+                assert_eq!(installer_token.as_deref(), Some("pipx"));
+            }
+            other => panic!("expected ServedByVia, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_prefer_order_over_parses() {
+        let cfg = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "prefer_order_over"
+earlier = "cargo"
+later = "system_linux"
+"#,
+        )
+        .unwrap();
+        match &cfg.relations[0] {
+            Relation::PreferOrderOver { earlier, later } => {
+                assert_eq!(earlier, "cargo");
+                assert_eq!(later, "system_linux");
+            }
+            other => panic!("expected PreferOrderOver, got {other:?}"),
         }
     }
 

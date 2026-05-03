@@ -219,6 +219,94 @@ target = "a"
 }
 
 #[test]
+fn catalog_relations_served_by_via_carries_installer_token() {
+    // 0.0.10: served_by_via gains an optional installer_token that
+    // carries the human-facing installer name (e.g. "cargo") when
+    // guest_provider is itself a source name (e.g. "cargo"). For
+    // npm-/pipx- relations the token differs from guest_provider.
+    let tmp = tempfile::tempdir().unwrap();
+    let (code, stdout, _) = run_catalog_relations(tmp.path(), &[], &["--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    let arr = v.as_array().unwrap();
+    let cargo_via = arr
+        .iter()
+        .find(|r| r["kind"] == "served_by_via" && r["guest_pattern"] == "cargo-*")
+        .expect("served_by_via for cargo-* must exist");
+    assert_eq!(
+        cargo_via["installer_token"], "cargo",
+        "cargo-* served_by_via missing installer_token: {cargo_via}"
+    );
+    let pipx_via = arr
+        .iter()
+        .find(|r| r["kind"] == "served_by_via" && r["guest_pattern"] == "pipx-*")
+        .expect("served_by_via for pipx-* must exist");
+    assert_eq!(
+        pipx_via["installer_token"], "pipx",
+        "pipx-* installer_token must be 'pipx' (not 'pip_user'): {pipx_via}"
+    );
+}
+
+#[test]
+fn catalog_relations_prefer_order_over_user_relation_renders() {
+    // 0.0.10: prefer_order_over is a 5th relation kind. User can
+    // declare an order preference between two source names.
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = tmp.path().join("pathlint.toml");
+    fs::write(
+        &rules,
+        r#"
+[[relation]]
+kind = "prefer_order_over"
+earlier = "cargo"
+later = "system_linux"
+"#,
+    )
+    .unwrap();
+
+    let (code, stdout, _) = run_catalog_relations(
+        tmp.path(),
+        &["--rules", rules.to_str().unwrap()],
+        &["--json"],
+    );
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
+    let arr = v.as_array().unwrap();
+    let last = arr.last().unwrap();
+    assert_eq!(last["kind"], "prefer_order_over");
+    assert_eq!(last["earlier"], "cargo");
+    assert_eq!(last["later"], "system_linux");
+}
+
+#[test]
+fn catalog_relations_prefer_order_over_cycle_is_detected() {
+    // prefer_order_over is a directed edge (earlier -> later) and
+    // participates in the DAG check.
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = tmp.path().join("pathlint.toml");
+    fs::write(
+        &rules,
+        r#"
+[[relation]]
+kind = "prefer_order_over"
+earlier = "a"
+later = "b"
+
+[[relation]]
+kind = "prefer_order_over"
+earlier = "b"
+later = "a"
+"#,
+    )
+    .unwrap();
+
+    let (code, _stdout, stderr) =
+        run_catalog_relations(tmp.path(), &["--rules", rules.to_str().unwrap()], &[]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("cycle"), "stderr: {stderr}");
+}
+
+#[test]
 fn catalog_list_rejects_unknown_subcommand() {
     let tmp = tempfile::tempdir().unwrap();
     let mut cmd = Command::new(BIN);

@@ -8,7 +8,7 @@
 # changes. Users who pin `require_catalog = N` in their
 # `pathlint.toml` get a config error if the running binary's
 # version is below N. See docs/PRD.md §9.
-catalog_version = 2
+catalog_version = 3
 
 plugins = [
     "user-binaries",
