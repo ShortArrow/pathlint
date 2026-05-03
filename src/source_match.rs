@@ -163,8 +163,8 @@ fn is_windows_drive_root(needle: &str) -> bool {
         return false;
     }
     match &bytes[2..] {
-        [] => true,                    // `C:`
-        [b'/' | b'\\'] => true,        // `C:/` / `C:\`
+        [] => true,             // `C:`
+        [b'/' | b'\\'] => true, // `C:/` / `C:\`
         _ => false,
     }
 }
