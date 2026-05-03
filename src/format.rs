@@ -8,6 +8,7 @@
 use crate::config::Relation;
 use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::{self, Diagnosis, Outcome, Status};
+use crate::os_detect::Os;
 use crate::sort::{SortNote, SortPlan};
 use crate::where_cmd::{Found, Provenance, UninstallHint, WhereOutcome};
 
@@ -397,6 +398,59 @@ pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde
         },
     };
     serde_json::to_string_pretty(&payload)
+}
+
+/// POSIX shell single-quote escape. Wraps the input in single
+/// quotes and replaces every embedded `'` with `'\''` (close,
+/// escaped quote, reopen). Always quotes — even simple inputs —
+/// so the caller never has to decide whether quoting is needed.
+///
+/// Used by `pathlint where` to keep an attacker-controlled PATH
+/// segment from breaking out of an uninstall hint string when the
+/// user copy-pastes it into bash / zsh / sh.
+pub fn posix_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// PowerShell single-quote escape. Wraps the input in single
+/// quotes and doubles every embedded `'` (PowerShell's literal
+/// single-quote-inside-single-quotes convention). Used for
+/// uninstall hints rendered on Windows hosts.
+pub fn powershell_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push('\'');
+            out.push('\'');
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Quote `s` for a shell command displayed on `os`. Windows hosts
+/// get PowerShell single-quote rules; everything else gets POSIX
+/// single-quote rules. Both styles always quote, so a user can
+/// safely substitute the result into `cargo uninstall {bin}` style
+/// templates.
+pub fn quote_for(os: Os, s: &str) -> String {
+    match os {
+        Os::Windows => powershell_quote(s),
+        Os::Macos | Os::Linux | Os::Termux => posix_quote(s),
+    }
 }
 
 #[cfg(test)]
@@ -985,5 +1039,38 @@ mod tests {
         assert_eq!(v[0]["host"], "mise_installs");
         assert_eq!(v[0]["guest_pattern"], "cargo-*");
         assert_eq!(v[0]["guest_provider"], "cargo");
+    }
+
+    // ---- shell quoting (0.0.10) ----
+
+    #[test]
+    fn posix_quote_wraps_simple_input_in_single_quotes() {
+        assert_eq!(posix_quote("lazygit"), "'lazygit'");
+    }
+
+    #[test]
+    fn posix_quote_neutralises_metachars() {
+        assert_eq!(posix_quote("$(rm -rf ~)"), "'$(rm -rf ~)'");
+        assert_eq!(posix_quote("a;b`c"), "'a;b`c'");
+        assert_eq!(posix_quote("with\nnewline"), "'with\nnewline'");
+    }
+
+    #[test]
+    fn posix_quote_handles_embedded_single_quote() {
+        assert_eq!(posix_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn powershell_quote_doubles_inner_single_quotes() {
+        assert_eq!(powershell_quote("it's"), "'it''s'");
+        assert_eq!(powershell_quote("plain"), "'plain'");
+    }
+
+    #[test]
+    fn quote_for_dispatches_by_os() {
+        assert_eq!(quote_for(Os::Linux, "it's"), "'it'\\''s'");
+        assert_eq!(quote_for(Os::Macos, "it's"), "'it'\\''s'");
+        assert_eq!(quote_for(Os::Termux, "it's"), "'it'\\''s'");
+        assert_eq!(quote_for(Os::Windows, "it's"), "'it''s'");
     }
 }
