@@ -519,6 +519,58 @@ uninstall コマンドを含めた解決済みカタログをダンプできる
 - `WindowsApps` と `strawberry` は主に `avoid = [...]` リスト用
   に用意。
 
+### 9.1 source 間の関係性（0.0.9+）
+
+プラグインは `[[relation]]` ブロックで source 間の構造的関係を
+宣言できる。ユーザーも `pathlint.toml` で同じ語彙を使ってカスタム
+source 間の関係を表現できる。`pathlint catalog relations` で
+マージ済み一覧を見られる（`--json` で機械可読）。
+
+対応する `kind` は 4 つ：
+
+- **`alias_of`** — 親 source が、より具体的な複数の子の
+  キャッチオール。親にマッチすることが子のマッチを排除しない。
+  `mise` が `mise_shims` / `mise_installs` の親、として使う。
+- **`conflicts_when_both_in_path`** — PATH に同時に存在すると
+  問題になる source 群。複数該当があれば `pathlint doctor` が
+  `diagnostic` (snake_case な `Kind` 名) を出す。
+- **`served_by_via`** — `host` が `guest_provider` 由来の
+  バイナリを `guest_pattern` にマッチする path で提供している。
+  `pathlint where` が wrapper 経由の provenance に使う。
+- **`depends_on`** — `source` は `target` を硬い前提として持つ。
+  「wrapper を uninstall しても下回りは残る」を `pathlint where`
+  で示せる。
+
+例（`plugins/mise.toml` に組み込み済）：
+
+```toml
+[[relation]]
+kind = "alias_of"
+parent = "mise"
+children = ["mise_shims", "mise_installs"]
+
+[[relation]]
+kind = "conflicts_when_both_in_path"
+sources = ["mise_shims", "mise_installs"]
+diagnostic = "mise_activate_both"
+
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "cargo-*"
+guest_provider = "cargo"
+```
+
+`served_by_via` と `depends_on` は有向辺。pathlint は起動時に
+マージ済みグラフが acyclic であるかを検証する。循環は config
+エラー（exit 2）。`alias_of` と `conflicts_when_both_in_path` は
+対称な関係なので DAG 検査には参加しない。
+
+0.0.9 では relation は **記述目的** のみ。`pathlint catalog
+relations` で見られるが、doctor / where_cmd / sort のコード経路
+は 0.0.9 以前のハードコード heuristic のまま動く。これらを
+relation 駆動に書き換えるのは 0.0.10 の課題。
+
 ## 10. PATH ソース（`--target`）
 
 | `--target` | Windows | macOS / Linux / Termux |

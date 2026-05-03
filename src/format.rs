@@ -5,6 +5,7 @@
 //! the returned string. Keeping the formatters pure makes them
 //! unit-testable without an `assert_cmd`-style integration harness.
 
+use crate::config::Relation;
 use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::{self, Diagnosis, Outcome, Status};
 use crate::sort::{SortNote, SortPlan};
@@ -247,6 +248,54 @@ pub fn sort_json(plan: &SortPlan) -> Result<String, serde_json::Error> {
 /// The schema parallels `check --json`: top-level array, every
 /// failure carries enough structured detail that CI consumers
 /// don't need to parse human strings. Stable through `0.0.x`.
+/// Render the relation list as a human-readable block. One relation
+/// per stanza, grouped only by declaration order. No trailing
+/// newline.
+pub fn relations_human(relations: &[Relation]) -> String {
+    if relations.is_empty() {
+        return "no relations declared".to_string();
+    }
+    let mut buf = String::new();
+    for (i, rel) in relations.iter().enumerate() {
+        if i > 0 {
+            buf.push('\n');
+        }
+        match rel {
+            Relation::AliasOf { parent, children } => {
+                buf.push_str(&format!("alias_of: `{parent}` → [{}]", children.join(", ")));
+            }
+            Relation::ConflictsWhenBothInPath {
+                sources,
+                diagnostic,
+            } => {
+                buf.push_str(&format!(
+                    "conflicts_when_both_in_path: [{}] (diagnostic: `{diagnostic}`)",
+                    sources.join(", "),
+                ));
+            }
+            Relation::ServedByVia {
+                host,
+                guest_pattern,
+                guest_provider,
+            } => {
+                buf.push_str(&format!(
+                    "served_by_via: `{host}` serves `{guest_pattern}` from `{guest_provider}`",
+                ));
+            }
+            Relation::DependsOn { source, target } => {
+                buf.push_str(&format!("depends_on: `{source}` → `{target}`"));
+            }
+        }
+    }
+    buf
+}
+
+/// Pretty-print the relations as a JSON array. Each element carries
+/// the `kind` discriminator the TOML schema uses.
+pub fn relations_json(relations: &[Relation]) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(relations)
+}
+
 pub fn doctor_json(diags: &[&Diagnostic]) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(diags)
 }

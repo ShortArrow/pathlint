@@ -7,8 +7,8 @@ use anyhow::Result;
 use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
 use crate::cli::{
-    CatalogCommand, CatalogListArgs, CheckArgs, Cli, Command, DoctorArgs, InitArgs, SortArgs,
-    WhereArgs,
+    CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
+    InitArgs, SortArgs, WhereArgs,
 };
 use crate::config::Config;
 use crate::doctor::{self, Diagnostic, Filter, Severity};
@@ -42,6 +42,9 @@ pub fn execute(cli: Cli) -> Result<u8> {
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
         }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
+        Some(Command::Catalog {
+            action: CatalogCommand::Relations(args),
+        }) => return execute_catalog_relations(&args, cli.global.rules.as_deref()),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
         Some(Command::Where(args)) => return execute_where(&args, &cli.global),
         Some(Command::Sort(args)) => return execute_sort(&args, &cli.global),
@@ -151,6 +154,32 @@ fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -
         println!("# catalog_version = {}", catalog::embedded_version());
     }
     print!("{}", catalog_view::render(&merged, Os::current(), style));
+    Ok(0)
+}
+
+fn execute_catalog_relations(
+    args: &CatalogRelationsArgs,
+    explicit_rules: Option<&Path>,
+) -> Result<u8> {
+    let cfg = match locate_rules(explicit_rules)? {
+        Some(p) => Config::from_path(&p)?,
+        None => Config::default(),
+    };
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
+
+    // DAG check: catch a circular `served_by_via` / `depends_on`
+    // before showing the user a list they cannot reason about.
+    if let Err(msg) = catalog::check_acyclic(&relations) {
+        eprintln!("pathlint: {msg}");
+        return Ok(2);
+    }
+
+    if args.json {
+        let json = format::relations_json(&relations)?;
+        println!("{json}");
+    } else {
+        println!("{}", format::relations_human(&relations));
+    }
     Ok(0)
 }
 

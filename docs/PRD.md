@@ -572,6 +572,63 @@ Notes on the design:
 - `WindowsApps` and `strawberry` are listed primarily so they can
   appear in `avoid = [...]` lists.
 
+### 9.1 Relations between sources (0.0.9+)
+
+Plugins can declare structural relationships between sources using
+`[[relation]]` blocks. Users can declare their own in
+`pathlint.toml` to extend the same vocabulary to custom sources.
+Run `pathlint catalog relations` to dump the merged list (use
+`--json` for tooling).
+
+Four `kind`s are recognised:
+
+- **`alias_of`** — a parent source is a catch-all over more
+  specific children. Matching the parent does not exclude matching
+  the children. Used for `mise` over `mise_shims` /
+  `mise_installs`.
+- **`conflicts_when_both_in_path`** — two or more sources that
+  shouldn't be active in PATH at once. `pathlint doctor` raises
+  `diagnostic` (a `Kind` snake_case name) when more than one of
+  them appears.
+- **`served_by_via`** — `host` serves binaries originally from
+  `guest_provider` via paths matching `guest_pattern`.
+  `pathlint where` uses this to attribute provenance through
+  wrapper installers.
+- **`depends_on`** — `source` is a hard prerequisite of `target`.
+  Surfaced by `pathlint where` so users know that uninstalling a
+  wrapper does not remove the underlying tool.
+
+Example (built into `plugins/mise.toml`):
+
+```toml
+[[relation]]
+kind = "alias_of"
+parent = "mise"
+children = ["mise_shims", "mise_installs"]
+
+[[relation]]
+kind = "conflicts_when_both_in_path"
+sources = ["mise_shims", "mise_installs"]
+diagnostic = "mise_activate_both"
+
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "cargo-*"
+guest_provider = "cargo"
+```
+
+`served_by_via` and `depends_on` describe directed edges; pathlint
+checks that the merged graph is acyclic at startup. A cycle is a
+configuration error (exit 2). `alias_of` and
+`conflicts_when_both_in_path` are symmetric and never participate
+in the DAG check.
+
+In 0.0.9 the relation list is descriptive: `pathlint catalog
+relations` shows it, but the doctor / where_cmd / sort code
+paths still use their pre-0.0.9 hard-coded heuristics. Migrating
+those code paths to read relations is on the 0.0.10 list.
+
 ## 10. Path sources (`--target`)
 
 | `--target` | Windows | macOS / Linux / Termux |

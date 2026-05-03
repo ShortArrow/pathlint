@@ -127,6 +127,12 @@ pub enum CatalogCommand {
     /// List every known source — built-in plus any defined in
     /// `pathlint.toml` — with its description and per-OS path.
     List(CatalogListArgs),
+
+    /// List every declared `[[relation]]` between sources, both
+    /// built-in (from `plugins/*.toml`) and user-defined (from
+    /// `pathlint.toml`). Useful for understanding why a doctor
+    /// diagnostic fires or how `pathlint where` infers provenance.
+    Relations(CatalogRelationsArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -139,6 +145,15 @@ pub struct CatalogListArgs {
     /// Print only source names, one per line.
     #[arg(long)]
     pub names_only: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct CatalogRelationsArgs {
+    /// Emit the relations as a JSON array, with each element
+    /// carrying its `kind` discriminator. Schema is stable through
+    /// 0.0.x.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, clap::Args)]

@@ -20,3 +20,51 @@ unix    = "$HOME/.local/share/mise/shims"
 description = "mise per-runtime install dirs"
 windows = "$LocalAppData/mise/installs"
 unix    = "$HOME/.local/share/mise/installs"
+
+# `mise` is the catch-all alias of the two layers below; matching
+# the parent never excludes matching a child.
+[[relation]]
+kind = "alias_of"
+parent = "mise"
+children = ["mise_shims", "mise_installs"]
+
+# Both shim and install layers being on PATH at the same time is
+# usually a `mise activate` misconfiguration. doctor surfaces it
+# as the `mise_activate_both` diagnostic.
+[[relation]]
+kind = "conflicts_when_both_in_path"
+sources = ["mise_shims", "mise_installs"]
+diagnostic = "mise_activate_both"
+
+# Plugins under mise/installs/<installer>-... actually came from
+# the upstream installer. Used by `pathlint where` to attribute
+# provenance through the mise wrapper.
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "cargo-*"
+guest_provider = "cargo"
+
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "npm-*"
+guest_provider = "npm_global"
+
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "pipx-*"
+guest_provider = "pip_user"
+
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "go-*"
+guest_provider = "go"
+
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "aqua-*"
+guest_provider = "aqua"

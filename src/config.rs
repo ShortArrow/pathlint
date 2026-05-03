@@ -30,6 +30,55 @@ pub struct Config {
 
     #[serde(default)]
     pub source: BTreeMap<String, SourceDef>,
+
+    /// Declarative relations between sources. The built-in catalog
+    /// declares them in `plugins/<name>.toml`; users can also write
+    /// their own in `pathlint.toml` to express alias / conflict /
+    /// served-by-via / depends-on relationships between custom
+    /// sources. See PRD §9.
+    #[serde(default, rename = "relation")]
+    pub relations: Vec<Relation>,
+}
+
+/// A relation between sources, declared as `[[relation]]` in plugin
+/// or user TOML. The `kind` discriminator decides which payload
+/// fields are required; serde rejects unknown kinds.
+#[derive(Debug, Deserialize, serde::Serialize, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Relation {
+    /// One source is a catch-all alias for one or more more-specific
+    /// children. Matching the parent does not exclude matching the
+    /// children — both can fire on the same path. Used today for the
+    /// `mise` parent over `mise_shims` and `mise_installs`.
+    AliasOf {
+        parent: String,
+        children: Vec<String>,
+    },
+
+    /// Two or more sources should not be active in PATH at the same
+    /// time; `pathlint doctor` raises `diagnostic` (the snake_case
+    /// `Kind` name) when more than one of them appears in PATH.
+    /// Used today for `mise_activate_both`.
+    ConflictsWhenBothInPath {
+        sources: Vec<String>,
+        diagnostic: String,
+    },
+
+    /// `host` serves binaries that originally came from
+    /// `guest_provider` via paths matching `guest_pattern`. Used by
+    /// `pathlint where` to attribute provenance through wrapper
+    /// installers (e.g. mise installing a cargo binary).
+    ServedByVia {
+        host: String,
+        guest_pattern: String,
+        guest_provider: String,
+    },
+
+    /// `target` is a hard prerequisite of the source declaring this
+    /// relation (the implicit subject is the plugin file's source).
+    /// Surfaced by `pathlint where` so users know that uninstalling
+    /// a wrapper does not remove the underlying tool.
+    DependsOn { source: String, target: String },
 }
 
 /// A single `[[expect]]` entry.
@@ -364,5 +413,134 @@ severity = "info"
         .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("severity") || msg.contains("info"), "{msg}");
+    }
+
+    #[test]
+    fn relations_default_to_empty() {
+        let cfg = Config::parse_toml("").unwrap();
+        assert!(cfg.relations.is_empty());
+    }
+
+    #[test]
+    fn relation_alias_of_parses() {
+        let cfg = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "alias_of"
+parent = "mise"
+children = ["mise_shims", "mise_installs"]
+"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.relations.len(), 1);
+        match &cfg.relations[0] {
+            Relation::AliasOf { parent, children } => {
+                assert_eq!(parent, "mise");
+                assert_eq!(
+                    children,
+                    &vec!["mise_shims".to_string(), "mise_installs".to_string()]
+                );
+            }
+            other => panic!("expected AliasOf, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_conflicts_when_both_in_path_parses() {
+        let cfg = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "conflicts_when_both_in_path"
+sources = ["mise_shims", "mise_installs"]
+diagnostic = "mise_activate_both"
+"#,
+        )
+        .unwrap();
+        match &cfg.relations[0] {
+            Relation::ConflictsWhenBothInPath {
+                sources,
+                diagnostic,
+            } => {
+                assert_eq!(sources.len(), 2);
+                assert_eq!(diagnostic, "mise_activate_both");
+            }
+            other => panic!("expected ConflictsWhenBothInPath, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_served_by_via_parses() {
+        let cfg = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "served_by_via"
+host = "mise_installs"
+guest_pattern = "cargo-*"
+guest_provider = "cargo"
+"#,
+        )
+        .unwrap();
+        match &cfg.relations[0] {
+            Relation::ServedByVia {
+                host,
+                guest_pattern,
+                guest_provider,
+            } => {
+                assert_eq!(host, "mise_installs");
+                assert_eq!(guest_pattern, "cargo-*");
+                assert_eq!(guest_provider, "cargo");
+            }
+            other => panic!("expected ServedByVia, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_depends_on_parses() {
+        let cfg = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "depends_on"
+source = "paru"
+target = "pacman"
+"#,
+        )
+        .unwrap();
+        match &cfg.relations[0] {
+            Relation::DependsOn { source, target } => {
+                assert_eq!(source, "paru");
+                assert_eq!(target, "pacman");
+            }
+            other => panic!("expected DependsOn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relation_unknown_kind_is_a_parse_error() {
+        let err = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "this_does_not_exist"
+"#,
+        )
+        .unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("kind") || msg.contains("this_does_not_exist"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn relation_missing_required_field_is_a_parse_error() {
+        // alias_of requires `children`. Missing it must be rejected.
+        let err = Config::parse_toml(
+            r#"
+[[relation]]
+kind = "alias_of"
+parent = "mise"
+"#,
+        )
+        .unwrap_err();
+        assert!(format!("{err}").contains("children"), "{err}");
     }
 }
