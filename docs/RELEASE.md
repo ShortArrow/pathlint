@@ -8,7 +8,7 @@ and GitHub Release. crates.io publishing is opt-in.
 
 1. Open the repo on GitHub. Go to **Actions** → **release** →
    **Run workflow**.
-2. Enter the new version number (e.g. `0.0.8`). Don't include the
+2. Enter the new version number (e.g. `0.0.10`). Don't include the
    `v`; the workflow adds it for the tag.
 3. Decide whether to publish to crates.io. The checkbox is off by
    default. Tick it once Trusted Publishing is set up (see below).

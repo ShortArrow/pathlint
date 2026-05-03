@@ -8,7 +8,7 @@
 
 > **⚠ Pre-alpha (0.0.x)。** スキーマと CLI 表面はまだ動きます。
 > 0.1.0 が出るまで、minor / patch 双方が schema や CLI の互換を
-> 壊しうる前提でお使いください。0.0.2 のバイナリは動作します
+> 壊しうる前提でお使いください。現行の 0.0.x バイナリは動作します
 > （load-bearing な仕組みに組み込むのはまだ時期尚早）。
 
 ---
@@ -53,9 +53,10 @@ TOML の 2 つの概念：
 
 ## ステータス
 
-0.0.x ラインで `pathlint` / `pathlint init` / `pathlint catalog list`
-/ `pathlint doctor` が動きます。TOML スキーマと CLI 表面は引き続き
-動きますが、解決 / マッチ / レポートの一連は実装済みでテストもあります。
+0.0.x ラインで 6 サブコマンドが動きます: `check`（デフォルト）/
+`doctor` / `where` / `sort` / `init` / `catalog`（`list` と
+`relations`）。TOML スキーマと CLI 表面は引き続き動きますが、
+解決 / マッチ / レポートの一連は実装済みでテストもあります。
 詳細設計は [docs/PRD.jp.md](PRD.jp.md) を参照。
 
 ## pathlint が **教えてくれない** こと

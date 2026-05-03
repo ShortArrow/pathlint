@@ -8,8 +8,8 @@
 
 > **⚠ Pre-alpha (0.0.x).** Schema and CLI surface are still moving;
 > until 0.1.0 lands, both minor and patch releases may break the
-> TOML schema or the CLI. The 0.0.2 binary is functional — just
-> don't bake it into anything load-bearing yet.
+> TOML schema or the CLI. The current 0.0.x binary is functional —
+> just don't bake it into anything load-bearing yet.
 
 ---
 
@@ -52,10 +52,11 @@ location to the source labels.
 
 ## Status
 
-The 0.0.x line ships a working `pathlint` / `pathlint init` /
-`pathlint catalog list`. The TOML schema and CLI surface are still
-moving, but the resolve / match / report pipeline is in place and
-covered by tests. See [docs/PRD.md](docs/PRD.md) for the full design.
+The 0.0.x line ships six subcommands: `check` (default), `doctor`,
+`where`, `sort`, `init`, and `catalog` (with `list` and
+`relations`). The TOML schema and CLI surface are still moving,
+but the resolve / match / report pipeline is in place and covered
+by tests. See [docs/PRD.md](docs/PRD.md) for the full design.
 
 ## What pathlint *won't* tell you
 

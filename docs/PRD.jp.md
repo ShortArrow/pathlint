@@ -1,8 +1,8 @@
 # pathlint — プロダクト要件定義書（PRD）
 
-**ステータス:** 0.0.x 進行中。
-**対象リリース:** 0.0.3 が最新動作版。スキーマと CLI 表面は引き続き
-動きうる（0.1.0 で安定化予定）。
+**ステータス:** 0.0.x 進行中。スキーマと CLI 表面は引き続き
+動きうる（0.1.0 で安定化予定）。現在のクレートバージョンは
+`Cargo.toml` および README の crates.io バッジを参照。
 
 ---
 
@@ -15,21 +15,21 @@
 が勝つか。`[[expect]] command = "x" prefer = ["cargo"]` と書けば
 pathlint がチェックする。元来の用途であり、ツールの背骨。
 
-**R2 — 存在と形状（計画中）。** pathlint が解決したファイルは本当に
+**R2 — 存在と形状。** pathlint が解決したファイルは本当に
 実行可能か、それとも誰かが同名のディレクトリで `runex` を覆い隠した
-のか。symlink は壊れていないか。今は `not_found` しか報告しない；
-より豊富な形状チェックは 0.0.4 以降。
+のか。symlink は壊れていないか。`[[expect]]` に
+`kind = "executable"` を付ければ、source チェックに加えて解決パスが
+実在の実行可能ファイルかも検証する。
 
 **R3 — PATH 衛生。** expectation を 1 つも評価する前に、PATH 自体が
 散らかっている — 重複、不在ディレクトリ、8.3 短縮名、より簡潔に
 書ける エントリ。`pathlint doctor` が PATH 単体で lint する。
 
-**R4 — 出自（計画中）。** 解決済みバイナリのフルパスを得たあと、
-これはどこから来たか — そしてアンインストールはどうやるか。今は
-match した source の一覧は内部データで、`check` 経由でしか露出
-しない。`pathlint where <command>` サブコマンド（0.0.4 以降）が
-これを直接出す。最も妥当な uninstall コマンド付き
-（`mise uninstall cargo:lazygit`、`cargo uninstall lazygit`...）。
+**R4 — 出自。** `pathlint where <command>` が解決済みバイナリの
+フルパス、マッチしたカタログ source、最も妥当な uninstall コマンド
+（`mise uninstall cargo:lazygit`、`cargo uninstall lazygit` など）
+を出力する。mise のプラグイン層から提供されたバイナリには上流の
+インストーラも推定して表示する。
 
 1 つの `pathlint.toml` が 4 役割すべてを **Windows、macOS、Linux、
 Termux** 横断でカバーする。source は OS 別の場所を宣言、各
@@ -110,13 +110,13 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 - **PATH の書き換え／永続化はしない。** プロセス PATH、Windows
   レジストリ、`.bashrc`、`$PROFILE`、その他のシェル設定、いずれも
   pathlint は変更しない。何が間違っているかを伝える、どう直すかは
-  ユーザー判断。（post-MVP の `pathlint sort` は推奨順序を表示する
-  だけで、適用しない。）
+  ユーザー判断。`pathlint sort --dry-run` は推奨順序を表示するだけで、
+  適用は決してしない。
 - **`which` クローンではない（R1 境界）。** pathlint 内部に resolve
   ロジックはあるが、`where` / `type -a` / `Get-Command -All` を
   置き換える意図はない。R1 が答える問いは「正しいインストーラが
   勝っているか？」であって、「これはどこから resolve されるか？」
-  ではない。R4（`pathlint where`、計画中）は解決パスを前面に出すが、
+  ではない。R4（`pathlint where`）は解決パスを前面に出すが、
   generic な which クローンとしてではなく、出自情報付きで。
 - **将来のインストールのシミュレーションはしない。** pathlint は
   *いま*ある PATH とバイナリについて答える。次の `cargo install` が
@@ -593,7 +593,11 @@ Commands:
   check    expectation に照らして PATH を lint（デフォルト）
   init     starter pathlint.toml を生成
   catalog  source カタログを inspect
-  doctor   PATH 自体を lint
+    list       全 source を列挙（組み込み + ユーザー定義）
+    relations  source 間の宣言された [[relation]] を列挙
+  doctor   PATH 自体を lint（重複、不在ディレクトリ等）
+  where    コマンドがどこから来るかと uninstall ヒント
+  sort     全 [[expect]] を満たす PATH 順序を提案
   help     ヘルプ表示
 
 Options（global）:
@@ -607,9 +611,13 @@ Options（global）:
   -V, --version
 ```
 
-`pathlint sort` は 0.0.8 で読み取り専用版を実装ずみ（§7.8 参照）。
-`--apply` モードは PRD §4 の「PATH を書き換えない」方針により
-未実装。検討は post-1.0 議題。
+`pathlint sort` は読み取り専用の提案（§7.8 参照）。`--apply` モード
+は PRD §4 の「PATH を書き換えない」方針により未実装。検討は
+post-1.0 議題。
+
+`pathlint catalog relations` は組み込みプラグインとユーザー
+`[[relation]]` ブロックが宣言した source 間の関係を表示する
+（§9.1 参照）。
 
 ## 12. 非機能要件
 
@@ -624,14 +632,15 @@ Options（global）:
 - **エンコーディング。** どの OS でも path は UTF-8 文字列として扱う。
   稀に存在する非 UTF-8 PATH エントリは警告を出してスキップ。
 - **組み込みカタログのバージョニング。** カタログはコンパイル時埋め
-  込み。バンプ時はチェンジログに記載してデフォルト変更を周知。
+  込み。バンプ時は GitHub Release のリリースノートに記載してデフォ
+  ルト変更を周知。
 
 ## 13. 配布
 
-- 0.0.2 以降に crates.io publish 予定。
-- GitHub Releases workflow で `x86_64-{linux,windows,darwin}` と
-  `aarch64-darwin` のアーカイブを配布。`dotfm` と同じ流れ。Termux
-  ユーザーはソースからビルド。
+- crates.io に `pathlint` として公開ずみ。
+- GitHub Releases で `x86_64-{linux,windows,darwin}` と
+  `aarch64-darwin` のアーカイブを配布。Termux ユーザーは
+  `cargo install pathlint` でソースからビルド。
 - (post-MVP) Homebrew formula、scoop manifest、AUR PKGBUILD。
 
 ## 14. スコープ外

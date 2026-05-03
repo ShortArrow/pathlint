@@ -1,8 +1,8 @@
 # pathlint — Product Requirements Document
 
-**Status:** 0.0.x in progress.
-**Target release:** 0.0.3 is the latest working version. Schema and
-CLI surface remain in motion through 0.1.0.
+**Status:** 0.0.x in progress. Schema and CLI surface remain in
+motion through 0.1.0; the current crate version is whatever
+`Cargo.toml` (and the crates.io badge in the README) say.
 
 ---
 
@@ -16,22 +16,23 @@ wins? You declare `[[expect]] command = "x" prefer = ["cargo"]`, and
 pathlint checks. This is the original use case and the spine of the
 tool.
 
-**R2 — Existence and shape (planned).** Is the file pathlint
-resolved actually executable, or did something replace `runex` with
-a directory of the same name? Is the symlink broken? Today pathlint
-only reports `not_found`; richer shape checks live in 0.0.4+.
+**R2 — Existence and shape.** Is the file pathlint resolved
+actually executable, or did something replace `runex` with a
+directory of the same name? Is the symlink broken? Adding
+`kind = "executable"` to an `[[expect]]` makes pathlint verify
+the resolved path is a real executable file on top of the source
+check.
 
 **R3 — PATH hygiene.** Even before any expectation is evaluated,
 the `PATH` itself is often a mess: duplicates, dangling directories,
 8.3 short names, entries that could be written more concisely.
 `pathlint doctor` lints the PATH on its own.
 
-**R4 — Provenance (planned).** Once the resolved binary's full path
-is in hand, where did it come from — and how would I uninstall it?
-Today the matched-source list is internal data exposed only via
-`check`. A `pathlint where <command>` subcommand (0.0.4+) will
-surface it directly, including the most plausible uninstall command
-(`mise uninstall cargo:lazygit`, `cargo uninstall lazygit`, ...).
+**R4 — Provenance.** `pathlint where <command>` reports the
+resolved binary's full path, the catalog sources it matches, and
+the most plausible uninstall command (`mise uninstall cargo:lazygit`,
+`cargo uninstall lazygit`, ...). For binaries served through mise's
+plugin layer it also infers the upstream installer.
 
 A single `pathlint.toml` covers all four roles across **Windows,
 macOS, Linux, and Termux** — sources declare their location per-OS,
@@ -118,14 +119,14 @@ The roles above also imply specific *non-roles*:
 - **No PATH rewriting / persisting.** pathlint does not mutate the
   process PATH, the Windows registry, `.bashrc`, `$PROFILE`, or
   any other shell config. It tells you what's wrong; how to fix is
-  your call. (A `pathlint sort` post-MVP would print a recommended
-  order without applying it.)
+  your call. `pathlint sort --dry-run` prints a recommended order
+  but never applies it.
 - **No `which` clone (R1 boundary).** pathlint does include resolve
   logic internally, but it doesn't aim to replace `where` /
   `type -a` / `Get-Command -All`. The R1 question is "is the right
   installer winning?", not "where does this resolve?". R4
-  (`pathlint where`, planned) will surface the resolved path
-  prominently, but with provenance, not as a generic which-clone.
+  (`pathlint where`) surfaces the resolved path prominently, but
+  with provenance, not as a generic which-clone.
 - **No future install simulation.** pathlint answers about the
   PATH and binaries you have *now*. It does not predict where a
   future `cargo install` would land, what order the next mise
@@ -651,7 +652,11 @@ Commands:
   check    Lint PATH against expectations (default)
   init     Write a starter pathlint.toml in the current directory
   catalog  Inspect the source catalog
-  doctor   Lint the PATH itself
+    list       list every known source (built-in + user)
+    relations  list declared [[relation]] between sources
+  doctor   Lint the PATH itself (duplicates, missing dirs, etc.)
+  where    Show where a command resolves from + uninstall hint
+  sort     Propose a PATH order satisfying every [[expect]] rule
   help     Print help
 
 Options (global):
@@ -665,9 +670,12 @@ Options (global):
   -V, --version
 ```
 
-`pathlint sort` ships in 0.0.8 as a read-only proposal (see §7.8).
-The `--apply` mode is held back by PRD §4's "no PATH mutation"
-policy and is on the post-1.0 list.
+`pathlint sort` is a read-only proposal (see §7.8). `--apply` is
+held back by PRD §4's "no PATH mutation" policy and is on the
+post-1.0 list.
+
+`pathlint catalog relations` prints the source relations declared
+by built-in plugins and any user `[[relation]]` blocks (see §9.1).
 
 ## 12. Non-functional requirements
 
@@ -682,15 +690,15 @@ policy and is on the post-1.0 list.
 - **Encoding.** All paths are treated as UTF-8 strings on every OS;
   rare non-UTF-8 PATH entries are reported with a warning and skipped.
 - **Built-in catalog versioning.** The catalog is embedded at compile
-  time; bumps to it are noted in the changelog so users know when
-  defaults change.
+  time; bumps to it are called out in the GitHub Release notes so
+  users know when defaults change.
 
 ## 13. Distribution
 
-- crates.io publish from 0.0.2 onward.
-- GitHub Releases workflow shipping `x86_64-{linux,windows,darwin}`
-  and `aarch64-darwin` archives, mirroring `dotfm`. Termux users
-  build from source.
+- Published on crates.io as `pathlint`.
+- GitHub Releases ship `x86_64-{linux,windows,darwin}` and
+  `aarch64-darwin` archives. Termux users build from source via
+  `cargo install pathlint`.
 - (post-MVP) Homebrew formula, scoop manifest, AUR PKGBUILD.
 
 ## 14. Out of scope
