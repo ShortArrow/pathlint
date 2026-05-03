@@ -141,10 +141,32 @@ fn classify_needle(needle: &str) -> Option<SourceWarningReason> {
     if needle == "/" || needle == "\\" {
         return Some(SourceWarningReason::RootPath);
     }
+    // Windows drive-root forms: `C:\`, `C:/`, `C:` — anything that
+    // boils down to "the entire C: volume" is just as broad as
+    // bare `/` on Unix.
+    if is_windows_drive_root(needle) {
+        return Some(SourceWarningReason::RootPath);
+    }
     if needle.len() < 3 {
         return Some(SourceWarningReason::NeedleTooShort);
     }
     None
+}
+
+fn is_windows_drive_root(needle: &str) -> bool {
+    let bytes = needle.as_bytes();
+    let drive_letter = bytes
+        .first()
+        .map(|b| b.is_ascii_alphabetic())
+        .unwrap_or(false);
+    if !drive_letter || bytes.get(1) != Some(&b':') {
+        return false;
+    }
+    match &bytes[2..] {
+        [] => true,                    // `C:`
+        [b'/' | b'\\'] => true,        // `C:/` / `C:\`
+        _ => false,
+    }
 }
 
 /// Convenience: just the names from `find`, in rank order. Callers
@@ -274,6 +296,30 @@ mod tests {
         let warnings = validate_sources(&sources, Os::Linux);
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].name, "evil");
+    }
+
+    #[test]
+    fn validate_sources_rejects_windows_drive_root() {
+        let def = SourceDef {
+            windows: Some("C:\\".into()),
+            ..Default::default()
+        };
+        let sources = cat(&[("evil_drive", def)]);
+        let warnings = validate_sources(&sources, Os::Windows);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].reason, SourceWarningReason::RootPath);
+    }
+
+    #[test]
+    fn validate_sources_rejects_bare_drive_letter() {
+        let def = SourceDef {
+            windows: Some("d:".into()),
+            ..Default::default()
+        };
+        let sources = cat(&[("evil_d", def)]);
+        let warnings = validate_sources(&sources, Os::Windows);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].reason, SourceWarningReason::RootPath);
     }
 
     #[test]
