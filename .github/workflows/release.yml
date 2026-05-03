@@ -199,7 +199,12 @@ jobs:
 
       - name: Exchange OIDC token for crates.io token
         id: auth
-        uses: rust-lang/crates-io-auth-action@v1
+        # Pin to v1.0.4: the floating @v1 tag still resolves to a
+        # Node 20 build at the time of writing; v1.0.4 (2026-03-23)
+        # is the first release on Node 24, which silences the
+        # "Node.js 20 actions are deprecated" warning. Re-evaluate
+        # when v1.1 / v2 ships.
+        uses: rust-lang/crates-io-auth-action@v1.0.4
 
       - name: cargo publish
         env:
