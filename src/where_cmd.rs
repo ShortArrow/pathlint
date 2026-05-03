@@ -242,9 +242,7 @@ fn infer_provenance_from_relations(
 /// Return the haystack slice starting just past the first occurrence
 /// of `needle`, or `None` when the needle is absent.
 fn find_after_needle<'h>(haystack: &'h str, needle: &str) -> Option<&'h str> {
-    haystack
-        .find(needle)
-        .map(|i| &haystack[i + needle.len()..])
+    haystack.find(needle).map(|i| &haystack[i + needle.len()..])
 }
 
 /// Tiny glob matcher that handles `prefix-*` patterns — the only
@@ -589,7 +587,10 @@ mod tests {
                     installer,
                     plugin_segment,
                 }) => {
-                    assert_eq!(installer, "pipx", "installer_token must override guest_provider");
+                    assert_eq!(
+                        installer, "pipx",
+                        "installer_token must override guest_provider"
+                    );
                     assert_eq!(plugin_segment, "pipx-black");
                 }
                 other => panic!("expected MiseInstallerPlugin, got {other:?}"),
@@ -602,17 +603,11 @@ mod tests {
     fn unknown_plugin_prefix_does_not_attribute() {
         // A plugin installed via a prefix we don't recognize stays
         // unattributed — pathlint shouldn't guess.
-        let out = locate(
-            "xyz",
-            &mise_sources(),
-            &mise_relations(),
-            Os::Linux,
-            |_| {
-                Some(resolution(
-                    "/home/u/.local/share/mise/installs/exotic-thing/0.1/bin/xyz",
-                ))
-            },
-        );
+        let out = locate("xyz", &mise_sources(), &mise_relations(), Os::Linux, |_| {
+            Some(resolution(
+                "/home/u/.local/share/mise/installs/exotic-thing/0.1/bin/xyz",
+            ))
+        });
         match out {
             WhereOutcome::Found(f) => {
                 assert!(f.provenance.is_none());
