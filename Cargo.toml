@@ -1,6 +1,6 @@
 [package]
 name = "pathlint"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2024"
 rust-version = "1.85"
 authors = ["ShortArrow <bamboogeneral@shortarrow.jp>"]
