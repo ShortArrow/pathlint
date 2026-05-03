@@ -100,8 +100,8 @@ where
     };
 
     let uninstall = match &provenance {
-        Some(prov) => uninstall_for_provenance(prov),
-        None => derive_uninstall(&resolution.full_path, &matched, sources),
+        Some(prov) => uninstall_for_provenance(prov, os),
+        None => derive_uninstall(&resolution.full_path, &matched, sources, os),
     };
 
     // The ranking already has the most specific match first; we
@@ -139,20 +139,29 @@ fn derive_uninstall(
     resolved: &std::path::Path,
     matched: &[String],
     sources: &BTreeMap<String, SourceDef>,
+    os: Os,
 ) -> UninstallHint {
     if matched.is_empty() {
         return UninstallHint::NoSource;
     }
     // Walk matched sources in order; the first one with an uninstall
     // template wins. That's why ranking by specificity matters.
+    //
+    // The `{bin}` substitution goes through `format::quote_for` so
+    // hostile bin names like `$(rm -rf ~)` cannot escape the
+    // template even when the user copy-pastes the result. The
+    // surrounding template text (the part the catalog author
+    // controls) is not escaped — that is the "trust the catalog
+    // author" boundary documented in PRD §12.
     let bin = bin_stem(resolved);
+    let quoted_bin = crate::format::quote_for(os, &bin);
     for name in matched {
         let Some(def) = sources.get(name) else {
             continue;
         };
         if let Some(template) = &def.uninstall_command {
             return UninstallHint::Command {
-                command: template.replace("{bin}", &bin),
+                command: template.replace("{bin}", &quoted_bin),
             };
         }
     }
@@ -209,7 +218,7 @@ fn classify_mise_segment(segment: &str) -> Option<Provenance> {
     None
 }
 
-fn uninstall_for_provenance(prov: &Provenance) -> UninstallHint {
+fn uninstall_for_provenance(prov: &Provenance, os: Os) -> UninstallHint {
     match prov {
         Provenance::MiseInstallerPlugin {
             installer,
@@ -220,12 +229,18 @@ fn uninstall_for_provenance(prov: &Provenance) -> UninstallHint {
             // mise convention `cargo:owner/repo` vs the segment
             // `cargo-owner-repo` is lossy), so we hand the user a
             // best-guess command and tell them to verify.
+            //
+            // `installer` comes from the in-tree relation table
+            // (trusted) so it is interpolated as-is. `rest` is
+            // attacker-controlled (it's a path segment) and must go
+            // through quote_for.
             let rest = plugin_segment
                 .strip_prefix(&format!("{installer}-"))
                 .unwrap_or(plugin_segment);
+            let quoted_rest = crate::format::quote_for(os, rest);
             UninstallHint::Command {
                 command: format!(
-                    "mise uninstall {installer}:{rest}  (best-guess; verify with `mise plugins ls`)"
+                    "mise uninstall {installer}:{quoted_rest}  (best-guess; verify with `mise plugins ls`)"
                 ),
             }
         }
@@ -292,7 +307,7 @@ mod tests {
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::Command {
-                        command: "cargo uninstall lazygit".into()
+                        command: "cargo uninstall 'lazygit'".into()
                     }
                 );
             }
@@ -330,7 +345,7 @@ mod tests {
                 match &f.uninstall {
                     UninstallHint::Command { command } => {
                         assert!(
-                            command.contains("mise uninstall cargo:lazygit"),
+                            command.contains("mise uninstall cargo:'lazygit'"),
                             "uninstall: {command}"
                         );
                     }
@@ -404,7 +419,7 @@ mod tests {
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::Command {
-                        command: "cargo uninstall lazygit".into()
+                        command: "cargo uninstall 'lazygit'".into()
                     }
                 );
             }
@@ -439,7 +454,10 @@ mod tests {
                 ));
                 match &f.uninstall {
                     UninstallHint::Command { command } => {
-                        assert!(command.starts_with("mise uninstall npm:google-gemini-cli"));
+                        assert!(
+                            command.starts_with("mise uninstall npm:'google-gemini-cli'"),
+                            "uninstall: {command}"
+                        );
                     }
                     other => panic!("expected Command, got {other:?}"),
                 }
@@ -501,7 +519,7 @@ mod tests {
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::Command {
-                        command: "cargo uninstall cargo-lazygit".into()
+                        command: "cargo uninstall 'cargo-lazygit'".into()
                     }
                 );
             }

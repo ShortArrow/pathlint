@@ -88,9 +88,53 @@ uninstall_command = "cargo uninstall {{bin}}"
         stdout.contains("sources:") && stdout.contains("cargo"),
         "sources line missing: {stdout}"
     );
+    // Both POSIX and PowerShell quoters wrap the bin token in
+    // single quotes, so the expected literal is the same on every
+    // OS the test currently runs on.
     assert!(
-        stdout.contains("cargo uninstall lazygit"),
-        "uninstall hint missing: {stdout}"
+        stdout.contains("cargo uninstall 'lazygit'"),
+        "uninstall hint missing or unquoted: {stdout}"
+    );
+}
+
+#[test]
+fn where_escapes_metachars_in_bin_substitution() {
+    // A binary whose name contains shell metacharacters must be
+    // single-quoted in the uninstall hint so a copy-paste does
+    // not execute the metachars.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("evil_bin_dir");
+
+    // The actual binary file name on disk has to be filesystem-safe.
+    // We instead drive escaping through an attacker-controlled
+    // `command` arg containing `$(whoami)`. `pathlint where` echoes
+    // the requested command back verbatim into the uninstall hint
+    // via the `{bin}` token.
+    stub(&dir, "lazygit");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[source.cargo]
+{key} = "{path}"
+uninstall_command = "cargo uninstall {{bin}}"
+"#,
+        path = dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let (code, stdout, _) = run_where(&rules, &join_path(&[&dir]), "lazygit");
+    assert_eq!(code, 0, "stdout: {stdout}");
+    // The bin token is `lazygit` here (it's just a smoke-check that
+    // every uninstall command goes through the quoter). The hostile-
+    // PATH integration goes through Step E's tests.
+    assert!(
+        !stdout.contains("cargo uninstall lazygit\n"),
+        "bin must be quoted, not bare: {stdout}"
+    );
+    assert!(
+        stdout.contains("cargo uninstall 'lazygit'"),
+        "expected single-quoted bin: {stdout}"
     );
 }
 
@@ -197,7 +241,7 @@ uninstall_command = "cargo uninstall {{bin}}"
     assert!(v["resolved"].is_string());
     assert_eq!(v["matched_sources"][0], "cargo");
     assert_eq!(v["uninstall"]["kind"], "command");
-    assert_eq!(v["uninstall"]["command"], "cargo uninstall lazygit");
+    assert_eq!(v["uninstall"]["command"], "cargo uninstall 'lazygit'");
     // No mise plugin here, so provenance is null.
     assert!(v["provenance"].is_null());
 }
