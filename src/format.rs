@@ -550,7 +550,7 @@ mod tests {
         let mut f = found_minimal();
         f.matched_sources = vec!["mise_installs".into(), "mise".into()];
         f.provenance = Some(Provenance::MiseInstallerPlugin {
-            installer: "cargo",
+            installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
         f.uninstall = UninstallHint::Command {
@@ -617,7 +617,7 @@ mod tests {
     fn where_json_provenance_emits_kind_and_segment() {
         let mut f = found_minimal();
         f.provenance = Some(Provenance::MiseInstallerPlugin {
-            installer: "cargo",
+            installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
         let out = where_json("foo", &WhereOutcome::Found(f)).unwrap();

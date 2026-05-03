@@ -238,11 +238,16 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
     };
     let merged = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&merged, Os::current())?;
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
     let path_entries = read_path_entries(global);
 
-    let outcome = where_cmd::locate(&args.command, &merged, Os::current(), |cmd| {
-        resolve::resolve(cmd, &path_entries)
-    });
+    let outcome = where_cmd::locate(
+        &args.command,
+        &merged,
+        &relations,
+        Os::current(),
+        |cmd| resolve::resolve(cmd, &path_entries),
+    );
 
     if args.json {
         let json = format::where_json(&args.command, &outcome)?;
