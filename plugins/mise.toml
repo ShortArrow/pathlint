@@ -44,27 +44,32 @@ kind = "served_by_via"
 host = "mise_installs"
 guest_pattern = "cargo-*"
 guest_provider = "cargo"
+installer_token = "cargo"
 
 [[relation]]
 kind = "served_by_via"
 host = "mise_installs"
 guest_pattern = "npm-*"
 guest_provider = "npm_global"
+installer_token = "npm"
 
 [[relation]]
 kind = "served_by_via"
 host = "mise_installs"
 guest_pattern = "pipx-*"
 guest_provider = "pip_user"
+installer_token = "pipx"
 
 [[relation]]
 kind = "served_by_via"
 host = "mise_installs"
 guest_pattern = "go-*"
 guest_provider = "go"
+installer_token = "go"
 
 [[relation]]
 kind = "served_by_via"
 host = "mise_installs"
 guest_pattern = "aqua-*"
 guest_provider = "aqua"
+installer_token = "aqua"

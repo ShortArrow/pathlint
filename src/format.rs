@@ -8,6 +8,7 @@
 use crate::config::Relation;
 use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::{self, Diagnosis, Outcome, Status};
+use crate::os_detect::Os;
 use crate::sort::{SortNote, SortPlan};
 use crate::where_cmd::{Found, Provenance, UninstallHint, WhereOutcome};
 
@@ -77,24 +78,38 @@ fn doctor_mise_activate_both(
 /// Render a `Found` outcome from `pathlint where` as a multi-line
 /// human block. Order: command header, resolved path, sources,
 /// optional provenance, uninstall hint. No trailing newline.
+///
+/// Every attacker-controllable string (command name, resolved
+/// path, matched source names, plugin segment) is run through
+/// `strip_control_chars` so a hostile PATH or config can't paint
+/// the terminal with ANSI escapes. The uninstall hint comes from
+/// `derive_uninstall` already shell-quoted, so it does not need
+/// stripping again.
 pub fn where_human(found: &Found) -> String {
     let mut buf = String::new();
-    buf.push_str(&found.command);
+    buf.push_str(&strip_control_chars(&found.command));
     buf.push('\n');
-    buf.push_str(&format!("  resolved: {}\n", found.resolved.display()));
+    buf.push_str(&format!(
+        "  resolved: {}\n",
+        strip_control_chars(&found.resolved.to_string_lossy())
+    ));
     if found.matched_sources.is_empty() {
         buf.push_str("  sources:  (no source matched)\n");
     } else {
-        buf.push_str(&format!(
-            "  sources:  {}\n",
-            found.matched_sources.join(", ")
-        ));
+        let cleaned: Vec<String> = found
+            .matched_sources
+            .iter()
+            .map(|s| strip_control_chars(s).into_owned())
+            .collect();
+        buf.push_str(&format!("  sources:  {}\n", cleaned.join(", ")));
     }
     if let Some(Provenance::MiseInstallerPlugin {
         installer,
         plugin_segment,
     }) = &found.provenance
     {
+        let installer = strip_control_chars(installer);
+        let plugin_segment = strip_control_chars(plugin_segment);
         buf.push_str(&format!(
             "  provenance: {installer} (via mise plugin `{plugin_segment}`)\n"
         ));
@@ -277,13 +292,25 @@ pub fn relations_human(relations: &[Relation]) -> String {
                 host,
                 guest_pattern,
                 guest_provider,
+                installer_token,
             } => {
+                let via = match installer_token {
+                    Some(tok) if tok != guest_provider => {
+                        format!(" (installer token `{tok}`)")
+                    }
+                    _ => String::new(),
+                };
                 buf.push_str(&format!(
-                    "served_by_via: `{host}` serves `{guest_pattern}` from `{guest_provider}`",
+                    "served_by_via: `{host}` serves `{guest_pattern}` from `{guest_provider}`{via}",
                 ));
             }
             Relation::DependsOn { source, target } => {
                 buf.push_str(&format!("depends_on: `{source}` → `{target}`"));
+            }
+            Relation::PreferOrderOver { earlier, later } => {
+                buf.push_str(&format!(
+                    "prefer_order_over: `{earlier}` should appear before `{later}`",
+                ));
             }
         }
     }
@@ -387,6 +414,88 @@ pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde
     serde_json::to_string_pretty(&payload)
 }
 
+/// Strip ANSI / control characters from `s`, replacing each one
+/// with `?`. `\t` and `\n` are preserved because human-mode
+/// formatters rely on them. Pure; returns the input unchanged
+/// (`Cow::Borrowed`) when nothing needed replacement.
+///
+/// Used by `pathlint where`'s human renderer so a hostile PATH
+/// segment containing `\x1b[31m...` cannot recolor or rewrite the
+/// terminal output.
+pub fn strip_control_chars(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.bytes().all(|b| !is_disallowed_byte(b)) {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '\t' || c == '\n' {
+            out.push(c);
+        } else if (c as u32) < 0x20 || c as u32 == 0x7F {
+            out.push('?');
+        } else {
+            out.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+fn is_disallowed_byte(b: u8) -> bool {
+    matches!(b, 0..=0x08 | 0x0B..=0x1F | 0x7F)
+}
+
+/// POSIX shell single-quote escape. Wraps the input in single
+/// quotes and replaces every embedded `'` with `'\''` (close,
+/// escaped quote, reopen). Always quotes — even simple inputs —
+/// so the caller never has to decide whether quoting is needed.
+///
+/// Used by `pathlint where` to keep an attacker-controlled PATH
+/// segment from breaking out of an uninstall hint string when the
+/// user copy-pastes it into bash / zsh / sh.
+pub fn posix_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// PowerShell single-quote escape. Wraps the input in single
+/// quotes and doubles every embedded `'` (PowerShell's literal
+/// single-quote-inside-single-quotes convention). Used for
+/// uninstall hints rendered on Windows hosts.
+pub fn powershell_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push('\'');
+            out.push('\'');
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Quote `s` for a shell command displayed on `os`. Windows hosts
+/// get PowerShell single-quote rules; everything else gets POSIX
+/// single-quote rules. Both styles always quote, so a user can
+/// safely substitute the result into `cargo uninstall {bin}` style
+/// templates.
+pub fn quote_for(os: Os, s: &str) -> String {
+    match os {
+        Os::Windows => powershell_quote(s),
+        Os::Macos | Os::Linux | Os::Termux => posix_quote(s),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,7 +593,7 @@ mod tests {
         let mut f = found_minimal();
         f.matched_sources = vec!["mise_installs".into(), "mise".into()];
         f.provenance = Some(Provenance::MiseInstallerPlugin {
-            installer: "cargo",
+            installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
         f.uninstall = UninstallHint::Command {
@@ -551,7 +660,7 @@ mod tests {
     fn where_json_provenance_emits_kind_and_segment() {
         let mut f = found_minimal();
         f.provenance = Some(Provenance::MiseInstallerPlugin {
-            installer: "cargo",
+            installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
         let out = where_json("foo", &WhereOutcome::Found(f)).unwrap();
@@ -867,6 +976,7 @@ mod tests {
             host: host.into(),
             guest_pattern: pattern.into(),
             guest_provider: provider.into(),
+            installer_token: None,
         }
     }
 
@@ -972,5 +1082,82 @@ mod tests {
         assert_eq!(v[0]["host"], "mise_installs");
         assert_eq!(v[0]["guest_pattern"], "cargo-*");
         assert_eq!(v[0]["guest_provider"], "cargo");
+    }
+
+    // ---- shell quoting (0.0.10) ----
+
+    #[test]
+    fn posix_quote_wraps_simple_input_in_single_quotes() {
+        assert_eq!(posix_quote("lazygit"), "'lazygit'");
+    }
+
+    #[test]
+    fn posix_quote_neutralises_metachars() {
+        assert_eq!(posix_quote("$(rm -rf ~)"), "'$(rm -rf ~)'");
+        assert_eq!(posix_quote("a;b`c"), "'a;b`c'");
+        assert_eq!(posix_quote("with\nnewline"), "'with\nnewline'");
+    }
+
+    #[test]
+    fn posix_quote_handles_embedded_single_quote() {
+        assert_eq!(posix_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn powershell_quote_doubles_inner_single_quotes() {
+        assert_eq!(powershell_quote("it's"), "'it''s'");
+        assert_eq!(powershell_quote("plain"), "'plain'");
+    }
+
+    #[test]
+    fn quote_for_dispatches_by_os() {
+        assert_eq!(quote_for(Os::Linux, "it's"), "'it'\\''s'");
+        assert_eq!(quote_for(Os::Macos, "it's"), "'it'\\''s'");
+        assert_eq!(quote_for(Os::Termux, "it's"), "'it'\\''s'");
+        assert_eq!(quote_for(Os::Windows, "it's"), "'it''s'");
+    }
+
+    // ---- control char stripping (0.0.10) ----
+
+    #[test]
+    fn strip_control_chars_keeps_plain_text() {
+        let s = "Hello, world!";
+        let out = strip_control_chars(s);
+        assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(out, s);
+    }
+
+    #[test]
+    fn strip_control_chars_replaces_ansi_escape() {
+        let out = strip_control_chars("rg\x1b[31m");
+        assert_eq!(out, "rg?[31m");
+    }
+
+    #[test]
+    fn strip_control_chars_preserves_tab_and_newline() {
+        let out = strip_control_chars("a\tb\nc");
+        assert_eq!(out, "a\tb\nc");
+    }
+
+    #[test]
+    fn strip_control_chars_replaces_del() {
+        let out = strip_control_chars("x\x7Fy");
+        assert_eq!(out, "x?y");
+    }
+
+    #[test]
+    fn where_human_strips_ansi_escape_in_command() {
+        let f = Found {
+            command: "rg\x1b[31m".into(),
+            resolved: PathBuf::from("/usr/bin/rg"),
+            matched_sources: vec!["apt".into()],
+            uninstall: UninstallHint::NoTemplate {
+                source: "apt".into(),
+            },
+            provenance: None,
+        };
+        let out = where_human(&f);
+        assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
+        assert!(out.contains("rg?[31m"));
     }
 }

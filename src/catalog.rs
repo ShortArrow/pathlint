@@ -107,6 +107,9 @@ pub fn check_acyclic(relations: &[Relation]) -> Result<(), String> {
                 ..
             } => edges.push((host.clone(), guest_provider.clone())),
             Relation::DependsOn { source, target } => edges.push((source.clone(), target.clone())),
+            Relation::PreferOrderOver { earlier, later } => {
+                edges.push((earlier.clone(), later.clone()))
+            }
             // alias_of / conflicts_when_both_in_path: symmetric / set
             // semantics, no direction to check.
             _ => {}
@@ -358,16 +361,34 @@ mod tests {
                 host: "a".into(),
                 guest_pattern: "*".into(),
                 guest_provider: "b".into(),
+                installer_token: None,
             },
             Relation::ServedByVia {
                 host: "b".into(),
                 guest_pattern: "*".into(),
                 guest_provider: "c".into(),
+                installer_token: None,
             },
             Relation::ServedByVia {
                 host: "c".into(),
                 guest_pattern: "*".into(),
                 guest_provider: "a".into(),
+                installer_token: None,
+            },
+        ];
+        assert!(check_acyclic(&rels).is_err());
+    }
+
+    #[test]
+    fn check_acyclic_rejects_cycle_through_prefer_order_over() {
+        let rels = vec![
+            Relation::PreferOrderOver {
+                earlier: "a".into(),
+                later: "b".into(),
+            },
+            Relation::PreferOrderOver {
+                earlier: "b".into(),
+                later: "a".into(),
             },
         ];
         assert!(check_acyclic(&rels).is_err());

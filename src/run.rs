@@ -19,6 +19,7 @@ use crate::os_detect::Os;
 use crate::path_source::{self, Target};
 use crate::report;
 use crate::resolve;
+use crate::source_match::{self, SourceWarningReason};
 use crate::where_cmd::{self, WhereOutcome};
 
 /// Read PATH for the chosen `--target`, surface any warning, and
@@ -32,6 +33,36 @@ fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<String> {
         eprintln!("pathlint: warning: {w}");
     }
     resolve::split_path(&path_read.value)
+}
+
+/// Validate the merged catalog and turn warnings into a config
+/// error (exit 2) so a hostile or accidentally-broad source needle
+/// like `[source.evil] unix = "/"` cannot silently mark every PATH
+/// entry as belonging to that source.
+///
+/// Pure: takes the already-merged catalog and the OS; emits its
+/// effect through stderr lines and the returned `Result`. Called
+/// from every subcommand that consumes the merged catalog.
+fn enforce_source_validation(
+    sources: &std::collections::BTreeMap<String, crate::config::SourceDef>,
+    os: Os,
+) -> Result<()> {
+    let warnings = source_match::validate_sources(sources, os);
+    if warnings.is_empty() {
+        return Ok(());
+    }
+    for w in &warnings {
+        eprintln!(
+            "pathlint: error: source `{name}` rejected — {reason} ({needle:?})",
+            name = w.name,
+            needle = w.needle,
+            reason = match w.reason {
+                SourceWarningReason::RootPath => "path expands to filesystem root",
+                SourceWarningReason::NeedleTooShort => "expanded path is too short to match safely",
+            },
+        );
+    }
+    anyhow::bail!("{} unsafe source definition(s); aborting", warnings.len());
 }
 
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
@@ -64,6 +95,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
 
     let catalog = catalog::merge_with_user(&cfg.source);
     let os = Os::current();
+    enforce_source_validation(&catalog, os)?;
     let path_entries = read_path_entries(&cli.global);
 
     if cli.global.verbose {
@@ -112,6 +144,18 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     if let Err(msg) = doctor::validate_filter_names(&filter) {
         anyhow::bail!(msg);
     }
+
+    // doctor lints PATH itself but still consumes the merged
+    // catalog (e.g. `mise_activate_both` uses source paths). A
+    // hostile rules override could weaponise the catalog if we
+    // didn't enforce safe needles before continuing.
+    let rules_path = locate_rules(global.rules.as_deref())?;
+    let cfg = match rules_path.as_ref() {
+        Some(p) => Config::from_path(p)?,
+        None => Config::default(),
+    };
+    let merged_for_validation = catalog::merge_with_user(&cfg.source);
+    enforce_source_validation(&merged_for_validation, Os::current())?;
 
     let entries = read_path_entries(global);
     let diags = doctor::analyze_real(&entries, Os::current());
@@ -193,9 +237,11 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
         None => Config::default(),
     };
     let merged = catalog::merge_with_user(&cfg.source);
+    enforce_source_validation(&merged, Os::current())?;
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
     let path_entries = read_path_entries(global);
 
-    let outcome = where_cmd::locate(&args.command, &merged, Os::current(), |cmd| {
+    let outcome = where_cmd::locate(&args.command, &merged, &relations, Os::current(), |cmd| {
         resolve::resolve(cmd, &path_entries)
     });
 
@@ -231,9 +277,17 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
         None => crate::config::Config::default(),
     };
     let catalog = catalog::merge_with_user(&cfg.source);
+    enforce_source_validation(&catalog, Os::current())?;
     let path_entries = read_path_entries(global);
 
-    let plan = crate::sort::sort_path(&path_entries, &cfg.expectations, &catalog, Os::current());
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
+    let plan = crate::sort::sort_path(
+        &path_entries,
+        &cfg.expectations,
+        &catalog,
+        &relations,
+        Os::current(),
+    );
 
     if args.json {
         let json = format::sort_json(&plan)?;

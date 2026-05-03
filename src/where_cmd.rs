@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::config::SourceDef;
+use crate::config::{Relation, SourceDef};
 use crate::expand::{expand_and_normalize, normalize};
 use crate::os_detect::Os;
 use crate::resolve::Resolution;
@@ -54,18 +54,24 @@ pub enum UninstallHint {
     NoSource,
 }
 
-/// Best-guess provenance derived from path-segment heuristics rather
-/// than catalog `[source.<name>]` entries. Today only fires for
-/// binaries served through mise's plugin system.
+/// Best-guess provenance derived from `[[relation]]` declarations
+/// rather than catalog `[source.<name>]` entries. Today only fires
+/// for binaries served through wrapper installers such as mise's
+/// plugin system. Computed from `Relation::ServedByVia` (matching
+/// the host source path + a `prefix-*` glob on the next path
+/// segment) using the `installer_token` as the human-facing
+/// installer name.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Provenance {
-    /// A binary mise installed via a third-party installer plugin.
-    /// `installer` is the upstream tool name (`cargo`, `npm`, ...);
-    /// `plugin_segment` is the raw mise plugin segment so the user
-    /// can verify with `mise plugins ls`.
+    /// A binary served via a wrapper installer's plugin layer.
+    /// `installer` is the upstream tool name (`cargo`, `npm`, ...)
+    /// taken from the matched relation's `installer_token` (or
+    /// `guest_provider` if absent); `plugin_segment` is the raw
+    /// path segment so the user can verify with the installer's
+    /// own tooling.
     MiseInstallerPlugin {
-        installer: &'static str,
+        installer: String,
         plugin_segment: String,
     },
 }
@@ -76,6 +82,7 @@ pub enum Provenance {
 pub fn locate<R>(
     command: &str,
     sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
     os: Os,
     mut resolver: R,
 ) -> WhereOutcome
@@ -89,24 +96,19 @@ where
     let haystack = normalize(&resolution.full_path.to_string_lossy());
     let matched = source_match::names_only(&haystack, sources, os);
 
-    // Plugin-aware provenance gets a chance BEFORE the generic
-    // catalog-based uninstall lookup, because for mise plugins we
-    // can produce a sharper hint than the catalog can. This only
-    // fires when the resolved path is under `mise_installs`.
-    let provenance = if matched.iter().any(|s| s == "mise_installs") {
-        infer_mise_plugin_provenance(&haystack, sources, os)
-    } else {
-        None
-    };
+    // Provenance comes from `[[relation]] kind = "served_by_via"`:
+    // when the resolved path lives under a relation's `host` source
+    // and the next segment matches `guest_pattern`, attribute it.
+    let provenance = infer_provenance_from_relations(&haystack, sources, relations, os);
 
     let uninstall = match &provenance {
-        Some(prov) => uninstall_for_provenance(prov),
-        None => derive_uninstall(&resolution.full_path, &matched, sources),
+        Some(prov) => uninstall_for_provenance(prov, os),
+        None => derive_uninstall(&resolution.full_path, &matched, sources, os),
     };
 
-    // The ranking already has the most specific match first; we
-    // also surface the catch-all `mise` last among the mise family.
-    let matched = rank_mise_alias_last(matched);
+    // Push every alias_of parent to the end when a child is also
+    // matched — the catch-all is least informative.
+    let matched = rank_aliases_last(matched, relations);
 
     WhereOutcome::Found(Found {
         command: command.to_string(),
@@ -117,42 +119,62 @@ where
     })
 }
 
-/// Push the catch-all `mise` source to the end of `matched` when a
-/// more specific `mise_*` sibling is also present, otherwise return
-/// the input unchanged. Pure: takes ownership and returns the new
-/// vector. Stable: relative order of every other element is
-/// preserved (we walk the input once and re-emit, deferring
-/// `"mise"`).
-fn rank_mise_alias_last(matched: Vec<String>) -> Vec<String> {
-    let has_specific = matched
+/// For every `[[relation]] kind = "alias_of"`, push the parent to
+/// the end of `matched` when at least one declared child is also
+/// present. Pure: stable ordering for non-parent entries. The
+/// previous mise-only special case becomes one application of this
+/// generic rule.
+fn rank_aliases_last(matched: Vec<String>, relations: &[Relation]) -> Vec<String> {
+    let parents: Vec<&str> = relations
         .iter()
-        .any(|s| s.starts_with("mise_") && s != "mise");
-    if !has_specific {
+        .filter_map(|r| match r {
+            Relation::AliasOf { parent, children } => {
+                let any_child_matched = children.iter().any(|c| matched.contains(c));
+                if any_child_matched {
+                    Some(parent.as_str())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    if parents.is_empty() {
         return matched;
     }
-    let (mise_alias, others): (Vec<String>, Vec<String>) =
-        matched.into_iter().partition(|s| s == "mise");
-    others.into_iter().chain(mise_alias).collect()
+    let (deferred, others): (Vec<String>, Vec<String>) = matched
+        .into_iter()
+        .partition(|m| parents.contains(&m.as_str()));
+    others.into_iter().chain(deferred).collect()
 }
 
 fn derive_uninstall(
     resolved: &std::path::Path,
     matched: &[String],
     sources: &BTreeMap<String, SourceDef>,
+    os: Os,
 ) -> UninstallHint {
     if matched.is_empty() {
         return UninstallHint::NoSource;
     }
     // Walk matched sources in order; the first one with an uninstall
     // template wins. That's why ranking by specificity matters.
+    //
+    // The `{bin}` substitution goes through `format::quote_for` so
+    // hostile bin names like `$(rm -rf ~)` cannot escape the
+    // template even when the user copy-pastes the result. The
+    // surrounding template text (the part the catalog author
+    // controls) is not escaped — that is the "trust the catalog
+    // author" boundary documented in PRD §12.
     let bin = bin_stem(resolved);
+    let quoted_bin = crate::format::quote_for(os, &bin);
     for name in matched {
         let Some(def) = sources.get(name) else {
             continue;
         };
         if let Some(template) = &def.uninstall_command {
             return UninstallHint::Command {
-                command: template.replace("{bin}", &bin),
+                command: template.replace("{bin}", &quoted_bin),
             };
         }
     }
@@ -161,55 +183,80 @@ fn derive_uninstall(
     }
 }
 
-/// Look at a normalized path that contains the mise_installs prefix
-/// and try to read the next segment as a "<installer>-<rest>"
-/// plugin name. Returns `None` for runtime layouts like
-/// `installs/python/3.14/bin/python` where the segment is just the
-/// language name.
-fn infer_mise_plugin_provenance(
+/// Walk every `Relation::ServedByVia` and try to attribute the
+/// resolved path to the relation's installer. The path must
+/// (a) live under the relation's `host` source's per-OS path, and
+/// (b) the segment immediately after that prefix must match the
+/// relation's `guest_pattern` (today only `prefix-*` glob is
+/// supported, which is what every built-in uses).
+///
+/// Returns the first matching relation's provenance. The relation
+/// list comes from the merged catalog so a user override can both
+/// add new wrappers and shadow built-ins by ordering.
+fn infer_provenance_from_relations(
     normalized_haystack: &str,
     sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
     os: Os,
 ) -> Option<Provenance> {
-    // We need the actual `mise_installs` per-OS path to know where
-    // the plugin segment starts. If the user removed it from the
-    // catalog, just bail.
-    let installs_def = sources.get("mise_installs")?;
-    let installs_raw = installs_def.path_for(os)?;
-    let needle = expand_and_normalize(installs_raw);
-    let after = normalized_haystack
-        .find(&needle)
-        .map(|i| &normalized_haystack[i + needle.len()..])?;
-    // After the `mise/installs` substring we expect a slash then
-    // the segment, then another slash. Strip the leading slash.
-    let after = after.strip_prefix('/')?;
-    let segment = after.split('/').next()?;
-    classify_mise_segment(segment)
-}
-
-const MISE_PLUGIN_PREFIXES: &[(&str, &str)] = &[
-    ("cargo-", "cargo"),
-    ("npm-", "npm"),
-    ("pipx-", "pipx"),
-    ("go-", "go"),
-    ("aqua-", "aqua"),
-];
-
-fn classify_mise_segment(segment: &str) -> Option<Provenance> {
-    for (prefix, installer) in MISE_PLUGIN_PREFIXES {
-        if let Some(rest) = segment.strip_prefix(prefix) {
-            if !rest.is_empty() {
-                return Some(Provenance::MiseInstallerPlugin {
-                    installer,
-                    plugin_segment: segment.to_string(),
-                });
-            }
+    for rel in relations {
+        let Relation::ServedByVia {
+            host,
+            guest_pattern,
+            guest_provider,
+            installer_token,
+        } = rel
+        else {
+            continue;
+        };
+        let Some(host_def) = sources.get(host) else {
+            continue;
+        };
+        let Some(host_raw) = host_def.path_for(os) else {
+            continue;
+        };
+        let host_needle = expand_and_normalize(host_raw);
+        if host_needle.is_empty() {
+            continue;
+        }
+        let Some(after) = find_after_needle(normalized_haystack, &host_needle) else {
+            continue;
+        };
+        let after = after.strip_prefix('/').unwrap_or(after);
+        let Some(segment) = after.split('/').next() else {
+            continue;
+        };
+        if let Some(_rest) = match_glob_prefix(guest_pattern, segment) {
+            let installer = installer_token
+                .clone()
+                .unwrap_or_else(|| guest_provider.clone());
+            return Some(Provenance::MiseInstallerPlugin {
+                installer,
+                plugin_segment: segment.to_string(),
+            });
         }
     }
     None
 }
 
-fn uninstall_for_provenance(prov: &Provenance) -> UninstallHint {
+/// Return the haystack slice starting just past the first occurrence
+/// of `needle`, or `None` when the needle is absent.
+fn find_after_needle<'h>(haystack: &'h str, needle: &str) -> Option<&'h str> {
+    haystack.find(needle).map(|i| &haystack[i + needle.len()..])
+}
+
+/// Tiny glob matcher that handles `prefix-*` patterns — the only
+/// shape every built-in `served_by_via` uses today. Returns the
+/// captured suffix (`*` part) so callers can echo it back. `None`
+/// when the segment does not match or the captured suffix is empty
+/// (a bare `prefix-` is not a real plugin name).
+fn match_glob_prefix<'a>(pattern: &str, segment: &'a str) -> Option<&'a str> {
+    let prefix = pattern.strip_suffix('*')?;
+    let rest = segment.strip_prefix(prefix)?;
+    if rest.is_empty() { None } else { Some(rest) }
+}
+
+fn uninstall_for_provenance(prov: &Provenance, os: Os) -> UninstallHint {
     match prov {
         Provenance::MiseInstallerPlugin {
             installer,
@@ -220,12 +267,18 @@ fn uninstall_for_provenance(prov: &Provenance) -> UninstallHint {
             // mise convention `cargo:owner/repo` vs the segment
             // `cargo-owner-repo` is lossy), so we hand the user a
             // best-guess command and tell them to verify.
+            //
+            // `installer` comes from the in-tree relation table
+            // (trusted) so it is interpolated as-is. `rest` is
+            // attacker-controlled (it's a path segment) and must go
+            // through quote_for.
             let rest = plugin_segment
                 .strip_prefix(&format!("{installer}-"))
                 .unwrap_or(plugin_segment);
+            let quoted_rest = crate::format::quote_for(os, rest);
             UninstallHint::Command {
                 command: format!(
-                    "mise uninstall {installer}:{rest}  (best-guess; verify with `mise plugins ls`)"
+                    "mise uninstall {installer}:{quoted_rest}  (best-guess; verify with `mise plugins ls`)"
                 ),
             }
         }
@@ -271,9 +324,39 @@ mod tests {
         }
     }
 
+    /// Built-in mise relations re-stated for unit tests so each
+    /// case is self-contained. Production wiring uses
+    /// `catalog::merge_with_user_relations(&cfg.relations)`.
+    fn mise_relations() -> Vec<Relation> {
+        vec![
+            Relation::AliasOf {
+                parent: "mise".into(),
+                children: vec!["mise_shims".into(), "mise_installs".into()],
+            },
+            Relation::ServedByVia {
+                host: "mise_installs".into(),
+                guest_pattern: "cargo-*".into(),
+                guest_provider: "cargo".into(),
+                installer_token: Some("cargo".into()),
+            },
+            Relation::ServedByVia {
+                host: "mise_installs".into(),
+                guest_pattern: "npm-*".into(),
+                guest_provider: "npm_global".into(),
+                installer_token: Some("npm".into()),
+            },
+            Relation::ServedByVia {
+                host: "mise_installs".into(),
+                guest_pattern: "pipx-*".into(),
+                guest_provider: "pip_user".into(),
+                installer_token: Some("pipx".into()),
+            },
+        ]
+    }
+
     #[test]
     fn not_found_when_resolver_returns_none() {
-        let out = locate("ghost", &BTreeMap::new(), Os::Linux, |_| None);
+        let out = locate("ghost", &BTreeMap::new(), &[], Os::Linux, |_| None);
         assert_eq!(out, WhereOutcome::NotFound);
     }
 
@@ -283,7 +366,7 @@ mod tests {
             "cargo",
             src_with_uninstall("/home/u/.cargo/bin", "cargo uninstall {bin}"),
         )]);
-        let out = locate("lazygit", &sources, Os::Linux, |_| {
+        let out = locate("lazygit", &sources, &[], Os::Linux, |_| {
             Some(resolution("/home/u/.cargo/bin/lazygit"))
         });
         match out {
@@ -292,7 +375,7 @@ mod tests {
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::Command {
-                        command: "cargo uninstall lazygit".into()
+                        command: "cargo uninstall 'lazygit'".into()
                     }
                 );
             }
@@ -314,7 +397,7 @@ mod tests {
                 src_with_uninstall("/home/u/.local/share/mise/installs", "mise uninstall {bin}"),
             ),
         ]);
-        let out = locate("lazygit", &sources, Os::Linux, |_| {
+        let out = locate("lazygit", &sources, &mise_relations(), Os::Linux, |_| {
             Some(resolution(
                 "/home/u/.local/share/mise/installs/cargo-lazygit/0.61/bin/lazygit",
             ))
@@ -330,19 +413,18 @@ mod tests {
                 match &f.uninstall {
                     UninstallHint::Command { command } => {
                         assert!(
-                            command.contains("mise uninstall cargo:lazygit"),
+                            command.contains("mise uninstall cargo:'lazygit'"),
                             "uninstall: {command}"
                         );
                     }
                     other => panic!("expected Command, got {other:?}"),
                 }
-                assert!(matches!(
-                    f.provenance,
-                    Some(Provenance::MiseInstallerPlugin {
-                        installer: "cargo",
-                        ..
-                    })
-                ));
+                match &f.provenance {
+                    Some(Provenance::MiseInstallerPlugin { installer, .. }) => {
+                        assert_eq!(installer, "cargo");
+                    }
+                    other => panic!("expected MiseInstallerPlugin, got {other:?}"),
+                }
             }
             other => panic!("expected Found, got {other:?}"),
         }
@@ -352,7 +434,7 @@ mod tests {
     fn no_template_when_source_has_none() {
         // aqua is in the catalog but has no uninstall_command.
         let sources = cat(&[("aqua", src("/home/u/.local/share/aquaproj-aqua"))]);
-        let out = locate("aqua_tool", &sources, Os::Linux, |_| {
+        let out = locate("aqua_tool", &sources, &[], Os::Linux, |_| {
             Some(resolution(
                 "/home/u/.local/share/aquaproj-aqua/cache/foo/aqua_tool",
             ))
@@ -375,7 +457,7 @@ mod tests {
         // The resolved path doesn't match any catalog entry — pathlint
         // can't speak to provenance.
         let sources = cat(&[("cargo", src("/home/u/.cargo/bin"))]);
-        let out = locate("orphan", &sources, Os::Linux, |_| {
+        let out = locate("orphan", &sources, &[], Os::Linux, |_| {
             Some(resolution("/opt/local-stuff/bin/orphan"))
         });
         match out {
@@ -396,7 +478,7 @@ mod tests {
             "cargo",
             src_with_uninstall("/home/u/.cargo/bin", "cargo uninstall {bin}"),
         )]);
-        let out = locate("lazygit", &sources, Os::Linux, |_| {
+        let out = locate("lazygit", &sources, &[], Os::Linux, |_| {
             Some(resolution("/home/u/.cargo/bin/lazygit.exe"))
         });
         match out {
@@ -404,7 +486,7 @@ mod tests {
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::Command {
-                        command: "cargo uninstall lazygit".into()
+                        command: "cargo uninstall 'lazygit'".into()
                     }
                 );
             }
@@ -423,23 +505,35 @@ mod tests {
 
     #[test]
     fn npm_plugin_segment_yields_npm_provenance() {
-        let out = locate("gemini", &mise_sources(), Os::Linux, |_| {
-            Some(resolution(
-                "/home/u/.local/share/mise/installs/npm-google-gemini-cli/0.40.0/gemini",
-            ))
-        });
+        let out = locate(
+            "gemini",
+            &mise_sources(),
+            &mise_relations(),
+            Os::Linux,
+            |_| {
+                Some(resolution(
+                    "/home/u/.local/share/mise/installs/npm-google-gemini-cli/0.40.0/gemini",
+                ))
+            },
+        );
         match out {
             WhereOutcome::Found(f) => {
-                assert!(matches!(
-                    &f.provenance,
+                match &f.provenance {
                     Some(Provenance::MiseInstallerPlugin {
-                        installer: "npm",
+                        installer,
                         plugin_segment,
-                    }) if plugin_segment == "npm-google-gemini-cli"
-                ));
+                    }) => {
+                        assert_eq!(installer, "npm");
+                        assert_eq!(plugin_segment, "npm-google-gemini-cli");
+                    }
+                    other => panic!("expected MiseInstallerPlugin, got {other:?}"),
+                }
                 match &f.uninstall {
                     UninstallHint::Command { command } => {
-                        assert!(command.starts_with("mise uninstall npm:google-gemini-cli"));
+                        assert!(
+                            command.starts_with("mise uninstall npm:'google-gemini-cli'"),
+                            "uninstall: {command}"
+                        );
                     }
                     other => panic!("expected Command, got {other:?}"),
                 }
@@ -452,11 +546,17 @@ mod tests {
     fn runtime_segment_does_not_get_plugin_provenance() {
         // `python` is a mise runtime, not a plugin install. No
         // installer prefix to detect, so provenance stays None.
-        let out = locate("python", &mise_sources(), Os::Linux, |_| {
-            Some(resolution(
-                "/home/u/.local/share/mise/installs/python/3.14/bin/python",
-            ))
-        });
+        let out = locate(
+            "python",
+            &mise_sources(),
+            &mise_relations(),
+            Os::Linux,
+            |_| {
+                Some(resolution(
+                    "/home/u/.local/share/mise/installs/python/3.14/bin/python",
+                ))
+            },
+        );
         match out {
             WhereOutcome::Found(f) => {
                 assert!(f.provenance.is_none());
@@ -466,10 +566,44 @@ mod tests {
     }
 
     #[test]
+    fn pipx_plugin_uses_installer_token_distinct_from_guest_provider() {
+        // 0.0.10: served_by_via.installer_token decouples the source
+        // name (pip_user, what `pathlint catalog list` shows) from
+        // the human-facing installer (`pipx`, what mise's CLI uses).
+        let out = locate(
+            "black",
+            &mise_sources(),
+            &mise_relations(),
+            Os::Linux,
+            |_| {
+                Some(resolution(
+                    "/home/u/.local/share/mise/installs/pipx-black/24.0/bin/black",
+                ))
+            },
+        );
+        match out {
+            WhereOutcome::Found(f) => match &f.provenance {
+                Some(Provenance::MiseInstallerPlugin {
+                    installer,
+                    plugin_segment,
+                }) => {
+                    assert_eq!(
+                        installer, "pipx",
+                        "installer_token must override guest_provider"
+                    );
+                    assert_eq!(plugin_segment, "pipx-black");
+                }
+                other => panic!("expected MiseInstallerPlugin, got {other:?}"),
+            },
+            other => panic!("expected Found, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn unknown_plugin_prefix_does_not_attribute() {
         // A plugin installed via a prefix we don't recognize stays
         // unattributed — pathlint shouldn't guess.
-        let out = locate("xyz", &mise_sources(), Os::Linux, |_| {
+        let out = locate("xyz", &mise_sources(), &mise_relations(), Os::Linux, |_| {
             Some(resolution(
                 "/home/u/.local/share/mise/installs/exotic-thing/0.1/bin/xyz",
             ))
@@ -492,16 +626,20 @@ mod tests {
             "cargo",
             src_with_uninstall("/home/u/.cargo/bin", "cargo uninstall {bin}"),
         )]);
-        let out = locate("cargo-lazygit", &sources, Os::Linux, |_| {
-            Some(resolution("/home/u/.cargo/bin/cargo-lazygit"))
-        });
+        let out = locate(
+            "cargo-lazygit",
+            &sources,
+            &mise_relations(),
+            Os::Linux,
+            |_| Some(resolution("/home/u/.cargo/bin/cargo-lazygit")),
+        );
         match out {
             WhereOutcome::Found(f) => {
                 assert!(f.provenance.is_none());
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::Command {
-                        command: "cargo uninstall cargo-lazygit".into()
+                        command: "cargo uninstall 'cargo-lazygit'".into()
                     }
                 );
             }

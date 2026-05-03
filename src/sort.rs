@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::config::{Expectation, SourceDef};
+use crate::config::{Expectation, Relation, SourceDef};
 use crate::expand::normalize;
 use crate::os_detect::Os;
 use crate::source_match;
@@ -91,13 +91,20 @@ impl SortPlan {
 /// Compute a sort plan. Pure.
 ///
 /// `entries` is the current PATH split into entries (the same form
-/// produced by `resolve::split_path`). `expectations` and `sources`
-/// come from the merged catalog. `os` decides which expectations
-/// apply (rules with an unmet `os` filter contribute nothing).
+/// produced by `resolve::split_path`). `expectations`, `sources`,
+/// and `relations` all come from the merged catalog. `os` decides
+/// which expectations apply (rules with an unmet `os` filter
+/// contribute nothing).
+///
+/// `relations` are consumed by `[[relation]] kind = "prefer_order_over"`
+/// to break ties within the same preferred / neutral / avoided
+/// bucket. Only `prefer_order_over` participates here; other kinds
+/// are ignored by sort.
 pub fn sort_path(
     entries: &[String],
     expectations: &[Expectation],
     sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
     os: Os,
 ) -> SortPlan {
     let original: Vec<String> = entries.to_vec();
@@ -137,9 +144,22 @@ pub fn sort_path(
         .enumerate()
         .filter_map(|(i, _)| avoided_set.contains(&i).then_some(i));
 
-    let new_order: Vec<usize> = preferred_idx
-        .chain(neutral_idx)
-        .chain(avoided_idx)
+    // Step 1: 3-bucket order (preferred, neutral, avoided).
+    let mut preferred_bucket: Vec<usize> = preferred_idx.collect();
+    let mut neutral_bucket: Vec<usize> = neutral_idx.collect();
+    let mut avoided_bucket: Vec<usize> = avoided_idx.collect();
+
+    // Step 2: prefer_order_over reorders within each bucket only,
+    // never crossing bucket boundaries. preferred entries stay
+    // ahead of avoided entries regardless of any order relation.
+    apply_prefer_order_over(&mut preferred_bucket, &entry_sources, relations);
+    apply_prefer_order_over(&mut neutral_bucket, &entry_sources, relations);
+    apply_prefer_order_over(&mut avoided_bucket, &entry_sources, relations);
+
+    let new_order: Vec<usize> = preferred_bucket
+        .into_iter()
+        .chain(neutral_bucket)
+        .chain(avoided_bucket)
         .collect();
     let sorted: Vec<String> = new_order.iter().map(|&i| entries[i].clone()).collect();
 
@@ -163,6 +183,69 @@ pub fn sort_path(
         sorted,
         moves,
         notes,
+    }
+}
+
+/// Reorder `bucket` so that for every `Relation::PreferOrderOver
+/// { earlier, later }`, every entry whose matched sources contain
+/// `earlier` comes before every entry whose matched sources
+/// contain `later`. Entries that match neither side keep their
+/// relative position.
+///
+/// Strategy: stable selection sort. For each pair-violation we
+/// find, swap the pair and reposition the displaced entry. The
+/// algorithm is O(N^2 * R) which is fine for the realistic input
+/// size (a few dozen PATH entries, a handful of relations).
+///
+/// Pure: mutates the bucket in place but takes no I/O. Called
+/// once per bucket (preferred / neutral / avoided), so bucket
+/// boundaries never cross.
+fn apply_prefer_order_over(
+    bucket: &mut [usize],
+    entry_sources: &[Vec<String>],
+    relations: &[Relation],
+) {
+    let order_pairs: Vec<(&str, &str)> = relations
+        .iter()
+        .filter_map(|r| match r {
+            Relation::PreferOrderOver { earlier, later } => {
+                Some((earlier.as_str(), later.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    if order_pairs.is_empty() {
+        return;
+    }
+
+    // Bubble until no pair-violation is found in a full pass.
+    // Bounded by N^2 swaps because the swap always reduces an
+    // (earlier_pos, later_pos) inversion and the total inversion
+    // count is monotonically decreasing.
+    let mut moved = true;
+    let mut guard = bucket.len() * bucket.len() + 1;
+    while moved && guard > 0 {
+        moved = false;
+        guard -= 1;
+        for i in 0..bucket.len().saturating_sub(1) {
+            for j in (i + 1)..bucket.len() {
+                let i_sources = &entry_sources[bucket[i]];
+                let j_sources = &entry_sources[bucket[j]];
+                let violates = order_pairs.iter().any(|(earlier, later)| {
+                    let i_is_later = i_sources.iter().any(|s| s.as_str() == *later);
+                    let j_is_earlier = j_sources.iter().any(|s| s.as_str() == *earlier);
+                    i_is_later && j_is_earlier
+                });
+                if violates {
+                    bucket.swap(i, j);
+                    moved = true;
+                    break;
+                }
+            }
+            if moved {
+                break;
+            }
+        }
     }
 }
 
@@ -278,7 +361,7 @@ mod tests {
 
     #[test]
     fn empty_input_produces_noop_plan() {
-        let plan = sort_path(&[], &[], &BTreeMap::new(), Os::Linux);
+        let plan = sort_path(&[], &[], &BTreeMap::new(), &[], Os::Linux);
         assert!(plan.is_noop());
         assert_eq!(plan.original, plan.sorted);
         assert!(plan.moves.is_empty());
@@ -295,7 +378,7 @@ mod tests {
         ]);
         let path = entries(&["/home/u/.cargo/bin", "/usr/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         assert!(plan.is_noop(), "plan was: {plan:?}");
     }
 
@@ -309,7 +392,7 @@ mod tests {
         ]);
         let path = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         assert!(!plan.is_noop());
         assert_eq!(
             plan.sorted,
@@ -342,7 +425,7 @@ mod tests {
         ]);
         let path = entries(&["/usr/bin", "/usr/local/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         assert!(plan.is_noop());
         assert_eq!(plan.notes.len(), 1);
         match &plan.notes[0] {
@@ -365,7 +448,7 @@ mod tests {
         let path = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
         let mut e = expect_simple("rg", &["cargo"]);
         e.os = Some(vec!["windows".into()]);
-        let plan = sort_path(&path, &[e], &sources, Os::Linux);
+        let plan = sort_path(&path, &[e], &sources, &[], Os::Linux);
         assert!(plan.is_noop());
     }
 
@@ -388,7 +471,7 @@ mod tests {
             expect_simple("rg", &["cargo"]),
             expect_simple("python", &["mise_shims"]),
         ];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         // cargo and mise_shims should both move up, keeping their
         // relative order (cargo before mise_shims, since cargo
         // appeared earlier in the original).
@@ -418,7 +501,7 @@ mod tests {
         let sources = cat(&[("cargo", src("/home/u/.cargo/bin"))]);
         let path = entries(&["/opt/custom", "/home/u/.cargo/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         // /home/u/.cargo/bin floats to position 0; /opt/custom
         // stays at the back.
         assert_eq!(plan.sorted[0], "/home/u/.cargo/bin");
@@ -448,7 +531,7 @@ mod tests {
         ]);
         let path = entries(&["/winget/links", "/usr/local/bin"]);
         let expects = vec![expect_prefer_avoid("rg", &[], &["winget"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         // winget entry sinks below plain entry.
         assert_eq!(
             plan.sorted,
@@ -475,7 +558,7 @@ mod tests {
             "/usr/bin",
         ]);
         let expects = vec![expect_prefer_avoid("python", &["mise"], &["dangerous"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         // The mise/dangerous entry sinks past /usr/bin.
         assert_eq!(plan.sorted[0], "/usr/bin");
         assert!(plan.sorted[1].contains("dangerous") || plan.sorted[1].contains("python/3.10"));
@@ -491,7 +574,7 @@ mod tests {
         ]);
         let path = entries(&["/home/u/.cargo/bin", "/usr/bin"]);
         let expects = vec![expect_prefer_avoid("rg", &["cargo"], &["winget"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         assert!(plan.is_noop(), "plan was: {plan:?}");
     }
 
@@ -507,7 +590,7 @@ mod tests {
         ]);
         let path = entries(&["/winget/links", "/usr/bin", "/home/u/.cargo/bin"]);
         let expects = vec![expect_prefer_avoid("rg", &["cargo"], &["winget"])];
-        let plan = sort_path(&path, &expects, &sources, Os::Linux);
+        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
         assert_eq!(
             plan.sorted,
             vec![
@@ -516,5 +599,66 @@ mod tests {
                 "/winget/links".to_string(),
             ]
         );
+    }
+
+    // ---- 0.0.10: prefer_order_over relation ----
+
+    #[test]
+    fn prefer_order_over_reorders_neutral_bucket() {
+        // No expectation rule fires, so all entries are neutral.
+        // The relation alone determines order: cargo before usr_bin.
+        let sources = cat(&[
+            ("cargo", src("/home/u/.cargo/bin")),
+            ("usr_bin", src("/usr/bin")),
+        ]);
+        let path = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
+        let relations = vec![Relation::PreferOrderOver {
+            earlier: "cargo".into(),
+            later: "usr_bin".into(),
+        }];
+        let plan = sort_path(&path, &[], &sources, &relations, Os::Linux);
+        assert_eq!(
+            plan.sorted,
+            vec!["/home/u/.cargo/bin".to_string(), "/usr/bin".to_string()],
+        );
+    }
+
+    #[test]
+    fn prefer_order_over_does_not_cross_buckets() {
+        // cargo is in the avoided bucket (rule says avoid=cargo);
+        // usr_bin is in the preferred bucket (rule says prefer=usr_bin).
+        // Even if a relation says "cargo earlier than usr_bin",
+        // bucket order beats the relation: usr_bin must stay first.
+        let sources = cat(&[
+            ("cargo", src("/home/u/.cargo/bin")),
+            ("usr_bin", src("/usr/bin")),
+        ]);
+        let path = entries(&["/home/u/.cargo/bin", "/usr/bin"]);
+        let expects = vec![expect_prefer_avoid("rg", &["usr_bin"], &["cargo"])];
+        let relations = vec![Relation::PreferOrderOver {
+            earlier: "cargo".into(),
+            later: "usr_bin".into(),
+        }];
+        let plan = sort_path(&path, &expects, &sources, &relations, Os::Linux);
+        assert_eq!(
+            plan.sorted,
+            vec!["/usr/bin".to_string(), "/home/u/.cargo/bin".to_string()],
+            "preferred bucket beats prefer_order_over"
+        );
+    }
+
+    #[test]
+    fn prefer_order_over_with_no_relations_matches_pre_0_0_10() {
+        // Relations empty: behaviour must equal the 0.0.9 sort.
+        let sources = cat(&[
+            ("cargo", src("/home/u/.cargo/bin")),
+            ("usr_bin", src("/usr/bin")),
+        ]);
+        let path = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
+        let plan = sort_path(&path, &[], &sources, &[], Os::Linux);
+        // No expectations + no relations + no avoid: every entry is
+        // neutral and order is preserved.
+        assert!(plan.is_noop());
+        assert_eq!(plan.original, plan.sorted);
     }
 }

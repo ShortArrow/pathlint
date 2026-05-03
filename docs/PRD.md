@@ -353,23 +353,36 @@ command, print
 
 - the resolved full path (the one R1 evaluates against)
 - every matched source, with the most specific listed first
-- (0.0.5+) a `provenance:` line when the path is under
-  `mise/installs/<segment>/...` and `<segment>` starts with
-  `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`. The provenance
-  carries both the installer name and the raw plugin segment, so
-  the user can verify with `mise plugins ls`.
+- a `provenance:` line when a `[[relation]] kind = "served_by_via"`
+  declaration matches: the resolved path lives under the relation's
+  `host` source and the next path segment matches the relation's
+  `guest_pattern`. The relation's `installer_token` (or
+  `guest_provider` as fallback) becomes the installer label, and
+  the raw segment is preserved so the user can verify with the
+  installer's own tooling.
+
+  Before 0.0.10 this was a hard-coded `MISE_PLUGIN_PREFIXES` table
+  inside `where_cmd.rs`; 0.0.10 reads `plugins/<name>.toml` instead,
+  so users can extend wrapper attribution by adding a relation to
+  `pathlint.toml`.
 - a single best-guess uninstall command. When provenance is
-  present (0.0.5+) the hint is `mise uninstall <installer>:<rest>`
-  with a "best-guess; verify" caveat, because the segment-to-id
-  mapping is lossy. Otherwise the hint comes from the matched
-  source's `uninstall_command` template.
+  present the hint is `<installer> uninstall '<rest>'` (or, for
+  mise plugins, `mise uninstall <installer>:'<rest>'`) with a
+  "best-guess; verify" caveat. Otherwise the hint comes from the
+  matched source's `uninstall_command` template.
+
+The `{bin}` substitution and the mise plugin segment go through
+`format::quote_for(os, _)` (0.0.10+) so a hostile PATH entry like
+`/.../installs/cargo-$(rm -rf ~)/bin` cannot inject shell code into
+a copy-paste of the output. The escape is single-quote based on
+POSIX shells and PowerShell-style on Windows.
 
 The uninstall hint is a string the user runs themselves; pathlint
 never executes it. When neither provenance nor the catalog can
 suggest a command the output says so explicitly rather than
 guessing.
 
-Plugin provenance is a path-segment heuristic — a R4-only label,
+Plugin provenance is a relation-driven label — a R4-only signal,
 never a source match. `prefer = ["cargo"]` in `[[expect]]` will
 NOT match a binary under `mise/installs/cargo-foo/...` unless the
 user explicitly defines a `[source.X]` for that prefix.
@@ -419,9 +432,12 @@ read-only)
   `avoid` wins when an entry matches both sets, mirroring
   `lint::decide`. The plan then concatenates three buckets in
   order: preferred entries, neutral entries, avoided entries.
-  Each bucket preserves the entries' original relative order, so
-  the diff only contains moves the user actually needs to think
-  about. Rules with both `prefer` and `avoid` empty do not
+  Each bucket preserves the entries' original relative order
+  unless a `[[relation]] kind = "prefer_order_over"` (0.0.10+)
+  applies — those reorder entries **within** the same bucket but
+  never cross bucket boundaries. The diff only contains moves the
+  user actually needs to think about. Rules with both `prefer` and
+  `avoid` empty do not
   contribute. Entries matching no defined source stay in their
   bucket.
 - When `prefer` cannot be satisfied by reordering (no PATH entry
@@ -566,6 +582,14 @@ each source's per-OS path, including any overrides the user
 added. The TOML for any individual plugin is
 in `plugins/<name>.toml` in the source tree.
 
+**Source path constraints (0.0.10+):** every `[source.<name>]`
+per-OS path is validated at startup before `check`, `doctor`,
+`where`, and `sort` consume the catalog. A source whose expanded
+needle is `/`, `\`, or shorter than 3 bytes is rejected with
+exit 2. Relative needles like `Microsoft/WindowsApps` (used by
+fragment-style built-ins) are still accepted; the `find` boundary
+check keeps them from over-matching across path segments.
+
 Notes on the design:
 
 - `apt` / `pacman` / `dnf` all point at `/usr/bin` because that is
@@ -586,24 +610,34 @@ Plugins can declare structural relationships between sources using
 Run `pathlint catalog relations` to dump the merged list (use
 `--json` for tooling).
 
-Four `kind`s are recognised:
+Five `kind`s are recognised:
 
 - **`alias_of`** — a parent source is a catch-all over more
   specific children. Matching the parent does not exclude matching
-  the children. Used for `mise` over `mise_shims` /
-  `mise_installs`.
+  the children. `pathlint where` pushes the parent to the end of
+  the matched-sources list when at least one child also matched.
+  Used for `mise` over `mise_shims` / `mise_installs`.
 - **`conflicts_when_both_in_path`** — two or more sources that
   shouldn't be active in PATH at once. `pathlint doctor` raises
   `diagnostic` (a `Kind` snake_case name) when more than one of
-  them appears.
+  them appears. (0.0.10 still uses the hard-coded `mise_activate_both`
+  detector; relation-driven doctor is the 0.0.11 list.)
 - **`served_by_via`** — `host` serves binaries originally from
-  `guest_provider` via paths matching `guest_pattern`.
-  `pathlint where` uses this to attribute provenance through
-  wrapper installers.
+  `guest_provider` via paths matching `guest_pattern`. The
+  optional `installer_token` field (0.0.10+) names the installer
+  for human-facing output when it differs from the source name —
+  e.g. `guest_provider = "pip_user"` but `installer_token = "pipx"`
+  because the user runs `mise uninstall pipx:black`.
+  `pathlint where` consumes this directly.
 - **`depends_on`** — `target` is a hard prerequisite of `source`.
   Reads "`source` depends on `target`". Example: `paru` depends on
   `pacman`, so uninstalling `paru` does not remove pacman-managed
   binaries. Surfaced by `pathlint where`.
+- **`prefer_order_over`** (0.0.10+) — `earlier` should appear in
+  PATH before `later`. Consumed by `pathlint sort` to break ties
+  inside the preferred / neutral / avoided buckets. Bucket
+  boundaries are not crossed: a `prefer_order_over` cannot rescue
+  an avoided source. Forms a directed edge for the cycle check.
 
 Example (built into `plugins/mise.toml`):
 
@@ -623,18 +657,22 @@ kind = "served_by_via"
 host = "mise_installs"
 guest_pattern = "cargo-*"
 guest_provider = "cargo"
+installer_token = "cargo"
 ```
 
-`served_by_via` and `depends_on` describe directed edges; pathlint
-checks that the merged graph is acyclic when running `pathlint
-catalog relations`. A cycle is a configuration error (exit 2). `alias_of` and
+`served_by_via`, `depends_on`, and `prefer_order_over` describe
+directed edges; pathlint checks that the merged graph is acyclic
+when running `pathlint catalog relations`. A cycle is a
+configuration error (exit 2). `alias_of` and
 `conflicts_when_both_in_path` are symmetric and never participate
 in the DAG check.
 
-In 0.0.9 the relation list is descriptive: `pathlint catalog
-relations` shows it, but the doctor / where_cmd / sort code
-paths still use their pre-0.0.9 hard-coded heuristics. Migrating
-those code paths to read relations is on the 0.0.10 list.
+In 0.0.9 the relation list was purely descriptive. In 0.0.10
+`pathlint where` reads `served_by_via` + `alias_of` directly (the
+old `MISE_PLUGIN_PREFIXES` table is gone) and `pathlint sort` reads
+`prefer_order_over`. Doctor still uses the hard-coded
+`mise_activate_both` substring detector; migrating it to read
+`conflicts_when_both_in_path` is the 0.0.11 list.
 
 ## 10. Path sources (`--target`)
 
@@ -695,10 +733,26 @@ by built-in plugins and any user `[[relation]]` blocks (see §9.1).
   config / I/O error.
 - **Encoding.** All paths are treated as UTF-8 strings on every OS.
   If `PATH` is not valid UTF-8, pathlint reads it as if empty; a
-  warning + per-entry skip is a future improvement.
+  warning + per-entry skip is a future improvement. (0.0.10+)
+  Human output of `pathlint where` runs every attacker-controlled
+  string through `format::strip_control_chars`, replacing ASCII
+  control bytes (0x00–0x08, 0x0B–0x1F, 0x7F) with `?` so a hostile
+  PATH segment cannot rewrite the terminal. `\t` and `\n` are
+  preserved. Doctor / catalog list still emit raw strings; that is
+  the 0.0.11 list.
+- **Trust boundary for shell strings (0.0.10+).** `pathlint where`
+  emits commands the user might copy-paste. The `{bin}`
+  substitution and the mise plugin segment are quoted via
+  `format::quote_for(os, _)` (POSIX single-quote on Unix-likes,
+  PowerShell single-quote on Windows). Catalog template *bodies*
+  themselves (the `uninstall_command = "..."` string) are not
+  re-quoted — they come from the catalog author or user config and
+  pathlint trusts them.
 - **Built-in catalog versioning.** The catalog is embedded at compile
   time; bumps to it are called out in the GitHub Release notes so
-  users know when defaults change.
+  users know when defaults change. 0.0.10 bumps `catalog_version`
+  to `3` because relation interpretation changed (where / sort now
+  read the relations).
 
 ## 13. Distribution
 
