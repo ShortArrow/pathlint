@@ -239,7 +239,7 @@ lazygit
   resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
   sources:  mise_installs, mise
   provenance: cargo (via mise plugin `cargo-jesseduffield-lazygit`)
-  hint:     mise uninstall cargo:jesseduffield-lazygit  (best-guess; verify with `mise plugins ls`)
+  hint:     mise uninstall cargo:'jesseduffield-lazygit'  (best-guess; verify with `mise plugins ls`)
 ```
 
 The provenance is a path heuristic — it never causes

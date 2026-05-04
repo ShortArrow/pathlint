@@ -365,7 +365,7 @@ plugin provenance は relation 駆動のラベルで、R4 専用。
   "matched_sources": ["mise_installs", "mise"],
   "uninstall": {
     "kind": "command",
-    "command": "mise uninstall cargo:lazygit  (best-guess; verify with `mise plugins ls`)"
+    "command": "mise uninstall cargo:'lazygit'  (best-guess; verify with `mise plugins ls`)"
   },
   "provenance": {
     "kind": "mise_installer_plugin",

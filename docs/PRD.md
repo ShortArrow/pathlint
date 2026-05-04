@@ -409,7 +409,7 @@ machine-readable object. The schema is stable for `0.0.x`:
   "matched_sources": ["mise_installs", "mise"],
   "uninstall": {
     "kind": "command",
-    "command": "mise uninstall cargo:lazygit  (best-guess; verify with `mise plugins ls`)"
+    "command": "mise uninstall cargo:'lazygit'  (best-guess; verify with `mise plugins ls`)"
   },
   "provenance": {
     "kind": "mise_installer_plugin",
