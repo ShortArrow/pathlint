@@ -16,12 +16,8 @@ use crate::where_cmd::{Found, Provenance, UninstallHint, WhereOutcome};
 /// (header line + indented detail). The trailing newline is
 /// omitted; the caller decides whether to add one.
 pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
-    if let Kind::MiseActivateBoth {
-        shim_indices,
-        install_indices,
-    } = &d.kind
-    {
-        return doctor_mise_activate_both(entries, shim_indices, install_indices);
+    if let Kind::Conflict { diagnostic, groups } = &d.kind {
+        return doctor_conflict(entries, diagnostic, groups);
     }
 
     let tag = match d.severity {
@@ -42,7 +38,7 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
         }
         Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
         Kind::Malformed { reason } => format!("malformed entry: {reason}"),
-        Kind::MiseActivateBoth { .. } => unreachable!("handled by early return above"),
+        Kind::Conflict { .. } => unreachable!("handled by early return above"),
     };
     format!(
         "{tag} #{idx:>3} {entry}\n      {detail}",
@@ -51,25 +47,27 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
     )
 }
 
-/// MiseActivateBoth gets its own multi-line layout that
-/// enumerates every shim and install entry below the header.
-fn doctor_mise_activate_both(
-    entries: &[String],
-    shim_indices: &[usize],
-    install_indices: &[usize],
-) -> String {
-    let mut buf = String::from(
-        "[warn] mise activate exposes both shim and install layers (PATH order matters)\n",
-    );
-    buf.push_str("      shims:\n");
-    for &i in shim_indices {
-        let entry = entries.get(i).cloned().unwrap_or_default();
-        buf.push_str(&format!("        #{i:>3} {entry}\n"));
-    }
-    buf.push_str("      installs:\n");
-    for &i in install_indices {
-        let entry = entries.get(i).cloned().unwrap_or_default();
-        buf.push_str(&format!("        #{i:>3} {entry}\n"));
+/// Conflict diagnostics get a multi-line layout that enumerates the
+/// PATH entries in each conflicting source group below the header.
+/// The header line uses a diagnostic-specific phrasing for the two
+/// built-in conflicts (`mise_activate_both`); everything else falls
+/// back to a generic "two sources collide" message that still names
+/// the diagnostic so the user can grep for it.
+fn doctor_conflict(entries: &[String], diagnostic: &str, groups: &[Vec<usize>]) -> String {
+    let header = match diagnostic {
+        "mise_activate_both" => {
+            "[warn] mise activate exposes both shim and install layers (PATH order matters)"
+                .to_string()
+        }
+        other => format!("[warn] {other}: multiple conflicting sources are active in PATH"),
+    };
+    let mut buf = format!("{header}\n");
+    for (idx, group) in groups.iter().enumerate() {
+        buf.push_str(&format!("      group #{idx}:\n"));
+        for &i in group {
+            let entry = entries.get(i).cloned().unwrap_or_default();
+            buf.push_str(&format!("        #{i:>3} {entry}\n"));
+        }
     }
     buf.pop(); // strip the trailing newline so the caller adds its own
     buf
@@ -839,22 +837,23 @@ mod tests {
     }
 
     #[test]
-    fn doctor_json_mise_activate_both_carries_both_layers() {
+    fn doctor_json_conflict_carries_diagnostic_and_groups() {
         let d = Diagnostic {
             index: 0,
             entry: "/home/u/.local/share/mise/shims".into(),
             severity: Severity::Warn,
-            kind: Kind::MiseActivateBoth {
-                shim_indices: vec![0],
-                install_indices: vec![1, 2],
+            kind: Kind::Conflict {
+                diagnostic: "mise_activate_both".into(),
+                groups: vec![vec![0], vec![1, 2]],
             },
         };
         let out = doctor_json(&[&d]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v[0]["kind"], "mise_activate_both");
-        assert_eq!(v[0]["shim_indices"][0], 0);
-        assert_eq!(v[0]["install_indices"][0], 1);
-        assert_eq!(v[0]["install_indices"][1], 2);
+        assert_eq!(v[0]["kind"], "conflict");
+        assert_eq!(v[0]["diagnostic"], "mise_activate_both");
+        assert_eq!(v[0]["groups"][0][0], 0);
+        assert_eq!(v[0]["groups"][1][0], 1);
+        assert_eq!(v[0]["groups"][1][1], 2);
     }
 
     #[test]
@@ -937,22 +936,45 @@ mod tests {
             index: 0,
             entry: entries[0].clone(),
             severity: Severity::Warn,
-            kind: Kind::MiseActivateBoth {
-                shim_indices: vec![0],
-                install_indices: vec![1, 2],
+            kind: Kind::Conflict {
+                diagnostic: "mise_activate_both".into(),
+                groups: vec![vec![0], vec![1, 2]],
             },
         };
         let out = doctor_line(&d, &entries);
         assert!(out.starts_with(
             "[warn] mise activate exposes both shim and install layers (PATH order matters)"
         ));
-        // shim entry appears under the shims: header
-        assert!(out.contains("shims:\n        #  0 /home/u/.local/share/mise/shims"));
-        // both install entries appear under installs:
-        assert!(out.contains("installs:\n        #  1"));
+        // group #0 (shims) lists entry 0
+        assert!(out.contains("group #0:\n        #  0 /home/u/.local/share/mise/shims"));
+        // group #1 (installs) lists both entries 1 and 2
+        assert!(out.contains("group #1:\n        #  1"));
         assert!(out.contains("\n        #  2 /home/u/.local/share/mise/installs/node/25.9.0/bin"));
         // No trailing newline (caller adds its own)
         assert!(!out.ends_with('\n'));
+    }
+
+    #[test]
+    fn user_conflict_uses_generic_header() {
+        // Non-built-in diagnostic strings get the generic header
+        // that names the diagnostic so the user can grep for it.
+        let entries = entries(&["/foo/a", "/foo/b"]);
+        let d = Diagnostic {
+            index: 0,
+            entry: entries[0].clone(),
+            severity: Severity::Warn,
+            kind: Kind::Conflict {
+                diagnostic: "foo_overlap".into(),
+                groups: vec![vec![0], vec![1]],
+            },
+        };
+        let out = doctor_line(&d, &entries);
+        assert!(
+            out.starts_with("[warn] foo_overlap: multiple conflicting"),
+            "out: {out}"
+        );
+        assert!(out.contains("group #0:"));
+        assert!(out.contains("group #1:"));
     }
 
     // ---- Relation formatters ----------------------------------------

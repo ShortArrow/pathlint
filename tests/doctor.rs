@@ -305,7 +305,8 @@ fn doctor_warns_when_mise_shim_and_install_coexist() {
         stdout.contains("mise activate exposes both shim and install layers"),
         "stdout: {stdout}"
     );
-    // Both layer headers should appear.
-    assert!(stdout.contains("shims:"), "stdout: {stdout}");
-    assert!(stdout.contains("installs:"), "stdout: {stdout}");
+    // Both conflict groups should appear (0.0.11+: groups, not
+    // shims/installs sections).
+    assert!(stdout.contains("group #0:"), "stdout: {stdout}");
+    assert!(stdout.contains("group #1:"), "stdout: {stdout}");
 }

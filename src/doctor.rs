@@ -66,16 +66,17 @@ pub enum Kind {
     Malformed {
         reason: String,
     },
-    /// PATH exposes both `mise/shims/` and `mise/installs/`
-    /// directories at the same time. Usually means `mise activate`
-    /// is configured in both shim and PATH-rewrite modes, or stale
-    /// entries from a past configuration are still in PATH.
-    /// `shim_indices` and `install_indices` list which entries fall
-    /// in each layer; the `Diagnostic.index` points at the first
-    /// shim entry for sort stability.
-    MiseActivateBoth {
-        shim_indices: Vec<usize>,
-        install_indices: Vec<usize>,
+    /// Multiple sources that should not coexist in PATH have all
+    /// fired at once. `diagnostic` is the snake_case label
+    /// identifying the specific conflict (e.g. `mise_activate_both`)
+    /// and comes from a `Relation::ConflictsWhenBothInPath`. Each
+    /// element of `groups` lists the PATH entries that matched the
+    /// corresponding source in the relation's `sources` array.
+    /// `Diagnostic.index` points at the first entry of the first
+    /// non-empty group for sort stability.
+    Conflict {
+        diagnostic: String,
+        groups: Vec<Vec<usize>>,
     },
 }
 
@@ -92,10 +93,12 @@ pub struct Diagnostic {
 }
 
 /// Stable kebabless name for a `Kind` variant. Used by
-/// `pathlint doctor --include` / `--exclude`. Returning a `&'static
-/// str` (not formatting the Debug output) means the names are part
-/// of the public CLI surface and survive struct-field changes.
-pub fn kind_name(kind: &Kind) -> &'static str {
+/// `pathlint doctor --include` / `--exclude`. The names are part of
+/// the public CLI surface — `Conflict` returns the runtime
+/// `diagnostic` field so user-defined relations get filtered by
+/// their declared name (e.g. `mise_activate_both`,
+/// `arm_x86_homebrew_overlap`).
+pub fn kind_name(kind: &Kind) -> &str {
     match kind {
         Kind::Duplicate { .. } => "duplicate",
         Kind::Missing => "missing",
@@ -104,12 +107,16 @@ pub fn kind_name(kind: &Kind) -> &'static str {
         Kind::CaseVariant { .. } => "case_variant",
         Kind::ShortName => "short_name",
         Kind::Malformed { .. } => "malformed",
-        Kind::MiseActivateBoth { .. } => "mise_activate_both",
+        Kind::Conflict { diagnostic, .. } => diagnostic.as_str(),
     }
 }
 
-/// Every name `kind_name` can return. Used for CLI input validation
-/// and help text.
+/// Every static name `kind_name` can return for built-in detectors.
+/// Used for CLI input validation and help text. Conflict diagnostics
+/// declared by user relations are not enumerated here — the CLI
+/// accepts any string and lets unmatched names fall through (the
+/// existing pass-through Filter::apply semantics already covers
+/// "kind name not produced anywhere", which becomes a no-op).
 pub fn all_kind_names() -> &'static [&'static str] {
     &[
         "duplicate",
@@ -459,9 +466,9 @@ fn add_mise_activate_both_diagnostic(
         index: anchor,
         entry: raw[anchor].clone(),
         severity: Severity::Warn,
-        kind: Kind::MiseActivateBoth {
-            shim_indices,
-            install_indices,
+        kind: Kind::Conflict {
+            diagnostic: "mise_activate_both".into(),
+            groups: vec![shim_indices, install_indices],
         },
     });
 }
@@ -653,7 +660,16 @@ mod tests {
         let _ = kinds(&diags);
     }
 
-    // ---- MiseActivateBoth (R3 / 0.0.5+) ------------------------
+    // ---- mise_activate_both Conflict diagnostic ----------------
+
+    fn match_mise_activate_both(d: &Diagnostic) -> Option<(&Vec<usize>, &Vec<usize>)> {
+        if let Kind::Conflict { diagnostic, groups } = &d.kind {
+            if diagnostic == "mise_activate_both" && groups.len() == 2 {
+                return Some((&groups[0], &groups[1]));
+            }
+        }
+        None
+    }
 
     #[test]
     fn mise_activate_both_fires_when_shim_and_install_coexist() {
@@ -663,21 +679,11 @@ mod tests {
             "/usr/bin",
         ]);
         let diags = analyze(&e, Os::Linux, fs_yes, env_none);
-        let mab: Vec<_> = diags
-            .iter()
-            .filter(|d| matches!(d.kind, Kind::MiseActivateBoth { .. }))
-            .collect();
+        let mab: Vec<_> = diags.iter().filter_map(match_mise_activate_both).collect();
         assert_eq!(mab.len(), 1);
-        if let Kind::MiseActivateBoth {
-            shim_indices,
-            install_indices,
-        } = &mab[0].kind
-        {
-            assert_eq!(shim_indices, &vec![0]);
-            assert_eq!(install_indices, &vec![1]);
-        } else {
-            panic!("kind mismatch");
-        }
+        let (shims, installs) = mab[0];
+        assert_eq!(shims, &vec![0]);
+        assert_eq!(installs, &vec![1]);
     }
 
     #[test]
@@ -685,9 +691,11 @@ mod tests {
         let e = entries(&["/home/u/.local/share/mise/shims", "/usr/bin"]);
         let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         assert!(
-            !diags
+            diags
                 .iter()
-                .any(|d| matches!(d.kind, Kind::MiseActivateBoth { .. }))
+                .filter_map(match_mise_activate_both)
+                .next()
+                .is_none()
         );
     }
 
@@ -699,9 +707,11 @@ mod tests {
         ]);
         let diags = analyze(&e, Os::Linux, fs_yes, env_none);
         assert!(
-            !diags
+            diags
                 .iter()
-                .any(|d| matches!(d.kind, Kind::MiseActivateBoth { .. }))
+                .filter_map(match_mise_activate_both)
+                .next()
+                .is_none()
         );
     }
 
@@ -714,22 +724,13 @@ mod tests {
             "/usr/bin",
         ]);
         let diags = analyze(&e, Os::Linux, fs_yes, env_none);
-        let kind = diags
+        let (shims, installs) = diags
             .iter()
-            .find_map(|d| {
-                if let Kind::MiseActivateBoth {
-                    shim_indices,
-                    install_indices,
-                } = &d.kind
-                {
-                    Some((shim_indices.clone(), install_indices.clone()))
-                } else {
-                    None
-                }
-            })
-            .expect("MiseActivateBoth must fire");
-        assert_eq!(kind.0, vec![0]);
-        assert_eq!(kind.1, vec![1, 2]);
+            .filter_map(match_mise_activate_both)
+            .next()
+            .expect("mise_activate_both must fire");
+        assert_eq!(shims, &vec![0]);
+        assert_eq!(installs, &vec![1, 2]);
     }
 
     // ---- Filter / validate / has_error ---------------------------
@@ -765,7 +766,7 @@ mod tests {
             ..Default::default()
         };
         let kept = f.apply(&diags);
-        let names: Vec<&'static str> = kept.iter().map(|d| kind_name(&d.kind)).collect();
+        let names: Vec<&str> = kept.iter().map(|d| kind_name(&d.kind)).collect();
         assert_eq!(names, vec!["missing", "malformed"]);
     }
 
