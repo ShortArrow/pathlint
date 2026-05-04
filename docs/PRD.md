@@ -555,6 +555,33 @@ different from generic Linux (no `/usr/bin`; everything lives under
 `$PREFIX`). A source like `apt` (which means `/usr/bin`) should not
 fire on Termux.
 
+### 8.4 JSON Schema for editors (planned 0.0.11)
+
+The TOML format itself has no built-in schema mechanism, but
+Taplo (the dominant TOML LSP, also bundled in VS Code's "Even
+Better TOML" extension) consumes JSON Schema. 0.0.11 will:
+
+1. Add `schemars` as a build-deps and generate
+   `schemas/pathlint.schema.json` from the live `Config` /
+   `Expectation` / `SourceDef` / `Relation` types — so the
+   schema cannot drift from the parser.
+2. Publish the schema URL via the `gh-pages` branch so it has a
+   stable raw URL (e.g.
+   `https://shortarrow.github.io/pathlint/schemas/pathlint.schema.json`).
+3. Submit a PR to https://www.schemastore.org/ matching
+   `pathlint.toml` so Taplo / Even Better TOML pick it up
+   automatically without per-user setup.
+
+Until Schema Store accepts the entry, users opt in by adding a
+single line at the top of their `pathlint.toml`:
+
+```toml
+#:schema https://shortarrow.github.io/pathlint/schemas/pathlint.schema.json
+```
+
+The schema is regenerated on every release; bumps go in the
+GitHub Release notes alongside `catalog_version`.
+
 ## 9. Built-in source catalog
 
 The default catalog ships as one TOML file per package manager
