@@ -16,8 +16,10 @@ use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 
+use crate::config::{Relation, SourceDef};
 use crate::expand;
 use crate::os_detect::Os;
+use crate::source_match;
 
 /// Real-world `fs_exists` for `analyze`: hits the filesystem.
 pub fn fs_exists_real(path: &str) -> bool {
@@ -30,10 +32,23 @@ pub fn env_lookup_real(var: &str) -> Option<String> {
 }
 
 /// Convenience: production wiring of `analyze` that uses the real
-/// filesystem and process env. Equivalent to
-/// `analyze(entries, os, fs_exists_real, env_lookup_real)`.
-pub fn analyze_real(entries: &[String], os: Os) -> Vec<Diagnostic> {
-    analyze(entries, os, fs_exists_real, env_lookup_real)
+/// filesystem and process env. `sources` and `relations` come from
+/// the merged catalog; relation-driven conflict diagnostics
+/// (`Relation::ConflictsWhenBothInPath`) fire from this set.
+pub fn analyze_real(
+    entries: &[String],
+    sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
+    os: Os,
+) -> Vec<Diagnostic> {
+    analyze(
+        entries,
+        sources,
+        relations,
+        os,
+        fs_exists_real,
+        env_lookup_real,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -200,7 +215,19 @@ pub fn has_error(diags: &[&Diagnostic]) -> bool {
 /// the shortenable-with-an-env-var check). Production passes
 /// `fs_exists_real` / `env_lookup_real`; tests pass deterministic
 /// stubs. See `analyze_real` for the production wiring.
-pub fn analyze<F, V>(entries: &[String], os: Os, fs_exists: F, env_lookup: V) -> Vec<Diagnostic>
+///
+/// `sources` and `relations` together drive
+/// `Kind::Conflict` diagnostics: every
+/// `Relation::ConflictsWhenBothInPath` in `relations` fires when
+/// at least two of its declared `sources` match the current PATH.
+pub fn analyze<F, V>(
+    entries: &[String],
+    sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
+    os: Os,
+    fs_exists: F,
+    env_lookup: V,
+) -> Vec<Diagnostic>
 where
     F: Fn(&str) -> bool,
     V: Fn(&str) -> Option<String>,
@@ -235,7 +262,7 @@ where
         .collect();
     add_duplicate_diagnostics(&normalized, entries, &mut out);
     add_case_variant_diagnostics(entries, &mut out);
-    add_mise_activate_both_diagnostic(&normalized, entries, &mut out);
+    add_relation_conflict_diagnostics(&normalized, entries, sources, relations, os, &mut out);
     out
 }
 
@@ -433,44 +460,83 @@ fn add_duplicate_diagnostics(normalized: &[String], raw: &[String], out: &mut Ve
     }
 }
 
-fn add_mise_activate_both_diagnostic(
+/// Walk every `Relation::ConflictsWhenBothInPath` and fire a
+/// `Kind::Conflict` diagnostic when at least two of its declared
+/// `sources` have matching PATH entries.
+///
+/// `groups[i]` lists the PATH indices matching the i-th source in
+/// the relation's `sources` array. Sources with no matches still
+/// occupy a slot in `groups` (as an empty Vec) so consumers can
+/// align groups with the relation's sources by position.
+///
+/// Pure: every PATH lookup goes through `source_match::find` which
+/// itself is pure. Diagnostics are anchored at the first index of
+/// the first non-empty group for sort stability.
+fn add_relation_conflict_diagnostics(
     normalized: &[String],
     raw: &[String],
+    sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
+    os: Os,
     out: &mut Vec<Diagnostic>,
 ) {
-    // Look for entries that contain `mise/shims` vs `mise/installs`.
-    // We deliberately don't mine the catalog here — these substrings
-    // are the well-known mise layout, and depending on the catalog
-    // (which the user can override) for a hygiene check would be
-    // surprising.
-    let mut shim_indices: Vec<usize> = Vec::new();
-    let mut install_indices: Vec<usize> = Vec::new();
-    for (i, n) in normalized.iter().enumerate() {
-        if n.contains("/mise/shims") {
-            shim_indices.push(i);
+    for rel in relations {
+        let Relation::ConflictsWhenBothInPath {
+            sources: src_names,
+            diagnostic,
+        } = rel
+        else {
+            continue;
+        };
+        let groups: Vec<Vec<usize>> = src_names
+            .iter()
+            .map(|name| matched_entries_for_source(name, normalized, sources, os))
+            .collect();
+        let active = groups.iter().filter(|g| !g.is_empty()).count();
+        if active < 2 {
+            continue;
         }
-        // `/mise/installs` matches both the parent dir and any
-        // `installs/<runtime>/<ver>/bin` underneath it. Both forms
-        // count as "the install layer is present".
-        if n.contains("/mise/installs") {
-            install_indices.push(i);
-        }
+        let anchor = groups
+            .iter()
+            .find_map(|g| g.first().copied())
+            .expect("at least two groups are non-empty");
+        out.push(Diagnostic {
+            index: anchor,
+            entry: raw[anchor].clone(),
+            severity: Severity::Warn,
+            kind: Kind::Conflict {
+                diagnostic: diagnostic.clone(),
+                groups,
+            },
+        });
     }
-    if shim_indices.is_empty() || install_indices.is_empty() {
-        return;
-    }
-    // Anchor the diagnostic at the first shim entry; sort stays
-    // stable that way regardless of how the layers are interleaved.
-    let anchor = shim_indices[0];
-    out.push(Diagnostic {
-        index: anchor,
-        entry: raw[anchor].clone(),
-        severity: Severity::Warn,
-        kind: Kind::Conflict {
-            diagnostic: "mise_activate_both".into(),
-            groups: vec![shim_indices, install_indices],
-        },
-    });
+}
+
+/// Indices of PATH entries (in normalized form) that the named
+/// source matches under `os`. Pure: filters by
+/// `source_match::find` against a single-source catalog so the
+/// boundary check stays consistent with the rest of the
+/// codebase. Returns an empty Vec when the source name is not in
+/// the catalog or the source has no per-OS path on this OS.
+fn matched_entries_for_source(
+    source_name: &str,
+    normalized: &[String],
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+) -> Vec<usize> {
+    let Some(def) = sources.get(source_name) else {
+        return Vec::new();
+    };
+    let mut single = BTreeMap::new();
+    single.insert(source_name.to_string(), def.clone());
+    normalized
+        .iter()
+        .enumerate()
+        .filter_map(|(i, n)| {
+            let hit = source_match::find(n, &single, os);
+            if hit.is_empty() { None } else { Some(i) }
+        })
+        .collect()
 }
 
 fn add_case_variant_diagnostics(raw: &[String], out: &mut Vec<Diagnostic>) {
@@ -543,10 +609,63 @@ mod tests {
         }
     }
 
+    fn empty_sources() -> BTreeMap<String, SourceDef> {
+        BTreeMap::new()
+    }
+
+    fn unix_source(path: &str) -> SourceDef {
+        SourceDef {
+            unix: Some(path.into()),
+            ..Default::default()
+        }
+    }
+
+    /// Re-state the built-in mise relations + sources so each
+    /// doctor test stays self-contained. Production wiring uses
+    /// `catalog::merge_with_user_relations(&cfg.relations)`.
+    ///
+    /// The path uses an absolute literal (not `$HOME/...`) because
+    /// `source_match::find` calls `expand_and_normalize` which reads
+    /// the real process env, and unit tests cannot inject `HOME`
+    /// without `std::env::set_var` (which would race with parallel
+    /// tests). Production sources do use `$HOME` via the embedded
+    /// catalog; that path is exercised by `tests/doctor.rs`.
+    fn mise_sources_and_relations() -> (BTreeMap<String, SourceDef>, Vec<Relation>) {
+        let mut sources = BTreeMap::new();
+        sources.insert(
+            "mise_shims".into(),
+            unix_source("/home/u/.local/share/mise/shims"),
+        );
+        sources.insert(
+            "mise_installs".into(),
+            unix_source("/home/u/.local/share/mise/installs"),
+        );
+        let relations = vec![Relation::ConflictsWhenBothInPath {
+            sources: vec!["mise_shims".into(), "mise_installs".into()],
+            diagnostic: "mise_activate_both".into(),
+        }];
+        (sources, relations)
+    }
+
+    /// Helper: just the relations from `mise_sources_and_relations`.
+    /// Tests that don't need to drive PATH-matching use this with
+    /// `empty_sources()` so the relation walker walks but finds
+    /// nothing — appropriate for tests that exercise other detectors.
+    fn mise_relations() -> Vec<Relation> {
+        mise_sources_and_relations().1
+    }
+
     #[test]
     fn duplicate_detected_on_normalized_form() {
         let e = entries(&["/usr/bin", "/usr/local/bin", "/usr/bin"]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &mise_relations(),
+            Os::Linux,
+            fs_yes,
+            env_none,
+        );
         let dups: Vec<_> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::Duplicate { .. }))
@@ -560,14 +679,28 @@ mod tests {
         // fs_no makes every path "missing" — drives the Missing path
         // without touching the real filesystem.
         let e = entries(&["/anywhere"]);
-        let diags = analyze(&e, Os::Linux, fs_no, env_none);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &mise_relations(),
+            Os::Linux,
+            fs_no,
+            env_none,
+        );
         assert!(diags.iter().any(|d| matches!(d.kind, Kind::Missing)));
     }
 
     #[test]
     fn trailing_slash_detected_but_root_allowed() {
         let e = entries(&["/foo/", "/", "C:/"]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &mise_relations(),
+            Os::Linux,
+            fs_yes,
+            env_none,
+        );
         let trailing: Vec<_> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::TrailingSlash))
@@ -579,7 +712,14 @@ mod tests {
     #[test]
     fn malformed_nul_is_error_severity() {
         let e = entries(&["/foo\0/bar"]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &mise_relations(),
+            Os::Linux,
+            fs_yes,
+            env_none,
+        );
         assert!(
             diags
                 .iter()
@@ -610,6 +750,8 @@ mod tests {
         let e = entries(&["C:\\Users\\Mixed\\GoLang\\bin"]);
         let diags = analyze(
             &e,
+            &empty_sources(),
+            &mise_relations(),
             Os::Windows,
             fs_yes,
             env_map(&[("UserProfile", "C:\\Users\\Mixed")]),
@@ -629,7 +771,14 @@ mod tests {
         // Pre-condition: even if HOME points at a prefix of the entry,
         // we don't suggest anything when the entry already uses $.
         let e = entries(&["$HOME/bin"]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_map(&[("HOME", "/home/u")]));
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &mise_relations(),
+            Os::Linux,
+            fs_yes,
+            env_map(&[("HOME", "/home/u")]),
+        );
         assert!(
             !diags
                 .iter()
@@ -643,7 +792,14 @@ mod tests {
         // Missing does not pollute the result, leaving CaseVariant
         // free to fire on platforms that case-fold.
         let e = entries(&["/Tmp/Pathlint_Case", "/tmp/pathlint_case"]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &mise_relations(),
+            Os::Linux,
+            fs_yes,
+            env_none,
+        );
         let case: Vec<_> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::CaseVariant { .. }))
@@ -654,7 +810,14 @@ mod tests {
     #[test]
     fn empty_entries_are_silently_ignored() {
         let e = entries(&[""]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &mise_relations(),
+            Os::Linux,
+            fs_yes,
+            env_none,
+        );
         // Empty entries are filtered upstream by `split_path`. If one
         // does sneak in, our checks must not blow up.
         let _ = kinds(&diags);
@@ -678,7 +841,8 @@ mod tests {
             "/home/u/.local/share/mise/installs/python/3.14/bin",
             "/usr/bin",
         ]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let (sources, relations) = mise_sources_and_relations();
+        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
         let mab: Vec<_> = diags.iter().filter_map(match_mise_activate_both).collect();
         assert_eq!(mab.len(), 1);
         let (shims, installs) = mab[0];
@@ -689,7 +853,8 @@ mod tests {
     #[test]
     fn mise_activate_both_does_not_fire_when_only_shims_present() {
         let e = entries(&["/home/u/.local/share/mise/shims", "/usr/bin"]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let (sources, relations) = mise_sources_and_relations();
+        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
         assert!(
             diags
                 .iter()
@@ -705,7 +870,8 @@ mod tests {
             "/home/u/.local/share/mise/installs/python/3.14/bin",
             "/usr/bin",
         ]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let (sources, relations) = mise_sources_and_relations();
+        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
         assert!(
             diags
                 .iter()
@@ -723,7 +889,8 @@ mod tests {
             "/home/u/.local/share/mise/installs/node/25.9.0/bin",
             "/usr/bin",
         ]);
-        let diags = analyze(&e, Os::Linux, fs_yes, env_none);
+        let (sources, relations) = mise_sources_and_relations();
+        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
         let (shims, installs) = diags
             .iter()
             .filter_map(match_mise_activate_both)
@@ -731,6 +898,33 @@ mod tests {
             .expect("mise_activate_both must fire");
         assert_eq!(shims, &vec![0]);
         assert_eq!(installs, &vec![1, 2]);
+    }
+
+    #[test]
+    fn user_defined_three_way_conflict_fires() {
+        // Verifies the relation-driven generality: a user-supplied
+        // ConflictsWhenBothInPath with three sources detects all
+        // three-way overlaps, not just mise.
+        let e = entries(&["/foo/a", "/foo/b", "/foo/c", "/usr/bin"]);
+        let mut sources = BTreeMap::new();
+        sources.insert("a".into(), unix_source("/foo/a"));
+        sources.insert("b".into(), unix_source("/foo/b"));
+        sources.insert("c".into(), unix_source("/foo/c"));
+        let relations = vec![Relation::ConflictsWhenBothInPath {
+            sources: vec!["a".into(), "b".into(), "c".into()],
+            diagnostic: "abc_overlap".into(),
+        }];
+        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
+        let groups = diags
+            .iter()
+            .find_map(|d| match &d.kind {
+                Kind::Conflict { diagnostic, groups } if diagnostic == "abc_overlap" => {
+                    Some(groups.clone())
+                }
+                _ => None,
+            })
+            .expect("abc_overlap must fire");
+        assert_eq!(groups, vec![vec![0], vec![1], vec![2]]);
     }
 
     // ---- Filter / validate / has_error ---------------------------
