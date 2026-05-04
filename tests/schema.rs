@@ -21,12 +21,17 @@ fn checked_in_schema_matches_generator() {
     let on_disk = fs::read_to_string("schemas/pathlint.schema.json")
         .expect("schemas/pathlint.schema.json must exist; run `cargo run --bin gen_schema > schemas/pathlint.schema.json`");
 
-    // Tolerate trailing newlines from the redirected `cargo run`
-    // output. Otherwise compare verbatim — even whitespace shifts
-    // are real schema changes worth committing.
+    // Compare line-endings-insensitive. Git's `core.autocrlf` on
+    // Windows checks the schema file out with CRLF, while the
+    // generator always emits LF — without normalization, the drift
+    // gate would always fail on Windows runners. Whitespace inside
+    // each line is still load-bearing (any real schema shift
+    // changes byte content, not line-ending style).
+    let actual_normalized = actual.replace("\r\n", "\n");
+    let on_disk_normalized = on_disk.replace("\r\n", "\n");
     assert_eq!(
-        actual.trim_end(),
-        on_disk.trim_end(),
+        actual_normalized.trim_end(),
+        on_disk_normalized.trim_end(),
         "checked-in schemas/pathlint.schema.json is out of date. \
          Regenerate with: cargo run --bin gen_schema > schemas/pathlint.schema.json"
     );
