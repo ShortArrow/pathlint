@@ -239,7 +239,7 @@ lazygit
   resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
   sources:  mise_installs, mise
   provenance: cargo (via mise plugin `cargo-jesseduffield-lazygit`)
-  hint:     mise uninstall cargo:jesseduffield-lazygit  (best-guess; verify with `mise plugins ls`)
+  hint:     mise uninstall cargo:'jesseduffield-lazygit'  (best-guess; verify with `mise plugins ls`)
 ```
 
 The provenance is a path heuristic — it never causes
@@ -272,10 +272,11 @@ LSP) and the [Even Better TOML][ebt] VS Code extension:
 #:schema https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json
 ```
 
-Pin to a specific release for reproducibility:
+Pin to a specific release for reproducibility (replace `<TAG>`
+with the version you want, e.g. `v0.0.13`):
 
 ```toml
-#:schema https://github.com/ShortArrow/pathlint/releases/download/v0.0.11/pathlint.schema.json
+#:schema https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json
 ```
 
 The schema is also attached as `pathlint.schema.json` to every

@@ -365,7 +365,7 @@ plugin provenance は relation 駆動のラベルで、R4 専用。
   "matched_sources": ["mise_installs", "mise"],
   "uninstall": {
     "kind": "command",
-    "command": "mise uninstall cargo:lazygit  (best-guess; verify with `mise plugins ls`)"
+    "command": "mise uninstall cargo:'lazygit'  (best-guess; verify with `mise plugins ls`)"
   },
   "provenance": {
     "kind": "mise_installer_plugin",
@@ -542,8 +542,9 @@ VS Code の "Even Better TOML" にも同梱）は JSON Schema を読める。
 
 - **main の最新**（merge ごとに更新）:
   `https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json`
-- **特定リリース**（tag で凍結）:
-  `https://github.com/ShortArrow/pathlint/releases/download/v0.0.11/pathlint.schema.json`
+- **特定リリース**（tag で凍結 — `<TAG>` は固定したいバージョン
+  に置き換える、例: `v0.0.13`）:
+  `https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json`
 
 `pathlint.toml` の先頭 1 行で opt-in：
 

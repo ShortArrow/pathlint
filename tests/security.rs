@@ -188,3 +188,51 @@ fn check_rejects_double_symlinked_rules() {
         "stderr should mention the symlink policy: {stderr}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn check_accepts_relative_symlink_to_real_file() {
+    // 0.0.13: 1-hop symlink whose target is a *relative* path
+    // (e.g. `real.toml`, not `/abs/real.toml`) must be resolved
+    // relative to the link's parent directory, not relative to
+    // the process cwd. Earlier code stat-ed the relative target
+    // directly and either spuriously rejected or spuriously
+    // accepted depending on what cwd happened to be.
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real.toml");
+    fs::write(&real, "").unwrap();
+    let link = tmp.path().join("link.toml");
+    symlink("real.toml", &link).unwrap(); // relative target
+
+    let (code, stdout, stderr) = run("check", &link, "/usr/bin");
+    assert_eq!(
+        code, 0,
+        "relative-target single symlink must be accepted; stdout: {stdout} stderr: {stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn check_rejects_relative_symlink_chain() {
+    // 0.0.13: a relative-target symlink chain (link2 -> link1 ->
+    // real.toml, both relative) must still be rejected by the
+    // multi-hop policy.
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real.toml");
+    fs::write(&real, "").unwrap();
+    let link1 = tmp.path().join("link1.toml");
+    symlink("real.toml", &link1).unwrap();
+    let link2 = tmp.path().join("link2.toml");
+    symlink("link1.toml", &link2).unwrap();
+
+    let (code, _stdout, stderr) = run("check", &link2, "/usr/bin");
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("not a regular file") || stderr.contains("symlink"),
+        "stderr should mention the symlink policy: {stderr}"
+    );
+}

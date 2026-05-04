@@ -134,7 +134,8 @@ pub fn where_human(found: &Found) -> String {
         }
         UninstallHint::NoTemplate { source } => {
             buf.push_str(&format!(
-                "  hint:     (no uninstall template for source `{source}`)"
+                "  hint:     (no uninstall template for source `{}`)",
+                strip_control_chars(source)
             ));
         }
         UninstallHint::NoSource => {
@@ -145,9 +146,10 @@ pub fn where_human(found: &Found) -> String {
 }
 
 /// Render a NotFound `where` outcome — single line, no trailing
-/// newline.
+/// newline. The command name is stripped of control characters so
+/// a hostile CLI argument cannot inject ANSI escapes here either.
 pub fn where_not_found(command: &str) -> String {
-    format!("{command} — not found on PATH")
+    format!("{} — not found on PATH", strip_control_chars(command))
 }
 
 /// Convenience: render a complete `WhereOutcome` to a single
@@ -665,6 +667,29 @@ mod tests {
         let out = where_not_found("ghost");
         assert_eq!(out, "ghost — not found on PATH");
         assert!(!out.ends_with('\n'));
+    }
+
+    #[test]
+    fn where_not_found_strips_control_chars_from_command() {
+        // 0.0.13: a hostile command argument such as `rg\x1b[31m`
+        // must not leak the raw escape into stdout.
+        let out = where_not_found("rg\x1b[31m");
+        assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
+        assert!(out.contains("rg?[31m"), "expected stripped form: {out:?}");
+    }
+
+    #[test]
+    fn where_human_no_template_strips_control_chars_from_source() {
+        // 0.0.13: a hostile [source.evil\x1b[31m] declared in
+        // pathlint.toml must not paint the terminal when its
+        // uninstall hint reaches the NoTemplate branch.
+        let mut f = found_minimal();
+        f.uninstall = UninstallHint::NoTemplate {
+            source: "aqua\x1b[31m".into(),
+        };
+        let out = where_human(&f);
+        assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
+        assert!(out.contains("aqua?[31m"), "expected stripped form: {out:?}");
     }
 
     #[test]
