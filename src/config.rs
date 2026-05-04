@@ -235,10 +235,66 @@ impl Config {
     }
 
     pub fn from_path(path: &Path) -> Result<Self, ConfigError> {
-        let text = fs::read_to_string(path)
-            .map_err(|e| ConfigError::Read(path.display().to_string(), e.to_string()))?;
+        let text = load_rules_text(path)?;
         Self::parse_toml(&text)
     }
+}
+
+/// Maximum size in bytes for a rules TOML. Anything larger is
+/// rejected before any disk read so a hostile or accidental huge
+/// file cannot OOM pathlint at startup. 16 MiB is several orders
+/// of magnitude above any real-world `pathlint.toml`; bumping it
+/// is a config decision, not a security one.
+pub const RULES_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Read a rules-file TOML from disk with two preflight guards:
+///
+/// 1. **Symlink policy**: a symlink at `path` is followed at most
+///    one hop. If the target is itself a symlink, the read is
+///    rejected. This keeps pathlint compatible with dotfiles
+///    layouts (where `~/.config/pathlint/pathlint.toml` is often
+///    a symlink into a managed checkout) while blocking
+///    multi-hop chains that an attacker can use to mask the real
+///    target.
+/// 2. **Size cap**: `RULES_MAX_BYTES` (16 MiB). Anything beyond
+///    is rejected before any byte is buffered. Without this a
+///    `--rules /dev/zero` would happily consume all RAM.
+///
+/// Returns the full file contents as `String`. Errors carry
+/// `ConfigError` variants suitable for surfacing as exit code 2.
+fn load_rules_text(path: &Path) -> Result<String, ConfigError> {
+    let display = path.display().to_string();
+    let lst = fs::symlink_metadata(path)
+        .map_err(|e| ConfigError::Read(display.clone(), e.to_string()))?;
+    if lst.file_type().is_symlink() {
+        // Follow exactly one hop. The target itself must be a
+        // regular file — symlink → symlink → file is rejected to
+        // limit the trust chain.
+        let target_lst =
+            fs::symlink_metadata(fs::read_link(path).map_err(|e| {
+                ConfigError::Read(display.clone(), format!("read_link failed: {e}"))
+            })?)
+            .map_err(|e| {
+                ConfigError::Read(display.clone(), format!("symlink target stat failed: {e}"))
+            })?;
+        if target_lst.file_type().is_symlink() {
+            return Err(ConfigError::RulesNotRegularFile(display));
+        }
+        if !target_lst.is_file() {
+            return Err(ConfigError::RulesNotRegularFile(display));
+        }
+        if target_lst.len() > RULES_MAX_BYTES {
+            return Err(ConfigError::RulesTooLarge(display, target_lst.len()));
+        }
+    } else {
+        if !lst.is_file() {
+            return Err(ConfigError::RulesNotRegularFile(display));
+        }
+        if lst.len() > RULES_MAX_BYTES {
+            return Err(ConfigError::RulesTooLarge(display, lst.len()));
+        }
+    }
+    fs::read_to_string(path).map_err(|e| ConfigError::Read(display, e.to_string()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -247,6 +303,12 @@ pub enum ConfigError {
     Read(String, String),
     #[error("failed to parse pathlint.toml: {0}")]
     Parse(String),
+    #[error(
+        "{0} is not a regular file (a single-hop symlink to a regular file is the only indirection allowed)"
+    )]
+    RulesNotRegularFile(String),
+    #[error("{0} is too large ({1} bytes); rules files are capped at 16 MiB")]
+    RulesTooLarge(String, u64),
 }
 
 #[cfg(test)]
