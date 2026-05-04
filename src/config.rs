@@ -263,41 +263,82 @@ pub const RULES_MAX_BYTES: u64 = 16 * 1024 * 1024;
 ///    is rejected before any byte is buffered. Without this a
 ///    `--rules /dev/zero` would happily consume all RAM.
 ///
+/// 0.0.13 hardens this against a TOCTOU race that 0.0.11–0.0.12
+/// inherited: `File::open(path)` is called once, and every
+/// subsequent check (file kind, size cap, byte read) goes through
+/// the same kernel handle. A racing rename/unlink between the
+/// stat and the open cannot affect a check that is performed on
+/// the open handle itself. The multi-hop symlink test is still
+/// done via `fs::read_link` because that is a one-shot string
+/// operation that does not race with the open.
+///
 /// Returns the full file contents as `String`. Errors carry
 /// `ConfigError` variants suitable for surfacing as exit code 2.
 fn load_rules_text(path: &Path) -> Result<String, ConfigError> {
+    use std::io::Read;
+
     let display = path.display().to_string();
+
+    // Step 1: classify the path itself. We need to know whether it
+    // is a symlink so we can apply the multi-hop check below; the
+    // rest of the validation runs on the opened handle.
     let lst = fs::symlink_metadata(path)
         .map_err(|e| ConfigError::Read(display.clone(), e.to_string()))?;
-    if lst.file_type().is_symlink() {
-        // Follow exactly one hop. The target itself must be a
-        // regular file — symlink → symlink → file is rejected to
-        // limit the trust chain.
-        let target_lst =
-            fs::symlink_metadata(fs::read_link(path).map_err(|e| {
-                ConfigError::Read(display.clone(), format!("read_link failed: {e}"))
-            })?)
-            .map_err(|e| {
-                ConfigError::Read(display.clone(), format!("symlink target stat failed: {e}"))
-            })?;
+    let is_symlink = lst.file_type().is_symlink();
+
+    // Step 2: when path is a symlink, ensure it points directly at
+    // a regular file (not at another symlink). 0.0.12 had a bug
+    // here: it called `fs::symlink_metadata(fs::read_link(path))`
+    // which interprets a relative target relative to the process
+    // cwd, not relative to `path.parent()`. Fix that by joining the
+    // target against the link's parent dir before re-statting.
+    if is_symlink {
+        let target = fs::read_link(path)
+            .map_err(|e| ConfigError::Read(display.clone(), format!("read_link failed: {e}")))?;
+        let resolved_target = if target.is_absolute() {
+            target
+        } else {
+            path.parent().map(|p| p.join(&target)).unwrap_or(target)
+        };
+        let target_lst = fs::symlink_metadata(&resolved_target).map_err(|e| {
+            ConfigError::Read(display.clone(), format!("symlink target stat failed: {e}"))
+        })?;
         if target_lst.file_type().is_symlink() {
             return Err(ConfigError::RulesNotRegularFile(display));
         }
-        if !target_lst.is_file() {
-            return Err(ConfigError::RulesNotRegularFile(display));
-        }
-        if target_lst.len() > RULES_MAX_BYTES {
-            return Err(ConfigError::RulesTooLarge(display, target_lst.len()));
-        }
-    } else {
-        if !lst.is_file() {
-            return Err(ConfigError::RulesNotRegularFile(display));
-        }
-        if lst.len() > RULES_MAX_BYTES {
-            return Err(ConfigError::RulesTooLarge(display, lst.len()));
-        }
     }
-    fs::read_to_string(path).map_err(|e| ConfigError::Read(display, e.to_string()))
+
+    // Step 3: open exactly once. `File::open` follows the (single
+    // allowed) symlink and gives us a handle that subsequent
+    // checks bind to. Even if an attacker swaps the path/symlink
+    // target between symlink_metadata and open, the swap would be
+    // visible to the OS at open time and to every check after.
+    let file =
+        std::fs::File::open(path).map_err(|e| ConfigError::Read(display.clone(), e.to_string()))?;
+
+    // Step 4: validate the *opened handle*. metadata() on File
+    // queries the kernel handle, so the `is_file` and `len`
+    // checks below cannot be defeated by a path-level race.
+    let md = file
+        .metadata()
+        .map_err(|e| ConfigError::Read(display.clone(), e.to_string()))?;
+    if !md.is_file() {
+        return Err(ConfigError::RulesNotRegularFile(display));
+    }
+    if md.len() > RULES_MAX_BYTES {
+        return Err(ConfigError::RulesTooLarge(display, md.len()));
+    }
+
+    // Step 5: read from the same handle, capped at MAX+1 so a file
+    // that grew between metadata() and read() is still rejected.
+    let mut buf = String::new();
+    file.take(RULES_MAX_BYTES + 1)
+        .read_to_string(&mut buf)
+        .map_err(|e| ConfigError::Read(display.clone(), e.to_string()))?;
+    if buf.len() as u64 > RULES_MAX_BYTES {
+        return Err(ConfigError::RulesTooLarge(display, buf.len() as u64));
+    }
+    Ok(buf)
 }
 
 #[derive(Debug, thiserror::Error)]
