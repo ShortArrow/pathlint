@@ -598,8 +598,9 @@ Two stable URLs for users to pin:
 
 - **Latest main** (auto-updates per merge):
   `https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json`
-- **Specific release** (frozen at tag):
-  `https://github.com/ShortArrow/pathlint/releases/download/v0.0.11/pathlint.schema.json`
+- **Specific release** (frozen at tag — replace `<TAG>` with
+  the version you want, e.g. `v0.0.13`):
+  `https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json`
 
 Users opt in with a single line at the top of `pathlint.toml`:
 
