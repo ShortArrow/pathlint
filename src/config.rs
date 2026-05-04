@@ -9,8 +9,9 @@ use std::path::Path;
 use serde::Deserialize;
 
 /// Top-level `pathlint.toml` document.
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Clone, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(title = "pathlint.toml")]
 pub struct Config {
     /// Catalog version embedded in the running binary. Set only by
     /// the embedded `embedded_catalog.toml`; user `pathlint.toml`
@@ -43,7 +44,7 @@ pub struct Config {
 /// A relation between sources, declared as `[[relation]]` in plugin
 /// or user TOML. The `kind` discriminator decides which payload
 /// fields are required; serde rejects unknown kinds.
-#[derive(Debug, Deserialize, serde::Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, serde::Serialize, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Relation {
     /// One source is a catch-all alias for one or more more-specific
@@ -98,7 +99,7 @@ pub enum Relation {
 }
 
 /// A single `[[expect]]` entry.
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Clone, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Expectation {
     pub command: String,
@@ -135,7 +136,9 @@ pub struct Expectation {
 
 /// Per-rule severity for `[[expect]]`. Defaults to `Error` so 0.0.x
 /// rules behave exactly as before.
-#[derive(Debug, Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     /// NG escalates to exit 1. Default.
@@ -149,7 +152,7 @@ pub enum Severity {
 /// today; deliberately kept minimal so we can grow it on real
 /// demand instead of OS-specific permutations of `script` /
 /// `binary` / `dll` / `wrapper`.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     /// The resolved path must be an executable file: not a
@@ -160,7 +163,7 @@ pub enum Kind {
 
 /// A `[source.<name>]` definition. Each per-OS field is an optional
 /// substring (post env-var expansion / slash normalization).
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Clone, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceDef {
     #[serde(default)]

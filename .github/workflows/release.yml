@@ -157,6 +157,10 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -165,10 +169,19 @@ jobs:
       - name: Show artifacts
         run: ls -la dist
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate JSON Schema
+        # Re-run the generator from the tagged commit so the
+        # release asset matches the schemars derive at that
+        # version. The drift test in CI guarantees the result
+        # matches schemas/pathlint.schema.json on main.
+        run: cargo run --release --bin gen_schema > dist/pathlint.schema.json
+
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum *.tar.gz *.zip 2>/dev/null | tee SHA256SUMS
+          sha256sum *.tar.gz *.zip pathlint.schema.json 2>/dev/null | tee SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -180,6 +193,7 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/pathlint.schema.json
             dist/SHA256SUMS
 
   publish-crates:

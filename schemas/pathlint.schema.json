@@ -1,0 +1,343 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "pathlint.toml",
+  "description": "Top-level `pathlint.toml` document.",
+  "type": "object",
+  "properties": {
+    "catalog_version": {
+      "description": "Catalog version embedded in the running binary. Set only by the embedded `embedded_catalog.toml`; user `pathlint.toml` files leave this `None` and use `require_catalog` instead.",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "expect": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Expectation"
+      }
+    },
+    "relation": {
+      "description": "Declarative relations between sources. The built-in catalog declares them in `plugins/<name>.toml`; users can also write their own in `pathlint.toml` to express alias / conflict / served-by-via / depends-on relationships between custom sources. See PRD §9.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Relation"
+      }
+    },
+    "require_catalog": {
+      "description": "Minimum embedded catalog version this `pathlint.toml` requires. If set, pathlint refuses to run when the binary's `catalog_version` is lower (config error, exit 2). Leave unset to opt out of the check.",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/SourceDef"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Expectation": {
+      "description": "A single `[[expect]]` entry.",
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "avoid": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "command": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "R2 — shape check on the resolved path. When set, pathlint verifies the resolved file matches the expected kind in addition to the source check. See PRD §7.6.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Kind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "optional": {
+          "default": false,
+          "type": "boolean"
+        },
+        "os": {
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "prefer": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "severity": {
+          "description": "How a failure on this rule should affect the run's exit code. `error` (default, 0.0.x behaviour) escalates an NG to exit 1 — appropriate for \"this absolutely must come from cargo\" rules. `warn` keeps the diagnostic visible but lets the run pass (exit 0) — appropriate for nudges and preferences in CI where a single rogue path should not block the build. The shape (NG variant, resolved path, etc.) is unchanged; only the exit-code consequence differs.",
+          "default": "error",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Severity"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Kind": {
+      "description": "Shape vocabulary for `[[expect]] kind = ...`. Only `executable` today; deliberately kept minimal so we can grow it on real demand instead of OS-specific permutations of `script` / `binary` / `dll` / `wrapper`.",
+      "oneOf": [
+        {
+          "description": "The resolved path must be an executable file: not a directory, not a broken symlink, and on Unix have at least one `+x` mode bit set.",
+          "type": "string",
+          "enum": [
+            "executable"
+          ]
+        }
+      ]
+    },
+    "Relation": {
+      "description": "A relation between sources, declared as `[[relation]]` in plugin or user TOML. The `kind` discriminator decides which payload fields are required; serde rejects unknown kinds.",
+      "oneOf": [
+        {
+          "description": "One source is a catch-all alias for one or more more-specific children. Matching the parent does not exclude matching the children — both can fire on the same path. Used today for the `mise` parent over `mise_shims` and `mise_installs`.",
+          "type": "object",
+          "required": [
+            "children",
+            "kind",
+            "parent"
+          ],
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "alias_of"
+              ]
+            },
+            "parent": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Two or more sources should not be active in PATH at the same time; `pathlint doctor` raises `diagnostic` (the snake_case `Kind` name) when more than one of them appears in PATH. Used today for `mise_activate_both`.",
+          "type": "object",
+          "required": [
+            "diagnostic",
+            "kind",
+            "sources"
+          ],
+          "properties": {
+            "diagnostic": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "conflicts_when_both_in_path"
+              ]
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`host` serves binaries that originally came from `guest_provider` via paths matching `guest_pattern`. Used by `pathlint where` to attribute provenance through wrapper installers (e.g. mise installing a cargo binary).\n\n`installer_token` (0.0.10+) is the human-facing installer name that uninstall hints quote — it can differ from the `guest_provider` source name. For example, `guest_provider = \"pip_user\"` but `installer_token = \"pipx\"` because `mise uninstall pipx:black` is what the user runs. `None` falls back to `guest_provider`.",
+          "type": "object",
+          "required": [
+            "guest_pattern",
+            "guest_provider",
+            "host",
+            "kind"
+          ],
+          "properties": {
+            "guest_pattern": {
+              "type": "string"
+            },
+            "guest_provider": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "installer_token": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "served_by_via"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`target` is a hard prerequisite of the source declaring this relation (the implicit subject is the plugin file's source). Surfaced by `pathlint where` so users know that uninstalling a wrapper does not remove the underlying tool.",
+          "type": "object",
+          "required": [
+            "kind",
+            "source",
+            "target"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "depends_on"
+              ]
+            },
+            "source": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`earlier` should come before `later` in PATH for the user's preferred resolution order. Consumed by `pathlint sort` to break ties within the same preferred/neutral/avoided bucket. Forms a directed edge (`earlier` -> `later`) for cycle detection.",
+          "type": "object",
+          "required": [
+            "earlier",
+            "kind",
+            "later"
+          ],
+          "properties": {
+            "earlier": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "prefer_order_over"
+              ]
+            },
+            "later": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Severity": {
+      "description": "Per-rule severity for `[[expect]]`. Defaults to `Error` so 0.0.x rules behave exactly as before.",
+      "oneOf": [
+        {
+          "description": "NG escalates to exit 1. Default.",
+          "type": "string",
+          "enum": [
+            "error"
+          ]
+        },
+        {
+          "description": "NG is reported but does not change the exit code.",
+          "type": "string",
+          "enum": [
+            "warn"
+          ]
+        }
+      ]
+    },
+    "SourceDef": {
+      "description": "A `[source.<name>]` definition. Each per-OS field is an optional substring (post env-var expansion / slash normalization).",
+      "type": "object",
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "linux": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "macos": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "termux": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uninstall_command": {
+          "description": "R4 — shell command template that uninstalls a binary served by this source. The substring `{bin}` is substituted with the resolved binary's stem (filename without extension). Used by `pathlint where`. Leave unset for sources where uninstall is not a meaningful single command (e.g. shim layers, system_*).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unix": {
+          "description": "Convenience: applied to macos / linux / termux when those are not separately set.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "windows": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
