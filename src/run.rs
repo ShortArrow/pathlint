@@ -139,11 +139,6 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
         include: args.include.clone(),
         exclude: args.exclude.clone(),
     };
-    // Validate before running anything else so a typo is caught
-    // fast (exit 2 — config error, not a lint failure).
-    if let Err(msg) = doctor::validate_filter_names(&filter) {
-        anyhow::bail!(msg);
-    }
 
     // doctor lints PATH itself but still consumes the merged
     // catalog (e.g. `mise_activate_both` uses source paths). A
@@ -157,6 +152,16 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     let merged = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&merged, Os::current())?;
     let relations = catalog::merge_with_user_relations(&cfg.relations);
+
+    // Validate the filter against built-in kind names plus any
+    // user-declared conflict diagnostics from the merged relation
+    // set. Validation runs after relations are loaded so that
+    // `--include foo_overlap` survives a fast-fail check when the
+    // user declared `[[relation]] diagnostic = "foo_overlap"`.
+    let user_diags = doctor::user_diagnostic_names(&relations);
+    if let Err(msg) = doctor::validate_filter_names(&filter, &user_diags) {
+        anyhow::bail!(msg);
+    }
 
     let entries = read_path_entries(global);
     let diags = doctor::analyze_real(&entries, &merged, &relations, Os::current());

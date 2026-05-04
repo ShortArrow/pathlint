@@ -183,21 +183,45 @@ impl Filter {
     }
 }
 
-/// Reject any name in `filter` that isn't a valid `Kind` discriminator.
+/// Reject any name in `filter` that isn't a valid `Kind` discriminator
+/// or a user-declared `ConflictsWhenBothInPath` diagnostic name.
 /// Returns `Err` carrying a one-line message naming the offending
 /// name and the valid set, suitable for surfacing as exit code 2.
-pub fn validate_filter_names(filter: &Filter) -> Result<(), String> {
-    let known: std::collections::BTreeSet<&'static str> =
-        all_kind_names().iter().copied().collect();
+///
+/// `extra_known` is the diagnostic-name list collected from the
+/// merged relation set (see `user_diagnostic_names`). Without it,
+/// `pathlint doctor --include foo_overlap` would be hard-rejected
+/// even when the user declared `[[relation]] kind =
+/// "conflicts_when_both_in_path" diagnostic = "foo_overlap"`.
+pub fn validate_filter_names(filter: &Filter, extra_known: &[String]) -> Result<(), String> {
+    let mut known: std::collections::BTreeSet<String> =
+        all_kind_names().iter().map(|s| (*s).to_string()).collect();
+    known.extend(extra_known.iter().cloned());
     for name in filter.include.iter().chain(filter.exclude.iter()) {
-        if !known.contains(name.as_str()) {
+        if !known.contains(name) {
+            let mut all: Vec<String> = known.iter().cloned().collect();
+            all.sort();
             return Err(format!(
                 "unknown doctor kind `{name}`; valid values: {}",
-                all_kind_names().join(", ")
+                all.join(", ")
             ));
         }
     }
     Ok(())
+}
+
+/// Collect the `diagnostic` strings declared by every
+/// `ConflictsWhenBothInPath` relation in `relations`. Used by
+/// `validate_filter_names` so user-defined conflict names flow
+/// through `--include` / `--exclude` correctly. Pure.
+pub fn user_diagnostic_names(relations: &[Relation]) -> Vec<String> {
+    relations
+        .iter()
+        .filter_map(|r| match r {
+            Relation::ConflictsWhenBothInPath { diagnostic, .. } => Some(diagnostic.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Does the (already-filtered) set of diagnostics contain at least
@@ -1002,7 +1026,7 @@ mod tests {
             include: vec!["duplicate".into(), "malformed".into()],
             exclude: vec![],
         };
-        assert!(validate_filter_names(&f).is_ok());
+        assert!(validate_filter_names(&f, &[]).is_ok());
     }
 
     #[test]
@@ -1011,7 +1035,7 @@ mod tests {
             include: vec!["duplicat".into()],
             exclude: vec![],
         };
-        let err = validate_filter_names(&f).unwrap_err();
+        let err = validate_filter_names(&f, &[]).unwrap_err();
         assert!(err.contains("duplicat"));
         assert!(err.contains("duplicate"), "valid list must be listed");
     }
@@ -1022,7 +1046,40 @@ mod tests {
             include: vec![],
             exclude: vec!["nope".into()],
         };
-        assert!(validate_filter_names(&f).is_err());
+        assert!(validate_filter_names(&f, &[]).is_err());
+    }
+
+    #[test]
+    fn validate_filter_names_accepts_user_defined_diagnostic() {
+        // 0.0.13: user-declared `[[relation]] kind =
+        // "conflicts_when_both_in_path" diagnostic = "foo_overlap"`
+        // surfaces "foo_overlap" as a valid filter name.
+        let f = Filter {
+            include: vec!["foo_overlap".into()],
+            exclude: vec![],
+        };
+        let extra = vec!["foo_overlap".to_string()];
+        assert!(validate_filter_names(&f, &extra).is_ok());
+    }
+
+    #[test]
+    fn user_diagnostic_names_collects_only_conflict_kinds() {
+        let relations = vec![
+            Relation::AliasOf {
+                parent: "p".into(),
+                children: vec!["c".into()],
+            },
+            Relation::ConflictsWhenBothInPath {
+                sources: vec!["a".into(), "b".into()],
+                diagnostic: "ab_overlap".into(),
+            },
+            Relation::DependsOn {
+                source: "x".into(),
+                target: "y".into(),
+            },
+        ];
+        let names = user_diagnostic_names(&relations);
+        assert_eq!(names, vec!["ab_overlap".to_string()]);
     }
 
     #[test]

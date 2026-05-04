@@ -344,3 +344,69 @@ fn doctor_warns_when_mise_shim_and_install_coexist() {
     assert!(stdout.contains("group #0:"), "stdout: {stdout}");
     assert!(stdout.contains("group #1:"), "stdout: {stdout}");
 }
+
+#[test]
+fn doctor_include_accepts_user_defined_diagnostic() {
+    // 0.0.13: a user [[relation]] kind = "conflicts_when_both_in_path"
+    // declares an arbitrary diagnostic name; --include must accept
+    // it instead of failing the typo check (Z17a-M2).
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = tmp.path().join("pathlint.toml");
+    fs::write(
+        &rules,
+        r#"
+[[relation]]
+kind = "conflicts_when_both_in_path"
+sources = ["a", "b"]
+diagnostic = "foo_overlap"
+"#,
+    )
+    .unwrap();
+
+    // Empty PATH so no built-in diagnostic fires either.
+    let out = Command::new(BIN)
+        .arg("--rules")
+        .arg(&rules)
+        .arg("doctor")
+        .arg("--include")
+        .arg("foo_overlap")
+        .env("PATH", "/usr/bin")
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("failed to run pathlint binary");
+    let code = out.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Acceptance test: must NOT exit 2 (config error). The actual
+    // doctor run might exit 0 (no match) or 1 (a match found); the
+    // load-bearing assertion is "validate_filter_names did not
+    // reject the name as unknown".
+    assert_ne!(
+        code, 2,
+        "--include foo_overlap was rejected: stderr: {stderr}"
+    );
+    assert!(!stderr.contains("unknown doctor kind"), "stderr: {stderr}");
+}
+
+#[test]
+fn doctor_include_still_rejects_unknown_typos() {
+    // 0.0.13: even with user-defined diagnostics accepted, a name
+    // that is neither built-in nor user-declared still fails.
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = tmp.path().join("pathlint.toml");
+    fs::write(&rules, "").unwrap();
+
+    let out = Command::new(BIN)
+        .arg("--rules")
+        .arg(&rules)
+        .arg("doctor")
+        .arg("--include")
+        .arg("duplicat") // typo of "duplicate"
+        .env("PATH", "/usr/bin")
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("failed to run pathlint binary");
+    let code = out.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("unknown doctor kind"), "stderr: {stderr}");
+}
