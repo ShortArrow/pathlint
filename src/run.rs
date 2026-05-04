@@ -154,11 +154,12 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
     };
-    let merged_for_validation = catalog::merge_with_user(&cfg.source);
-    enforce_source_validation(&merged_for_validation, Os::current())?;
+    let merged = catalog::merge_with_user(&cfg.source);
+    enforce_source_validation(&merged, Os::current())?;
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
 
     let entries = read_path_entries(global);
-    let diags = doctor::analyze_real(&entries, Os::current());
+    let diags = doctor::analyze_real(&entries, &merged, &relations, Os::current());
     let kept = filter.apply(&diags);
 
     if args.json {

@@ -297,12 +297,21 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
   - Shortenable entries — could be written using a known env var
     (`%LocalAppData%` / `%UserProfile%` / `$HOME` etc.); the
     suggestion preserves the original case + slash style.
-  - (0.0.5+) `MiseActivateBoth` — PATH exposes both `mise/shims/`
-    and `mise/installs/` simultaneously. Usually means
-    `mise activate` is configured in both shim and PATH-rewrite
-    modes, or stale entries from a past configuration are still
-    in PATH. Output enumerates every shim and install entry so
-    the user can pick which to remove.
+  - `Conflict` — two or more sources that should not coexist in
+    PATH have all matched. The diagnostic name comes from a
+    `Relation::ConflictsWhenBothInPath` declaration (built-in or
+    user-supplied via `pathlint.toml`). Output enumerates each
+    source's matched PATH entries under a numbered `group #N:`
+    block. Built-in coverage as of 0.0.11: `mise_activate_both`
+    (mise shim + install layers active simultaneously). Users
+    can declare new conflicts without touching pathlint by adding
+    `[[relation]] kind = "conflicts_when_both_in_path"` blocks.
+    Before 0.0.11 this was a hard-coded `mise/shims` vs
+    `mise/installs` substring check; relation-driven detection
+    needs the relation's declared sources to actually match the
+    current PATH (so a user override that points
+    `[source.mise_shims]` somewhere else changes when the
+    diagnostic fires — usually the right behaviour).
 - `--quiet` hides warns; errors always print.
 - (0.0.6+) `--include <kind>[,<kind>...]` shows only the named
   kinds; `--exclude <kind>[,<kind>...]` suppresses them. The two
@@ -318,8 +327,10 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
   the discriminator `kind`, and any per-kind payload fields
   (`suggestion` for shortenable, `canonical` for case_variant,
   `first_index` for duplicate, `reason` for malformed, and
-  `shim_indices` / `install_indices` for mise_activate_both).
-  Schema is stable through 0.0.x and parallels `check --json` /
+  `diagnostic` + `groups` for conflict). Before 0.0.11 the
+  conflict variant was emitted as `kind="mise_activate_both"`
+  with `shim_indices` / `install_indices`; that shape is
+  retired. The schema parallels `check --json` /
   `where --json`, completing the 3-way machine-readable surface.
   The include / exclude filters still apply; `--quiet` is ignored
   in JSON mode (the output is intended to be complete).
@@ -555,32 +566,42 @@ different from generic Linux (no `/usr/bin`; everything lives under
 `$PREFIX`). A source like `apt` (which means `/usr/bin`) should not
 fire on Termux.
 
-### 8.4 JSON Schema for editors (planned 0.0.11)
+### 8.4 JSON Schema for editors (shipped in 0.0.11)
 
 The TOML format itself has no built-in schema mechanism, but
 Taplo (the dominant TOML LSP, also bundled in VS Code's "Even
-Better TOML" extension) consumes JSON Schema. 0.0.11 will:
+Better TOML" extension) consumes JSON Schema. 0.0.11 ships:
 
-1. Add `schemars` as a build-deps and generate
-   `schemas/pathlint.schema.json` from the live `Config` /
-   `Expectation` / `SourceDef` / `Relation` types — so the
-   schema cannot drift from the parser.
-2. Publish the schema URL via the `gh-pages` branch so it has a
-   stable raw URL (e.g.
-   `https://shortarrow.github.io/pathlint/schemas/pathlint.schema.json`).
-3. Submit a PR to https://www.schemastore.org/ matching
-   `pathlint.toml` so Taplo / Even Better TOML pick it up
-   automatically without per-user setup.
+1. `schemars` as a runtime dep, deriving `JsonSchema` on the
+   live `Config` / `Expectation` / `SourceDef` / `Relation` /
+   `Severity` / `Kind` types. The schema cannot drift from the
+   parser because both come from the same Rust types.
+2. `src/bin/gen_schema` prints the schema; `tests/schema.rs` is
+   a CI drift gate that fails when the checked-in
+   `schemas/pathlint.schema.json` diverges from what the
+   generator currently emits.
+3. The `release` workflow re-runs the generator on the tagged
+   commit and uploads `pathlint.schema.json` as a GitHub
+   Release asset (alongside the binaries and `SHA256SUMS`).
 
-Until Schema Store accepts the entry, users opt in by adding a
-single line at the top of their `pathlint.toml`:
+Two stable URLs for users to pin:
+
+- **Latest main** (auto-updates per merge):
+  `https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json`
+- **Specific release** (frozen at tag):
+  `https://github.com/ShortArrow/pathlint/releases/download/v0.0.11/pathlint.schema.json`
+
+Users opt in with a single line at the top of `pathlint.toml`:
 
 ```toml
-#:schema https://shortarrow.github.io/pathlint/schemas/pathlint.schema.json
+#:schema https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json
 ```
 
-The schema is regenerated on every release; bumps go in the
-GitHub Release notes alongside `catalog_version`.
+A follow-up PR to https://www.schemastore.org/ matches
+`pathlint.toml` by filename so Taplo / Even Better TOML resolve
+the schema automatically without per-user opt-in. Schema Store
+registration is tracked separately from the pathlint release
+cycle.
 
 ## 9. Built-in source catalog
 
@@ -645,10 +666,12 @@ Five `kind`s are recognised:
   the matched-sources list when at least one child also matched.
   Used for `mise` over `mise_shims` / `mise_installs`.
 - **`conflicts_when_both_in_path`** — two or more sources that
-  shouldn't be active in PATH at once. `pathlint doctor` raises
-  `diagnostic` (a `Kind` snake_case name) when more than one of
-  them appears. (0.0.10 still uses the hard-coded `mise_activate_both`
-  detector; relation-driven doctor is the 0.0.11 list.)
+  shouldn't be active in PATH at once. `pathlint doctor` (0.0.11+)
+  walks every relation and emits a `Kind::Conflict` diagnostic
+  with the relation's `diagnostic` label and per-source matched
+  PATH entries. Built-in coverage: `mise_activate_both`. Users
+  add new conflicts by writing more relations, no code change
+  needed.
 - **`served_by_via`** — `host` serves binaries originally from
   `guest_provider` via paths matching `guest_pattern`. The
   optional `installer_token` field (0.0.10+) names the installer
@@ -694,12 +717,14 @@ configuration error (exit 2). `alias_of` and
 `conflicts_when_both_in_path` are symmetric and never participate
 in the DAG check.
 
-In 0.0.9 the relation list was purely descriptive. In 0.0.10
-`pathlint where` reads `served_by_via` + `alias_of` directly (the
-old `MISE_PLUGIN_PREFIXES` table is gone) and `pathlint sort` reads
-`prefer_order_over`. Doctor still uses the hard-coded
-`mise_activate_both` substring detector; migrating it to read
-`conflicts_when_both_in_path` is the 0.0.11 list.
+In 0.0.9 the relation list was purely descriptive. 0.0.10
+made `pathlint where` read `served_by_via` + `alias_of` (the
+old `MISE_PLUGIN_PREFIXES` table is gone) and `pathlint sort`
+read `prefer_order_over`. 0.0.11 closes the loop: `pathlint
+doctor` reads `conflicts_when_both_in_path` to fire
+`Kind::Conflict` diagnostics. The whole relation graph is
+relation-driven from this release onward; new conflict /
+order / provenance behaviour can land entirely as TOML.
 
 ## 10. Path sources (`--target`)
 
@@ -760,13 +785,13 @@ by built-in plugins and any user `[[relation]]` blocks (see §9.1).
   config / I/O error.
 - **Encoding.** All paths are treated as UTF-8 strings on every OS.
   If `PATH` is not valid UTF-8, pathlint reads it as if empty; a
-  warning + per-entry skip is a future improvement. (0.0.10+)
-  Human output of `pathlint where` runs every attacker-controlled
-  string through `format::strip_control_chars`, replacing ASCII
-  control bytes (0x00–0x08, 0x0B–0x1F, 0x7F) with `?` so a hostile
-  PATH segment cannot rewrite the terminal. `\t` and `\n` are
-  preserved. Doctor / catalog list still emit raw strings; that is
-  the 0.0.11 list.
+  warning + per-entry skip is a future improvement. 0.0.11
+  applies `format::strip_control_chars` (ASCII control bytes
+  0x00–0x08, 0x0B–0x1F, 0x7F replaced with `?`; `\t` and `\n`
+  preserved) to every human-mode renderer: `where`, `doctor`,
+  `catalog list`, `catalog relations`, and `check`'s report.
+  JSON output is unchanged — `serde_json` already escapes
+  control bytes correctly.
 - **Trust boundary for shell strings (0.0.10+).** `pathlint where`
   emits commands the user might copy-paste. The `{bin}`
   substitution and the mise plugin segment are quoted via
@@ -775,11 +800,19 @@ by built-in plugins and any user `[[relation]]` blocks (see §9.1).
   themselves (the `uninstall_command = "..."` string) are not
   re-quoted — they come from the catalog author or user config and
   pathlint trusts them.
+- **Rules file DoS guards (0.0.11+).** `Config::from_path` now
+  rejects `--rules` and `pathlint.toml` paths whose final hop is
+  not a regular file (block devices, multi-hop symlinks) and
+  caps file size at 16 MiB before any byte is buffered. A single
+  symlink hop to a regular file is still allowed so dotfiles
+  managers continue to work. Failures surface as exit 2.
 - **Built-in catalog versioning.** The catalog is embedded at compile
   time; bumps to it are called out in the GitHub Release notes so
   users know when defaults change. 0.0.10 bumps `catalog_version`
   to `3` because relation interpretation changed (where / sort now
-  read the relations).
+  read the relations). 0.0.11 keeps `catalog_version = 3`: doctor
+  now reads relations too, but the relation TOML is unchanged and
+  no built-in source path moved.
 
 ## 13. Distribution
 

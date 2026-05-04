@@ -1,6 +1,18 @@
 //! Format `Outcome`s into human-readable lines.
 
+use crate::format::strip_control_chars;
 use crate::lint::{self, Diagnosis, Outcome, Status};
+
+/// Convenience: strip control chars from a slice of strings, then
+/// join with ", ". Used wherever report renders user-supplied
+/// names (matched_sources, prefer, avoid).
+fn join_clean(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|v| strip_control_chars(v).into_owned())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Style {
@@ -40,7 +52,10 @@ pub fn render(outcomes: &[Outcome], style: Style) -> String {
 
 fn render_one(o: &Outcome, style: Style) -> String {
     let tag = status_tag(o, style.no_glyphs);
-    let mut line = format!("{tag} {command}", command = o.command);
+    // command flows from CLI args / [[expect]] entries which can
+    // be arbitrary user strings; strip control chars so a hostile
+    // pathlint.toml cannot inject ANSI escapes via `command = "..."`.
+    let mut line = format!("{tag} {command}", command = strip_control_chars(&o.command));
 
     // --explain mode swaps the one-line detail for the multi-line
     // breakdown. Only failure statuses produce explain content;
@@ -72,9 +87,13 @@ fn detail_line(o: &Outcome) -> Option<String> {
                 let sources = if o.matched_sources.is_empty() {
                     String::from("(no source matched)")
                 } else {
-                    format!("source: {}", o.matched_sources.join(", "))
+                    format!("source: {}", join_clean(&o.matched_sources))
                 };
-                format!("{} — {}", p.display(), sources)
+                format!(
+                    "{} — {}",
+                    strip_control_chars(&p.to_string_lossy()),
+                    sources
+                )
             });
         }
         Status::Skip => return Some("optional; not on PATH".into()),
@@ -96,19 +115,20 @@ fn detail_one_liner(o: &Outcome, diagnosis: &Diagnosis) -> String {
             avoid_hits: _,
         } => format!(
             "resolved: {resolved} — matched sources: [{}], prefer: [{}], avoid: [{}]",
-            matched.join(", "),
-            prefer_missed.join(", "),
-            o.avoid.join(", "),
+            join_clean(matched),
+            join_clean(prefer_missed),
+            join_clean(&o.avoid),
         ),
         Diagnosis::UnknownSource { prefer } => format!(
             "resolved: {resolved} — matched no defined source; prefer: [{}]",
-            prefer.join(", "),
+            join_clean(prefer),
         ),
         Diagnosis::NotFound { .. } => "not found on PATH".into(),
-        Diagnosis::NotExecutable { reason, .. } => {
-            format!("resolved: {resolved} — not executable: {reason}")
-        }
-        Diagnosis::Config { message } => message.clone(),
+        Diagnosis::NotExecutable { reason, .. } => format!(
+            "resolved: {resolved} — not executable: {}",
+            strip_control_chars(reason)
+        ),
+        Diagnosis::Config { message } => strip_control_chars(message).into_owned(),
     }
 }
 
@@ -194,7 +214,7 @@ fn explain_lines_from(o: &Outcome, diagnosis: &Diagnosis) -> Vec<String> {
             ),
             format!(
                 "hint:            run `pathlint where {}` for uninstall guidance.",
-                o.command
+                strip_control_chars(&o.command)
             ),
         ],
         Diagnosis::UnknownSource { prefer } => vec![
@@ -209,11 +229,11 @@ fn explain_lines_from(o: &Outcome, diagnosis: &Diagnosis) -> Vec<String> {
             format!(
                 "hint:            run `pathlint where {}` to see the full path; \
                 add `[source.X]` matching it if you want this case to pass.",
-                o.command
+                strip_control_chars(&o.command)
             ),
         ],
         Diagnosis::NotFound { prefer } => vec![
-            format!("command:         {}", o.command),
+            format!("command:         {}", strip_control_chars(&o.command)),
             format!("prefer:          {}", join_or_none(prefer)),
             "diagnosis:       command not found on any PATH entry.".into(),
             "hint:            install it via one of the prefer sources, \
@@ -223,13 +243,16 @@ fn explain_lines_from(o: &Outcome, diagnosis: &Diagnosis) -> Vec<String> {
         Diagnosis::NotExecutable { reason, matched } => vec![
             format!("resolved:        {resolved}"),
             format!("matched sources: {}", join_or_none(matched)),
-            format!("diagnosis:       not executable — {reason}"),
+            format!(
+                "diagnosis:       not executable — {}",
+                strip_control_chars(reason)
+            ),
             "hint:            another file/directory of the same name shadows the binary, \
                 or the file lost its +x bit / became a broken symlink."
                 .into(),
         ],
         Diagnosis::Config { message } => vec![
-            format!("config error:    {message}"),
+            format!("config error:    {}", strip_control_chars(message)),
             "hint:            check spelling against `pathlint catalog list --names-only`.".into(),
         ],
     }
@@ -238,7 +261,7 @@ fn explain_lines_from(o: &Outcome, diagnosis: &Diagnosis) -> Vec<String> {
 fn resolved_or_placeholder(o: &Outcome) -> String {
     o.resolved
         .as_ref()
-        .map(|p| p.display().to_string())
+        .map(|p| strip_control_chars(&p.to_string_lossy()).into_owned())
         .unwrap_or_else(|| "<unresolved>".into())
 }
 
@@ -246,7 +269,7 @@ fn join_or_none(v: &[String]) -> String {
     if v.is_empty() {
         "(none)".into()
     } else {
-        v.join(", ")
+        join_clean(v)
     }
 }
 
@@ -258,7 +281,7 @@ fn wrong_source_sentence(
     if !avoid_hits.is_empty() {
         return format!(
             "resolved path matched `avoid` source(s) [{}]; rule forbids these.",
-            avoid_hits.join(", ")
+            join_clean(avoid_hits)
         );
     }
     if prefer_missed.is_empty() {
@@ -266,8 +289,8 @@ fn wrong_source_sentence(
     }
     format!(
         "resolved path matched [{}], none of which are in `prefer` [{}].",
-        matched.join(", "),
-        prefer_missed.join(", ")
+        join_clean(matched),
+        join_clean(prefer_missed)
     )
 }
 
@@ -464,6 +487,33 @@ mod tests {
         assert!(out.contains("source: cargo"));
         // Just header + detail = 2 lines, no explain block.
         assert_eq!(out.trim_end().lines().count(), 2);
+    }
+
+    #[test]
+    fn render_strips_control_chars_from_command() {
+        let evil = Outcome {
+            command: "rg\x1b[31m".into(),
+            ..ng_wrong_source(&["scoop"], &["cargo"], &[])
+        };
+        let out = render(&[evil], style(false));
+        assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
+        assert!(out.contains("rg?[31m"), "expected stripped form: {out:?}");
+    }
+
+    #[test]
+    fn render_strips_control_chars_from_matched_sources() {
+        let evil = Outcome {
+            command: "rg".into(),
+            status: Status::Ok,
+            resolved: Some(PathBuf::from("/usr/bin/rg")),
+            matched_sources: vec!["evil\x1b[31m".into()],
+            prefer: vec![],
+            avoid: vec![],
+            severity: crate::config::Severity::Error,
+        };
+        let out = render(&[evil], style(false));
+        assert!(!out.contains('\x1b'));
+        assert!(out.contains("source: evil?[31m"));
     }
 
     #[test]

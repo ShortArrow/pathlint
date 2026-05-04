@@ -126,3 +126,65 @@ fn check_accepts_normal_user_sources() {
         "expected lint pass or expectation fail, got code={code}; stdout: {stdout} stderr: {stderr}"
     );
 }
+
+#[test]
+fn check_rejects_oversize_rules_file() {
+    // 17 MiB of dummy TOML — over the 16 MiB cap. The file does
+    // not need to be valid TOML; the size guard fires before any
+    // parse happens.
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = tmp.path().join("huge.toml");
+    let chunk = vec![b'#'; 1024 * 1024];
+    let mut buf = Vec::with_capacity(chunk.len() * 17);
+    for _ in 0..17 {
+        buf.extend_from_slice(&chunk);
+    }
+    fs::write(&rules, &buf).unwrap();
+
+    let (code, _stdout, stderr) = run("check", &rules, "/usr/bin");
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("too large") || stderr.contains("16 MiB"),
+        "stderr should mention the size cap: {stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn check_accepts_single_symlink_to_real_file() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real.toml");
+    fs::write(&real, "").unwrap();
+    let link = tmp.path().join("link.toml");
+    symlink(&real, &link).unwrap();
+
+    let (code, stdout, stderr) = run("check", &link, "/usr/bin");
+    // Empty config: lint passes (exit 0). Specifically NOT exit 2.
+    assert_eq!(
+        code, 0,
+        "single symlink to a real file must be accepted; stdout: {stdout} stderr: {stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn check_rejects_double_symlinked_rules() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real.toml");
+    fs::write(&real, "").unwrap();
+    let link1 = tmp.path().join("link1.toml");
+    symlink(&real, &link1).unwrap();
+    let link2 = tmp.path().join("link2.toml");
+    symlink(&link1, &link2).unwrap();
+
+    let (code, _stdout, stderr) = run("check", &link2, "/usr/bin");
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("not a regular file") || stderr.contains("symlink"),
+        "stderr should mention the symlink policy: {stderr}"
+    );
+}

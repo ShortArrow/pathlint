@@ -287,6 +287,14 @@ fn doctor_json_respects_include_filter() {
 
 #[test]
 fn doctor_warns_when_mise_shim_and_install_coexist() {
+    // 0.0.11: doctor reads ConflictsWhenBothInPath from the merged
+    // catalog. The built-in relation references mise_shims and
+    // mise_installs source paths under $HOME, but the tests must
+    // not depend on the runner's $HOME, so we pass an explicit
+    // pathlint.toml that overrides those two sources to point at
+    // the temp-dir layout the test creates. The built-in relation
+    // (mise_activate_both) still fires because the relation table
+    // is identified by source name, not path.
     let tmp = tempfile::tempdir().unwrap();
     let mise_root = tmp.path().join("mise");
     let shims = mise_root.join("shims");
@@ -297,15 +305,42 @@ fn doctor_warns_when_mise_shim_and_install_coexist() {
         .join("bin");
     fs::create_dir_all(&shims).unwrap();
     fs::create_dir_all(&installs_python).unwrap();
+    let installs_dir = mise_root.join("installs");
+
+    let key = if cfg!(windows) { "windows" } else { "unix" };
+    let body = format!(
+        r#"
+[source.mise_shims]
+{key} = "{shims}"
+
+[source.mise_installs]
+{key} = "{installs}"
+"#,
+        shims = shims.display().to_string().replace('\\', "/"),
+        installs = installs_dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = tmp.path().join("pathlint.toml");
+    fs::write(&rules, body).unwrap();
 
     let path = join_path(&[&shims, &installs_python]);
-    let (code, stdout, _) = run_doctor(&path);
-    assert_eq!(code, 0, "warn-only must exit 0");
+    let out = Command::new(BIN)
+        .arg("--rules")
+        .arg(&rules)
+        .arg("doctor")
+        .env("PATH", &path)
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("failed to run pathlint binary");
+    let code = out.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert_eq!(code, 0, "warn-only must exit 0; stderr: {stderr}");
     assert!(
         stdout.contains("mise activate exposes both shim and install layers"),
         "stdout: {stdout}"
     );
-    // Both layer headers should appear.
-    assert!(stdout.contains("shims:"), "stdout: {stdout}");
-    assert!(stdout.contains("installs:"), "stdout: {stdout}");
+    // Both conflict groups should appear (0.0.11+: groups, not
+    // shims/installs sections).
+    assert!(stdout.contains("group #0:"), "stdout: {stdout}");
+    assert!(stdout.contains("group #1:"), "stdout: {stdout}");
 }
