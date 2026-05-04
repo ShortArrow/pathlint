@@ -924,10 +924,45 @@ Tagged with the role(s) each touches.
   shim entry alongside every install entry. Users still pick a
   mode for `[[expect]]` rules; pathlint does not auto-detect.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
-  these paths may differ from `process`. Out of MVP. R3 might
-  expose this differently from R1: doctor could compare what the
-  user sees vs what login services see, instead of pretending one
-  PATH is "the" PATH.
+  these paths may differ from `process`. Out of MVP and out of
+  the 0.0.x line — flagged here as a 0.1.x candidate. Three
+  implementation options on the table:
+
+  1. **New `--target launchd` flag.** Adds a fourth `Target`
+     variant alongside `process` / `user` / `machine`. `pathlint
+     check --target launchd` would lint the launchd-visible PATH
+     with the same rule set. Pros: integrates uniformly with
+     check / doctor / where. Cons: launchctl spawn cost on every
+     run; macOS-only; the `launchctl getenv PATH` output covers
+     only the global env, not plist-bootstrapped daemon env.
+  2. **Doctor-only diff diagnostic.** A new `Kind` variant fires
+     when the user-shell PATH differs from `launchctl getenv
+     PATH`. Pros: surfaces "iTerm vs launchd" drift without
+     extending the target model. Cons: doctor's responsibility
+     creeps from "lint the PATH itself" toward "lint the
+     environment delta". The diagnostic shape would need to
+     carry both PATHs which is bulkier than the current per-entry
+     diagnostics.
+  3. **Phased: start with option 2, extend to option 1 if needed.**
+     Ship the read-only diff diagnostic in 0.1.x, observe whether
+     users want to write `[[expect]]` rules against the
+     launchd-visible PATH, and only then extend `Target`. Avoids
+     committing to the target-flag surface on speculation.
+
+  Implementation gates (need investigation before either option):
+  - Stability of `launchctl` output across macOS versions
+    (Sequoia changed several launchctl subcommands).
+  - Whether `launchctl getenv` is the right oracle, or whether
+    pathlint should also read user / system Launch Daemons /
+    Agents plists.
+  - Linux equivalent (systemd user units, `EnvironmentFile=`)
+    and Windows equivalent (HKLM\SYSTEM\CurrentControlSet\Services
+    `Environment` REG_MULTI_SZ) — same problem, different shape.
+    macOS-first because the demand is loudest there.
+
+  Schema-store registration (PRD §8.4 follow-up) and Renovate /
+  Dependabot for the SHA-pinned actions (PRD §13) are tracked
+  separately and do not block this work.
 
 ### Cross-role / infrastructure
 

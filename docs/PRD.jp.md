@@ -855,9 +855,43 @@ post-1.0 議題。
   expect ルール側でどちらを選ぶかはユーザーが決める、pathlint は
   自動判別しない。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
-  する PATH は `process` と違うことがある。MVP 外。R3 では R1 と
-  違う形で出すかも：login services が見る PATH と、ユーザーが見る
-  PATH を比較して doctor が差分を提示する、など。
+  する PATH は `process` と違うことがある。MVP 外、0.0.x 線でも
+  扱わず 0.1.x 候補として整理。実装方針は 3 案：
+
+  1. **`--target launchd` フラグを新設。** `Target` enum に第 4
+     variant を追加し、`pathlint check --target launchd` で
+     launchd-visible な PATH を同じ rule set で lint。
+     **長所:** check / doctor / where が同一構造で扱える。
+     **短所:** launchctl spawn コストが毎実行発生、macOS 専用、
+     `launchctl getenv PATH` は global env のみで plist-bootstrap
+     系の daemon env はカバーしない。
+  2. **doctor 専用の diff 診断。** ユーザシェルの PATH と
+     `launchctl getenv PATH` が違うときに発火する `Kind` variant
+     を新設。
+     **長所:** 「iTerm では動くのに launchd 経由で起動した
+     daemon では PATH が違う」を target モデル拡張なしに発見。
+     **短所:** doctor の責務が「PATH 自体の lint」から「環境
+     差分の検出」に拡張される。診断 payload に 2 本の PATH を
+     抱え込む必要があり、現行の per-entry 診断より太る。
+  3. **段階的：まずオプション 2、需要を見てオプション 1 に拡張。**
+     0.1.x で read-only な diff 診断のみ出荷し、ユーザが
+     launchd-visible PATH に対して `[[expect]]` ルールを書きたい
+     という需要が立ったら Target を拡張。憶測で target 表面を
+     固定しない。
+
+  着手前に詰めるべき前提：
+  - `launchctl` の出力フォーマットが macOS バージョン間で
+    安定しているか（Sequoia でいくつかの subcommand が変わった）。
+  - `launchctl getenv` が正しい情報源なのか、それとも user /
+    system の Launch Daemons / Agents plist も読むべきか。
+  - Linux の systemd user units / `EnvironmentFile=`、Windows の
+    HKLM\SYSTEM\CurrentControlSet\Services `Environment` REG_MULTI_SZ
+    — 同じ問題で形だけ違う。需要が一番大きい macOS から手を
+    付ける。
+
+  Schema Store 登録（PRD §8.4 のフォローアップ）と SHA pin 済み
+  actions の Renovate / Dependabot 化（PRD §13）は別軸で進める
+  項目で、本件をブロックしない。
 
 ### 横断 / インフラ
 
