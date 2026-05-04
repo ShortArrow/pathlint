@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::config::SourceDef;
+use crate::format::strip_control_chars;
 use crate::os_detect::Os;
 
 #[derive(Debug, Clone, Copy)]
@@ -27,7 +28,10 @@ pub fn render(catalog: &BTreeMap<String, SourceDef>, os: Os, style: ListStyle) -
 fn render_names_only(catalog: &BTreeMap<String, SourceDef>) -> String {
     let mut buf = String::new();
     for name in catalog.keys() {
-        buf.push_str(name);
+        // Source names are ASCII identifiers in built-ins, but a
+        // user override could declare any string. Strip control
+        // chars so a names-only dump cannot inject ANSI escapes.
+        buf.push_str(&strip_control_chars(name));
         buf.push('\n');
     }
     buf
@@ -42,10 +46,12 @@ fn render_for_os(catalog: &BTreeMap<String, SourceDef>, os: Os) -> String {
         let desc_part = if desc.is_empty() {
             String::new()
         } else {
-            format!("  — {desc}")
+            format!("  — {}", strip_control_chars(desc))
         };
         buf.push_str(&format!(
             "{name:<width$}  {path}{desc_part}\n",
+            name = strip_control_chars(name),
+            path = strip_control_chars(path),
             width = name_width,
         ));
     }
@@ -55,11 +61,11 @@ fn render_for_os(catalog: &BTreeMap<String, SourceDef>, os: Os) -> String {
 fn render_all_os(catalog: &BTreeMap<String, SourceDef>) -> String {
     let mut buf = String::new();
     for (name, def) in catalog {
-        buf.push_str(name);
+        buf.push_str(&strip_control_chars(name));
         if let Some(d) = def.description.as_deref() {
             if !d.is_empty() {
                 buf.push_str("  — ");
-                buf.push_str(d);
+                buf.push_str(&strip_control_chars(d));
             }
         }
         buf.push('\n');
@@ -71,7 +77,7 @@ fn render_all_os(catalog: &BTreeMap<String, SourceDef>) -> String {
             ("unix", def.unix.as_deref()),
         ] {
             if let Some(v) = val {
-                buf.push_str(&format!("    {label:<8} {v}\n"));
+                buf.push_str(&format!("    {label:<8} {}\n", strip_control_chars(v)));
             }
         }
     }
@@ -120,6 +126,28 @@ mod tests {
         }
         assert!(out.lines().any(|l| l == "cargo"));
         assert!(out.lines().any(|l| l == "winget"));
+    }
+
+    #[test]
+    fn names_only_strips_control_chars() {
+        let mut cat: BTreeMap<String, SourceDef> = BTreeMap::new();
+        cat.insert(
+            "evil\x1b[31m".into(),
+            SourceDef {
+                unix: Some("/foo".into()),
+                ..Default::default()
+            },
+        );
+        let out = render(
+            &cat,
+            Os::Linux,
+            ListStyle {
+                all_os: false,
+                names_only: true,
+            },
+        );
+        assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
+        assert!(out.contains("evil?[31m"));
     }
 
     #[test]

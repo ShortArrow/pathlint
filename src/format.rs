@@ -24,26 +24,36 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
         Severity::Error => "[ERR] ",
         Severity::Warn => "[warn]",
     };
+    // Every PATH-derived string (entry text, suggestion, reason,
+    // canonical pointer for case variants) goes through
+    // strip_control_chars so a hostile PATH cannot inject ANSI
+    // escapes into doctor's human output (Z16-L1).
     let detail = match &d.kind {
-        Kind::Duplicate { first_index } => format!(
-            "duplicate of entry #{first} ({first_path})",
-            first = first_index,
-            first_path = entries.get(*first_index).cloned().unwrap_or_default(),
-        ),
-        Kind::Missing => "directory does not exist".into(),
-        Kind::Shortenable { suggestion } => format!("could be written as {suggestion}"),
-        Kind::TrailingSlash => "trailing slash; some shells handle this oddly".into(),
-        Kind::CaseVariant { canonical } => {
-            format!("case / slash variant of {canonical}; OS treats them as one directory")
+        Kind::Duplicate { first_index } => {
+            let first_path = entries.get(*first_index).cloned().unwrap_or_default();
+            format!(
+                "duplicate of entry #{first} ({first_path})",
+                first = first_index,
+                first_path = strip_control_chars(&first_path),
+            )
         }
+        Kind::Missing => "directory does not exist".into(),
+        Kind::Shortenable { suggestion } => {
+            format!("could be written as {}", strip_control_chars(suggestion))
+        }
+        Kind::TrailingSlash => "trailing slash; some shells handle this oddly".into(),
+        Kind::CaseVariant { canonical } => format!(
+            "case / slash variant of {}; OS treats them as one directory",
+            strip_control_chars(canonical)
+        ),
         Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
-        Kind::Malformed { reason } => format!("malformed entry: {reason}"),
+        Kind::Malformed { reason } => format!("malformed entry: {}", strip_control_chars(reason)),
         Kind::Conflict { .. } => unreachable!("handled by early return above"),
     };
     format!(
         "{tag} #{idx:>3} {entry}\n      {detail}",
         idx = d.index,
-        entry = d.entry
+        entry = strip_control_chars(&d.entry)
     )
 }
 
@@ -54,19 +64,25 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
 /// back to a generic "two sources collide" message that still names
 /// the diagnostic so the user can grep for it.
 fn doctor_conflict(entries: &[String], diagnostic: &str, groups: &[Vec<usize>]) -> String {
-    let header = match diagnostic {
-        "mise_activate_both" => {
-            "[warn] mise activate exposes both shim and install layers (PATH order matters)"
-                .to_string()
-        }
-        other => format!("[warn] {other}: multiple conflicting sources are active in PATH"),
+    // diagnostic is user-supplied via [[relation]] when not a
+    // built-in name. Strip + match against the built-in literal
+    // first so hostile diagnostics still land in the generic
+    // header (and get stripped on the way out).
+    let safe_diag = strip_control_chars(diagnostic);
+    let header = if safe_diag == "mise_activate_both" {
+        "[warn] mise activate exposes both shim and install layers (PATH order matters)".to_string()
+    } else {
+        format!("[warn] {safe_diag}: multiple conflicting sources are active in PATH")
     };
     let mut buf = format!("{header}\n");
     for (idx, group) in groups.iter().enumerate() {
         buf.push_str(&format!("      group #{idx}:\n"));
         for &i in group {
             let entry = entries.get(i).cloned().unwrap_or_default();
-            buf.push_str(&format!("        #{i:>3} {entry}\n"));
+            buf.push_str(&format!(
+                "        #{i:>3} {}\n",
+                strip_control_chars(&entry)
+            ));
         }
     }
     buf.pop(); // strip the trailing newline so the caller adds its own
@@ -268,6 +284,11 @@ pub fn relations_human(relations: &[Relation]) -> String {
     if relations.is_empty() {
         return "no relations declared".to_string();
     }
+    // Every user-supplied identifier (source name, diagnostic
+    // label, glob pattern) goes through strip_control_chars so a
+    // hostile pathlint.toml cannot inject ANSI escapes into
+    // `pathlint catalog relations` output.
+    let s = |v: &str| strip_control_chars(v).into_owned();
     let mut buf = String::new();
     for (i, rel) in relations.iter().enumerate() {
         if i > 0 {
@@ -275,15 +296,22 @@ pub fn relations_human(relations: &[Relation]) -> String {
         }
         match rel {
             Relation::AliasOf { parent, children } => {
-                buf.push_str(&format!("alias_of: `{parent}` → [{}]", children.join(", ")));
+                let kids: Vec<String> = children.iter().map(|c| s(c)).collect();
+                buf.push_str(&format!(
+                    "alias_of: `{}` → [{}]",
+                    s(parent),
+                    kids.join(", ")
+                ));
             }
             Relation::ConflictsWhenBothInPath {
                 sources,
                 diagnostic,
             } => {
+                let names: Vec<String> = sources.iter().map(|n| s(n)).collect();
                 buf.push_str(&format!(
-                    "conflicts_when_both_in_path: [{}] (diagnostic: `{diagnostic}`)",
-                    sources.join(", "),
+                    "conflicts_when_both_in_path: [{}] (diagnostic: `{}`)",
+                    names.join(", "),
+                    s(diagnostic),
                 ));
             }
             Relation::ServedByVia {
@@ -294,20 +322,25 @@ pub fn relations_human(relations: &[Relation]) -> String {
             } => {
                 let via = match installer_token {
                     Some(tok) if tok != guest_provider => {
-                        format!(" (installer token `{tok}`)")
+                        format!(" (installer token `{}`)", s(tok))
                     }
                     _ => String::new(),
                 };
                 buf.push_str(&format!(
-                    "served_by_via: `{host}` serves `{guest_pattern}` from `{guest_provider}`{via}",
+                    "served_by_via: `{}` serves `{}` from `{}`{via}",
+                    s(host),
+                    s(guest_pattern),
+                    s(guest_provider),
                 ));
             }
             Relation::DependsOn { source, target } => {
-                buf.push_str(&format!("depends_on: `{source}` → `{target}`"));
+                buf.push_str(&format!("depends_on: `{}` → `{}`", s(source), s(target),));
             }
             Relation::PreferOrderOver { earlier, later } => {
                 buf.push_str(&format!(
-                    "prefer_order_over: `{earlier}` should appear before `{later}`",
+                    "prefer_order_over: `{}` should appear before `{}`",
+                    s(earlier),
+                    s(later),
                 ));
             }
         }
@@ -952,6 +985,30 @@ mod tests {
         assert!(out.contains("\n        #  2 /home/u/.local/share/mise/installs/node/25.9.0/bin"));
         // No trailing newline (caller adds its own)
         assert!(!out.ends_with('\n'));
+    }
+
+    #[test]
+    fn doctor_line_strips_control_chars_from_entry() {
+        let d = Diagnostic {
+            index: 0,
+            entry: "/foo\x1b[31m/bar".into(),
+            severity: Severity::Warn,
+            kind: Kind::Missing,
+        };
+        let out = doctor_line(&d, &[]);
+        assert!(!out.contains('\x1b'), "raw escape: {out:?}");
+        assert!(out.contains("/foo?[31m/bar"));
+    }
+
+    #[test]
+    fn relations_human_strips_control_chars_from_diagnostic() {
+        let rels = vec![Relation::ConflictsWhenBothInPath {
+            sources: vec!["a".into(), "b".into()],
+            diagnostic: "evil\x1b[31m".into(),
+        }];
+        let out = relations_human(&rels);
+        assert!(!out.contains('\x1b'));
+        assert!(out.contains("evil?[31m"));
     }
 
     #[test]
