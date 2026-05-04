@@ -256,11 +256,20 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
   - ケース／slash 違い重複（同じ正規化形だが verbatim が違う）。
   - 環境変数で短縮できる候補（`%LocalAppData%` / `%UserProfile%` /
     `$HOME` 系）。提案文字列は元のケースと slash 向きを保つ。
-  - (0.0.5+) `MiseActivateBoth` — PATH 上に `mise/shims/` と
-    `mise/installs/` が同時に存在。`mise activate` が shim と
-    PATH-rewrite モード両方で設定されているか、過去の設定の残骸が
-    まだ PATH に残っているか。shim entries と install entries
-    すべてを列挙して、どちらを残すかユーザーが判断できるようにする。
+  - `Conflict` — PATH 上に共存すべきでない 2 つ以上の source が
+    すべて検出された。diagnostic 名は
+    `Relation::ConflictsWhenBothInPath` 宣言（ビルトインまたは
+    ユーザー `pathlint.toml`）から来る。各 source にマッチした
+    PATH エントリは `group #N:` ブロックに分けて表示。0.0.11
+    時点のビルトイン: `mise_activate_both`（mise の shim 層と
+    install 層が同時にアクティブ）。ユーザーは pathlint 本体を
+    いじらず `[[relation]] kind = "conflicts_when_both_in_path"`
+    を書き加えるだけで新しい conflict 検出を増やせる。
+    0.0.11 より前は path-substring ベースだったため、ユーザーが
+    `[source.mise_shims]` を別の場所に上書きしても発火していた。
+    relation 駆動になり、relation の declared sources が
+    実際に PATH にマッチしたときだけ発火するように変わった
+    （通常はこれが正しい挙動）。
 - `--quiet` で warn 抑制、error は常に表示。
 - (0.0.6+) `--include <kind>[,<kind>...]` で表示対象を絞る、
   `--exclude <kind>[,<kind>...]` で抑制。両方同時指定はエラー。
@@ -274,9 +283,11 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
   は `index` / `entry` / `severity`（`"warn"` / `"error"`）/
   `kind` 判別子 + kind ごとの payload フィールド（shortenable の
   `suggestion`、case_variant の `canonical`、duplicate の
-  `first_index`、malformed の `reason`、mise_activate_both の
-  `shim_indices` / `install_indices`）を持つ。schema は 0.0.x で
-  stable、`check --json` / `where --json` と並ぶ 3-way の機械可読
+  `first_index`、malformed の `reason`、conflict の `diagnostic`
+  + `groups`）を持つ。0.0.11 より前は conflict が
+  `kind = "mise_activate_both"` + `shim_indices` / `install_indices`
+  という形だったが、汎用化に伴い退役した。schema は
+  `check --json` / `where --json` と並ぶ 3-way の機械可読
   サーフェス。include / exclude は JSON でも有効。`--quiet` は
   JSON mode では無視（情報を欠落させない設計）。
 
@@ -501,30 +512,40 @@ Termux を独立扱いするのは、ファイルシステムレイアウトが�
 あるため）。`apt`（= `/usr/bin`）のような source は Termux で発火さ
 せたくない。
 
-### 8.4 エディタ向け JSON Schema（0.0.11 予定）
+### 8.4 エディタ向け JSON Schema（0.0.11 で出荷）
 
 TOML 自体には schema 機構がないが、Taplo（TOML LSP のデファクト、
 VS Code の "Even Better TOML" にも同梱）は JSON Schema を読める。
-0.0.11 で次を行う：
+0.0.11 で出荷した内容：
 
-1. `schemars` を build-deps に追加し、`Config` / `Expectation` /
-   `SourceDef` / `Relation` 型から `schemas/pathlint.schema.json`
-   を生成する（パーサ実装からドリフトしない）。
-2. `gh-pages` ブランチ経由で安定 raw URL に schema を公開
-   （例: `https://shortarrow.github.io/pathlint/schemas/pathlint.schema.json`）。
-3. https://www.schemastore.org/ に PR を出して `pathlint.toml`
-   ファイル名で自動マッチさせる。Taplo / Even Better TOML 側の
-   ユーザ設定が不要になる。
+1. `schemars` を runtime dep として追加し、`Config` /
+   `Expectation` / `SourceDef` / `Relation` / `Severity` /
+   `Kind` 型に `JsonSchema` derive を付けた。schema はパーサと
+   同じ Rust 型から生成されるのでドリフトしない。
+2. `src/bin/gen_schema` で schema を出力。`tests/schema.rs` が
+   CI でドリフトを検出する（`schemas/pathlint.schema.json` が
+   現在の生成器の出力と一致しなければ fail）。
+3. `release` ワークフローが tag commit から再生成し、
+   `pathlint.schema.json` を GitHub Release asset として
+   バイナリと SHA256SUMS に並べて publish する。
 
-Schema Store に反映されるまでの間、ユーザは `pathlint.toml` の
-先頭 1 行で opt-in できる：
+ユーザーが pin できる安定 URL は 2 種類：
+
+- **main の最新**（merge ごとに更新）:
+  `https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json`
+- **特定リリース**（tag で凍結）:
+  `https://github.com/ShortArrow/pathlint/releases/download/v0.0.11/pathlint.schema.json`
+
+`pathlint.toml` の先頭 1 行で opt-in：
 
 ```toml
-#:schema https://shortarrow.github.io/pathlint/schemas/pathlint.schema.json
+#:schema https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json
 ```
 
-schema はリリースごとに再生成し、bump は GitHub Release notes に
-`catalog_version` と並べて記載する。
+https://www.schemastore.org/ に `pathlint.toml` をファイル名で
+マッチさせる PR を別途出す。Schema Store 反映後は Taplo /
+Even Better TOML がユーザー設定なしで自動解決する。Schema Store
+登録は pathlint のリリースサイクルから独立。
 
 ## 9. 組み込み source カタログ
 
@@ -585,10 +606,11 @@ source 間の関係を表現できる。`pathlint catalog relations` で
   いるとき親をリストの末尾に押し下げる。`mise` が `mise_shims` /
   `mise_installs` の親、として使う。
 - **`conflicts_when_both_in_path`** — PATH に同時に存在すると
-  問題になる source 群。複数該当があれば `pathlint doctor` が
-  `diagnostic` (snake_case な `Kind` 名) を出す。0.0.10 時点では
-  doctor はまだハードコードの `mise_activate_both` 検出を使っている
-  ので、relation 駆動への移行は 0.0.11 の課題。
+  問題になる source 群。0.0.11 から `pathlint doctor` がすべての
+  relation を walk し、`Kind::Conflict` を発火する。`diagnostic`
+  ラベルは relation 由来。各 source にマッチした PATH エントリは
+  group ごとに列挙される。ビルトイン: `mise_activate_both`。
+  ユーザーは relation を書き足すだけで新 conflict 検出を増やせる。
 - **`served_by_via`** — `host` が `guest_provider` 由来の
   バイナリを `guest_pattern` にマッチする path で提供している。
   オプションの `installer_token` フィールド（0.0.10+）は人間向け
@@ -636,9 +658,11 @@ pathlint は `pathlint catalog relations` を実行したときにマージ
 0.0.9 では relation は記述目的のみだったが、0.0.10 で
 `pathlint where` が `served_by_via` + `alias_of` を直接読むように
 なり（`MISE_PLUGIN_PREFIXES` テーブルは削除）、`pathlint sort` が
-`prefer_order_over` を読むようになった。doctor のみまだハード
-コードの `mise_activate_both` 検出を使っており、`conflicts_when_both_in_path`
-への移行は 0.0.11 の課題。
+`prefer_order_over` を読むようになった。0.0.11 で
+`pathlint doctor` も `conflicts_when_both_in_path` を読む側に
+回り、relation グラフ全体が runtime で消費される設計が完成した。
+新たな conflict / order / provenance 挙動は TOML 編集だけで
+追加できる。
 
 ## 10. PATH ソース（`--target`）
 
@@ -700,13 +724,13 @@ post-1.0 議題。
   config / I/O エラー。
 - **エンコーディング。** どの OS でも path は UTF-8 文字列として扱う。
   `PATH` 全体が UTF-8 として読めない場合は空として扱う。エントリ
-  単位の警告 + スキップは将来の改善項目。0.0.10 から
-  `pathlint where` の人間向け出力は attacker-controlled な文字列を
-  すべて `format::strip_control_chars` 経由で出力する。ASCII 制御
-  バイト（0x00–0x08、0x0B–0x1F、0x7F）は `?` に置換、`\t` と `\n`
-  は維持。これにより hostile PATH segment がターミナルを書き換える
-  ことを防ぐ。doctor / catalog list はまだ素通しで、これは 0.0.11
-  の課題。
+  単位の警告 + スキップは将来の改善項目。0.0.11 から
+  `format::strip_control_chars`（ASCII 制御バイト 0x00–0x08、
+  0x0B–0x1F、0x7F は `?` に置換、`\t` と `\n` は維持）を
+  すべての human モードレンダラに適用する：`where` / `doctor` /
+  `catalog list` / `catalog relations` / `check` のレポート。
+  JSON 出力は `serde_json` が制御バイトを正しく escape するので
+  変更不要。
 - **シェル文字列の信頼境界（0.0.10+）。** `pathlint where` の出力は
   ユーザーがコピペするかもしれないコマンド文字列。`{bin}` 置換と
   mise plugin segment は `format::quote_for(os, _)` を経由する
@@ -714,11 +738,18 @@ post-1.0 議題。
   クォート）。カタログのテンプレ本体（`uninstall_command = "..."`
   の中身）は再 quote しない — カタログ作者かユーザー設定由来で、
   pathlint はそこを信頼する。
+- **rules ファイルの DoS 対策（0.0.11+）。** `Config::from_path` は
+  `--rules` / `pathlint.toml` の最終 hop が regular file でない
+  （ブロックデバイス、複数段の symlink）場合に reject、サイズも
+  16 MiB を上限にする。1 段の symlink → regular file は許可
+  （dotfiles 管理を壊さないため）。違反は exit 2。
 - **組み込みカタログのバージョニング。** カタログはコンパイル時埋め
   込み。バンプ時は GitHub Release のリリースノートに記載してデフォ
   ルト変更を周知。0.0.10 で `catalog_version` を `3` に bump
   （TOML 本文は変わらないが where / sort が relation を読むように
-  解釈が変わったため）。
+  解釈が変わったため）。0.0.11 は `catalog_version = 3` を維持：
+  doctor も relation を読むようになったが、relation TOML 本文と
+  ビルトイン source path に変更はない。
 
 ## 13. 配布
 

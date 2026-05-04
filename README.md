@@ -261,6 +261,29 @@ unix = "/data/tools/mise/shims"
 unix = "/data/tools/mise/installs"
 ```
 
+## Editor support (JSON Schema)
+
+`pathlint.toml` ships with a JSON Schema generated from the live
+Rust types. Add this single line at the top of your config to get
+autocomplete and inline validation in [Taplo] (the dominant TOML
+LSP) and the [Even Better TOML][ebt] VS Code extension:
+
+```toml
+#:schema https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json
+```
+
+Pin to a specific release for reproducibility:
+
+```toml
+#:schema https://github.com/ShortArrow/pathlint/releases/download/v0.0.11/pathlint.schema.json
+```
+
+The schema is also attached as `pathlint.schema.json` to every
+GitHub Release alongside the binaries.
+
+[Taplo]: https://taplo.tamasfe.dev/
+[ebt]: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml
+
 ## Pinning the catalog version
 
 The built-in source catalog evolves: a new pathlint version may
