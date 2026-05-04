@@ -461,6 +461,16 @@ read-only)
 - `--apply` is not shipped in 0.0.8. PRD §4 forbids PATH
   mutation; revisiting `--apply` is on the post-1.0 list and
   would live behind an explicit flag.
+- **Relation consumption (0.0.12+).** `pathlint sort` consumes
+  only the `prefer_order_over` relation kind. The other four
+  kinds (`alias_of`, `conflicts_when_both_in_path`,
+  `served_by_via`, `depends_on`) describe the source graph but
+  do not influence the sort order. Future ordering rules — e.g.
+  promoting `mise_installs` ahead of `mise_shims` by default —
+  would need a new relation kind, not a reinterpretation of an
+  existing one. This avoids the trap where adding a
+  `served_by_via` for a new wrapper installer silently changes
+  PATH ordering recommendations.
 
 ## 8. `pathlint.toml` schema
 
@@ -725,6 +735,15 @@ doctor` reads `conflicts_when_both_in_path` to fire
 `Kind::Conflict` diagnostics. The whole relation graph is
 relation-driven from this release onward; new conflict /
 order / provenance behaviour can land entirely as TOML.
+
+Each consumer reads exactly one or two kinds: `where` uses
+`served_by_via` + `alias_of`, `sort` uses `prefer_order_over`
+only (see §7.8), and `doctor` uses `conflicts_when_both_in_path`.
+`depends_on` is currently descriptive — surfaced in the
+`catalog relations` output but not consumed by any other
+subcommand. This explicit map keeps "adding a relation" from
+having unintended effects on commands that did not declare
+themselves as consumers.
 
 ## 10. Path sources (`--target`)
 

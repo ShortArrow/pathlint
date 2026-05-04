@@ -406,6 +406,15 @@ NotFound は `{ "command": "...", "found": false }` を出して exit 1。
 - `--apply` は 0.0.8 には入らない。PRD §4 の「PATH を書き換えない」
   方針を維持する。`--apply` を入れる検討は post-1.0 議題で、
   明示的なフラグを必要とする形で再検討する。
+- **Relation の消費範囲（0.0.12+）。** `pathlint sort` が読むのは
+  `prefer_order_over` のみ。残り 4 種（`alias_of` /
+  `conflicts_when_both_in_path` / `served_by_via` / `depends_on`）は
+  source 間のグラフ構造を表現するが sort には影響しない。将来
+  「mise_installs を mise_shims より前に出す」のような新しい順序
+  ルールが必要になった場合は、新しい relation kind を追加する。
+  既存 kind の解釈を拡張しない。これにより「新しい
+  `served_by_via` を追加したら sort の挙動が変わった」という
+  事故を防ぐ。
 
 ## 8. `pathlint.toml` スキーマ
 
@@ -663,6 +672,14 @@ pathlint は `pathlint catalog relations` を実行したときにマージ
 回り、relation グラフ全体が runtime で消費される設計が完成した。
 新たな conflict / order / provenance 挙動は TOML 編集だけで
 追加できる。
+
+各 consumer が読む kind は明確に分かれている：`where` は
+`served_by_via` + `alias_of`、`sort` は `prefer_order_over` のみ
+（§7.8 参照）、`doctor` は `conflicts_when_both_in_path`。
+`depends_on` は現状記述専用 — `catalog relations` 出力には
+現れるが、他の subcommand では消費されない。この明示的な
+対応関係により「relation を 1 つ増やしたら、宣言してもいない
+コマンドの挙動が変わる」事故を防ぐ。
 
 ## 10. PATH ソース（`--target`）
 
