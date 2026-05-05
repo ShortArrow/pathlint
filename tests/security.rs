@@ -214,6 +214,24 @@ fn check_accepts_relative_symlink_to_real_file() {
 }
 
 #[test]
+fn check_rejects_user_catalog_version() {
+    // 0.0.14: catalog_version is reserved for the embedded
+    // catalog. A user pathlint.toml that declares it is a
+    // configuration error (exit 2). Use require_catalog = N to
+    // pin a minimum embedded catalog version instead.
+    let tmp = tempfile::tempdir().unwrap();
+    let body = "catalog_version = 5\n";
+    let rules = write_rules(tmp.path(), body);
+
+    let (code, _stdout, stderr) = run("check", &rules, "/usr/bin");
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("catalog_version") || stderr.contains("reserved"),
+        "stderr should explain the rejection: {stderr}"
+    );
+}
+
+#[test]
 fn sort_rejects_user_relation_cycle() {
     // 0.0.14: every relation consumer (sort/doctor/trace, plus
     // the pre-existing catalog relations) must surface a cycle as

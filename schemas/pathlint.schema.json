@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "catalog_version": {
-      "description": "Catalog version embedded in the running binary. Set only by the embedded `embedded_catalog.toml`; user `pathlint.toml` files leave this `None` and use `require_catalog` instead.",
+      "description": "Reserved for the embedded catalog. The build script sets this in `embedded_catalog.toml`; user `pathlint.toml` files must NOT declare it. As of 0.0.14, parsing a user config that contains `catalog_version` is a configuration error (exit 2) — use `require_catalog = N` instead to pin the minimum catalog version your rules require.",
       "default": null,
       "type": [
         "integer",
