@@ -98,10 +98,21 @@ pub struct CheckOutcomeView {
     pub severity: Severity,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<String>,
+    /// Sources matched against the resolved path. Always emitted —
+    /// even an empty array — so consumers do not have to special-case
+    /// "field present" vs "field absent". 0.0.17 hoisted this from
+    /// schema-required-with-skip-serializing into a stable always-emit
+    /// shape so the schema and the wire form match.
     pub matched_sources: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// `prefer` set copied from the source `[[expect]]` rule. Skipped
+    /// when empty so consumers reading typical Ok / Skip outcomes
+    /// don't have to dig past the empty array. Schema marks the field
+    /// optional via `#[serde(default)]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prefer: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// `avoid` set copied from the source `[[expect]]` rule. Same
+    /// optional-when-empty story as `prefer`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub avoid: Vec<String>,
     /// Human-readable reason. Populated for
     /// `kind = "ng_not_executable"` (R2 shape check rejection) and
@@ -109,9 +120,9 @@ pub struct CheckOutcomeView {
     /// Absent otherwise. 0.0.17 split this off from the kind
     /// discriminator so consumers can branch on `kind` as a
     /// string and read `reason` separately.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnosis: Option<Diagnosis>,
 }
 

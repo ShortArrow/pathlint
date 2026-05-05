@@ -16,6 +16,32 @@
 use std::fs;
 
 #[test]
+fn check_schema_required_excludes_skip_serializing_if_fields() {
+    // 0.0.17 H fix (codex): the checked-in schema used to mark
+    // `prefer` / `avoid` as required even though
+    // CheckOutcomeView::From<&Outcome> applies
+    // skip_serializing_if = "Vec::is_empty" on both. Result:
+    // every Ok outcome with no prefer/avoid violated its own
+    // schema. This gate keeps the two views aligned by asserting
+    // those fields stay out of `required`.
+    let schema = schemars::schema_for!(pathlint::lint::CheckOutcomeView);
+    let json = serde_json::to_value(&schema).expect("schema must serialize");
+    let required = json
+        .get("required")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let required: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+    for field in ["prefer", "avoid", "reason", "diagnosis", "resolved"] {
+        assert!(
+            !required.contains(&field),
+            "schema marks `{field}` as required but runtime uses skip_serializing_if; \
+             update the field attribute or runtime to keep them aligned (required: {required:?})"
+        );
+    }
+}
+
+#[test]
 fn checked_in_check_schema_matches_generator() {
     let actual_schema = schemars::schema_for!(pathlint::lint::CheckOutcomeView);
     let actual =
