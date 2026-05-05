@@ -904,6 +904,62 @@ mod tests {
     }
 
     #[test]
+    fn check_json_kind_field_is_always_a_string() {
+        // 0.0.17 BLOCKER fix: kind must be a string discriminator
+        // for every Status variant. Pre-0.0.17 the externally-tagged
+        // NgNotExecutable(String) and ConfigError(String) variants
+        // emitted {"kind": {"ng_not_executable": "reason"}} which
+        // broke the contract every other JSON-emitting subcommand
+        // honours.
+        let cases: Vec<(Outcome, &str)> = vec![
+            (
+                Outcome {
+                    command: "x".into(),
+                    status: Status::Ok,
+                    ..Default::default()
+                },
+                "ok",
+            ),
+            (
+                Outcome {
+                    command: "x".into(),
+                    status: Status::NgNotExecutable,
+                    reason: Some("not a regular file".into()),
+                    ..Default::default()
+                },
+                "ng_not_executable",
+            ),
+            (
+                Outcome {
+                    command: "x".into(),
+                    status: Status::ConfigError,
+                    reason: Some("undefined source: x".into()),
+                    ..Default::default()
+                },
+                "config_error",
+            ),
+            (
+                Outcome {
+                    command: "x".into(),
+                    status: Status::Skip,
+                    ..Default::default()
+                },
+                "skip",
+            ),
+        ];
+        for (outcome, expected_kind) in cases {
+            let out = check_json(&[outcome.clone()]).unwrap();
+            let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+            assert!(
+                v[0]["kind"].is_string(),
+                "kind must be a string for {:?}: {out}",
+                outcome.status
+            );
+            assert_eq!(v[0]["kind"], expected_kind);
+        }
+    }
+
+    #[test]
     fn check_json_skip_outcome_has_no_diagnosis() {
         let skip = Outcome {
             command: "tooly".into(),
