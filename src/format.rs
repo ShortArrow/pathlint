@@ -117,7 +117,7 @@ pub fn where_human(found: &Found) -> String {
             .collect();
         buf.push_str(&format!("  sources:  {}\n", cleaned.join(", ")));
     }
-    if let Some(Provenance::MiseInstallerPlugin {
+    if let Some(Provenance::WrapperInstaller {
         installer,
         plugin_segment,
     }) = &found.provenance
@@ -417,32 +417,27 @@ impl<'a> From<&'a Outcome> for OutcomeView<'a> {
 /// `pathlint where --json`.
 ///
 /// `command` is needed because `WhereOutcome::NotFound` carries no
-/// data — the JSON shape `{"command":"...", "found":false}` keeps
-/// the discriminator field consistent with the Found variant.
+/// data. As of 0.0.14 the JSON shape uses a top-level `kind`
+/// discriminator (`"found"` or `"not_found"`) so future variants
+/// (e.g. an "ambiguous" outcome covering wrapper layers) can land
+/// without breaking consumers that pattern-matched on
+/// `found: true|false`. The previous `found: bool` field is gone.
 pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde_json::Error> {
     #[derive(serde::Serialize)]
-    #[serde(untagged)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
     enum Out<'a> {
         NotFound {
             command: &'a str,
-            found: bool,
         },
         Found {
-            found: bool,
             #[serde(flatten)]
             inner: &'a Found,
         },
     }
 
     let payload = match outcome {
-        WhereOutcome::NotFound => Out::NotFound {
-            command,
-            found: false,
-        },
-        WhereOutcome::Found(f) => Out::Found {
-            found: true,
-            inner: f,
-        },
+        WhereOutcome::NotFound => Out::NotFound { command },
+        WhereOutcome::Found(f) => Out::Found { inner: f },
     };
     serde_json::to_string_pretty(&payload)
 }
@@ -625,7 +620,7 @@ mod tests {
     fn where_human_includes_provenance_line_when_set() {
         let mut f = found_minimal();
         f.matched_sources = vec!["mise_installs".into(), "mise".into()];
-        f.provenance = Some(Provenance::MiseInstallerPlugin {
+        f.provenance = Some(Provenance::WrapperInstaller {
             installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
@@ -696,7 +691,8 @@ mod tests {
     fn where_json_found_carries_kind_discriminators() {
         let out = where_json("rustc", &WhereOutcome::Found(found_minimal())).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["found"], true);
+        // 0.0.14: top-level kind discriminator instead of found:bool.
+        assert_eq!(v["kind"], "found");
         assert_eq!(v["command"], "rustc");
         assert_eq!(v["uninstall"]["kind"], "command");
         assert_eq!(v["uninstall"]["command"], "cargo uninstall rustc");
@@ -707,7 +703,8 @@ mod tests {
     fn where_json_not_found_is_compact() {
         let out = where_json("ghost", &WhereOutcome::NotFound).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["found"], false);
+        // 0.0.14: top-level kind = "not_found" replaces found:false.
+        assert_eq!(v["kind"], "not_found");
         assert_eq!(v["command"], "ghost");
         assert!(v.get("resolved").is_none());
     }
@@ -715,13 +712,15 @@ mod tests {
     #[test]
     fn where_json_provenance_emits_kind_and_segment() {
         let mut f = found_minimal();
-        f.provenance = Some(Provenance::MiseInstallerPlugin {
+        f.provenance = Some(Provenance::WrapperInstaller {
             installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
         let out = where_json("foo", &WhereOutcome::Found(f)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["provenance"]["kind"], "mise_installer_plugin");
+        // 0.0.14: variant renamed from MiseInstallerPlugin →
+        // WrapperInstaller; serde tag = "wrapper_installer".
+        assert_eq!(v["provenance"]["kind"], "wrapper_installer");
         assert_eq!(v["provenance"]["installer"], "cargo");
         assert_eq!(v["provenance"]["plugin_segment"], "cargo-foo");
     }

@@ -74,7 +74,7 @@ prefer  = ["my_cargo"]
         &rules,
         // cargo first, other second — already satisfies prefer
         &join_path(&[&cargo_dir, &other_dir]),
-        &["sort"],
+        &["sort", "--dry-run"],
     );
     assert_eq!(code, 0, "stdout: {stdout}");
     assert!(
@@ -106,7 +106,11 @@ prefer  = ["my_cargo"]
     let rules = write_rules(tmp.path(), &body);
 
     // other before cargo — sort should propose moving cargo first.
-    let (code, stdout, _) = run_with_args(&rules, &join_path(&[&other_dir, &cargo_dir]), &["sort"]);
+    let (code, stdout, _) = run_with_args(
+        &rules,
+        &join_path(&[&other_dir, &cargo_dir]),
+        &["sort", "--dry-run"],
+    );
     assert_eq!(code, 0, "sort never reports failure; stdout: {stdout}");
     assert!(stdout.contains("--dry-run"), "stdout: {stdout}");
     assert!(stdout.contains("moved:"), "stdout: {stdout}");
@@ -141,7 +145,7 @@ prefer  = ["my_cargo"]
     let (code, stdout, _) = run_with_args(
         &rules,
         &join_path(&[&other_dir, &cargo_dir]),
-        &["sort", "--json"],
+        &["sort", "--dry-run", "--json"],
     );
     assert_eq!(code, 0, "stdout: {stdout}");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
@@ -175,7 +179,11 @@ prefer  = ["my_cargo"]
     );
     let rules = write_rules(tmp.path(), &body);
 
-    let (code, stdout, _) = run_with_args(&rules, &join_path(&[&plain_dir]), &["sort", "--json"]);
+    let (code, stdout, _) = run_with_args(
+        &rules,
+        &join_path(&[&plain_dir]),
+        &["sort", "--dry-run", "--json"],
+    );
     assert_eq!(code, 0, "stdout: {stdout}");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     let notes = v["notes"].as_array().unwrap();

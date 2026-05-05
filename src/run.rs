@@ -92,17 +92,17 @@ pub fn execute(cli: Cli) -> Result<u8> {
         Some(Command::Init(args)) => return execute_init(&args),
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
-        }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
+        }) => return execute_catalog_list(&args, cli.global.config.as_deref()),
         Some(Command::Catalog {
             action: CatalogCommand::Relations(args),
-        }) => return execute_catalog_relations(&args, cli.global.rules.as_deref()),
+        }) => return execute_catalog_relations(&args, cli.global.config.as_deref()),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
         Some(Command::Trace(args)) => return execute_trace(&args, &cli.global),
         Some(Command::Sort(args)) => return execute_sort(&args, &cli.global),
         Some(Command::Check(args)) => args,
         None => CheckArgs::default(),
     };
-    let rules_path = locate_rules(cli.global.rules.as_deref())?;
+    let rules_path = locate_rules(cli.global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -164,7 +164,7 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     // catalog (e.g. `mise_activate_both` uses source paths). A
     // hostile rules override could weaponise the catalog if we
     // didn't enforce safe needles before continuing.
-    let rules_path = locate_rules(global.rules.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -257,7 +257,7 @@ fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8
     // R4 reads the same merged catalog `check` does so user
     // overrides apply; the rules file's `[[expect]]` block is
     // ignored — `where` is per-command, not rule-driven.
-    let rules_path = locate_rules(global.rules.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -294,11 +294,22 @@ fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8
 }
 
 fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+    // 0.0.14: --dry-run is opt-in. Running `pathlint sort` without
+    // a mode flag is a configuration error so callers always
+    // declare intent (and so that adding `--apply` post-1.0 is
+    // non-breaking — the new flag will simply switch the path).
+    if !args.dry_run {
+        anyhow::bail!(
+            "pathlint sort requires --dry-run (the only mode currently shipped). \
+             A future --apply mode is reserved for post-1.0; pass --dry-run \
+             explicitly to acknowledge that pathlint never mutates PATH today."
+        );
+    }
     // sort reads the same merged catalog and rules as `check`, so
     // its proposal aligns with the rules the user is already
     // running against. The rules-file `[[expect]]` block is the
     // input — `prefer` rules drive the reordering.
-    let rules_path = locate_rules(global.rules.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => crate::config::Config::from_path(p)?,
         None => crate::config::Config::default(),

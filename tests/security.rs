@@ -214,6 +214,29 @@ fn check_accepts_relative_symlink_to_real_file() {
 }
 
 #[test]
+fn sort_requires_dry_run_flag() {
+    // 0.0.14: --dry-run is opt-in. `pathlint sort` without it
+    // exits 2 with an explanation that --apply is reserved for
+    // post-1.0.
+    let tmp = tempfile::tempdir().unwrap();
+    let rules = write_rules(tmp.path(), "");
+
+    let mut cmd = Command::new(BIN);
+    cmd.arg("--rules")
+        .arg(&rules)
+        .arg("sort")
+        .env("PATH", "/usr/bin")
+        .env_remove("XDG_CONFIG_HOME");
+    let out = cmd.output().expect("failed to run pathlint binary");
+    assert_eq!(out.status.code().unwrap_or(-1), 2);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--dry-run"),
+        "stderr should explain the missing flag: {stderr}"
+    );
+}
+
+#[test]
 fn check_rejects_user_catalog_version() {
     // 0.0.14: catalog_version is reserved for the embedded
     // catalog. A user pathlint.toml that declares it is a
@@ -256,6 +279,7 @@ later = "a"
     cmd.arg("--rules")
         .arg(&rules)
         .arg("sort")
+        .arg("--dry-run")
         .env("PATH", "/usr/bin")
         .env_remove("XDG_CONFIG_HOME");
     let out = cmd.output().expect("failed to run pathlint binary");

@@ -51,12 +51,13 @@ pub enum Command {
 #[derive(Debug, clap::Args)]
 pub struct SortArgs {
     /// Print the proposal without touching PATH. This is the only
-    /// mode `sort` ships in 0.0.8; the flag exists so scripts and
-    /// CI configs can be explicit, and so that adding `--apply`
-    /// later (post-1.0) is a non-breaking change. Always true; a
-    /// future `--apply` would have to live behind its own flag and
+    /// mode `sort` ships today; the flag is opt-in so callers
+    /// signal awareness that pathlint never mutates PATH and so
+    /// that adding `--apply` later (post-1.0) is a non-breaking
+    /// change. As of 0.0.14, `pathlint sort` without `--dry-run`
+    /// exits 2 with an explanation; a future `--apply` would
     /// override this.
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = false)]
     pub dry_run: bool,
 
     /// Emit the proposal as a JSON object (`SortPlan`) instead of
@@ -180,9 +181,11 @@ pub struct GlobalOpts {
     pub target: TargetArg,
 
     /// Path to pathlint.toml. Default search: ./pathlint.toml then
-    /// $XDG_CONFIG_HOME/pathlint/pathlint.toml.
-    #[arg(long)]
-    pub rules: Option<PathBuf>,
+    /// $XDG_CONFIG_HOME/pathlint/pathlint.toml. Renamed from
+    /// `--rules` in 0.0.14; the old `--rules` spelling stays as an
+    /// alias throughout the 0.0.x line.
+    #[arg(long = "config", visible_alias = "rules")]
+    pub config: Option<PathBuf>,
 
     /// Print every expectation incl. n/a, plus the resolved PATH.
     #[arg(short, long)]

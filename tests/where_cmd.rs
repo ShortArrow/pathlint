@@ -236,7 +236,8 @@ uninstall_command = "cargo uninstall {{bin}}"
     assert_eq!(code, 0, "stdout: {stdout}");
 
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
-    assert_eq!(v["found"], true);
+    // 0.0.14: top-level kind discriminator replaces found:bool.
+    assert_eq!(v["kind"], "found");
     assert_eq!(v["command"], "lazygit");
     assert!(v["resolved"].is_string());
     assert_eq!(v["matched_sources"][0], "cargo");
@@ -261,7 +262,8 @@ fn where_json_not_found_emits_compact_object_with_exit_1() {
     );
     assert_eq!(code, 1, "stdout: {stdout}");
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
-    assert_eq!(v["found"], false);
+    // 0.0.14: top-level kind = "not_found" replaces found:false.
+    assert_eq!(v["kind"], "not_found");
     assert_eq!(v["command"], "ghost_definitely_no_such_xyz");
     assert!(v.get("resolved").is_none());
 }
