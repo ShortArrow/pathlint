@@ -13,7 +13,7 @@ use crate::os_detect::Os;
 use crate::resolve::Resolution;
 use crate::source_match;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Ok,
@@ -113,7 +113,7 @@ impl Outcome {
 /// shape check rejected the file, etc. The struct does *not*
 /// carry `command` / `resolved` — those live on `Outcome` and the
 /// caller pairs them up.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Diagnosis {
     /// Resolved path matched some sources, but none of the
