@@ -39,3 +39,40 @@ fn public_api_compiles() {
     // The use-statements above are the actual contract; this test
     // body is just a marker so the test runner reports something.
 }
+
+#[test]
+fn evaluate_callable_with_pathbuf_resolver() {
+    // 0.0.16 BLOCKER fix: lint::evaluate is part of the published
+    // surface, so the resolver closure must be expressible with
+    // public types alone. PathBuf is from std; pathlint's internal
+    // Resolution wrapper would not compile here from an external
+    // crate. integration tests run as a separate crate so this
+    // test catches the regression.
+    use std::collections::BTreeMap;
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let outcomes = evaluate(
+        &[],
+        &sources,
+        Os::Linux,
+        |_cmd: &str| -> Option<std::path::PathBuf> { None },
+        |_path: &std::path::Path, _kind: Kind| -> Result<(), String> { Ok(()) },
+    );
+    assert!(outcomes.is_empty());
+}
+
+#[test]
+fn locate_callable_with_pathbuf_resolver() {
+    // Same DIP gate for trace::locate — the resolver closure must
+    // return Option<PathBuf>, not the internal Resolution wrapper.
+    use std::collections::BTreeMap;
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let relations: Vec<Relation> = Vec::new();
+    let outcome = locate(
+        "definitely_no_such_command",
+        &sources,
+        &relations,
+        Os::Linux,
+        |_cmd: &str| -> Option<std::path::PathBuf> { None },
+    );
+    assert!(matches!(outcome, TraceOutcome::NotFound));
+}
