@@ -8,7 +8,7 @@ const BIN: &str = env!("CARGO_BIN_EXE_pathlint");
 
 fn run_where(rules: &Path, path_value: &str, command: &str) -> (i32, String, String) {
     let out = Command::new(BIN)
-        .arg("--rules")
+        .arg("--config")
         .arg(rules)
         .arg("where")
         .arg(command)
@@ -201,7 +201,7 @@ fn run_where_args(
     command: &str,
 ) -> (i32, String, String) {
     let mut cmd = Command::new(BIN);
-    cmd.arg("--rules")
+    cmd.arg("--config")
         .arg(rules)
         .arg("where")
         .args(extra_before)
@@ -313,7 +313,7 @@ uninstall_command = "cargo uninstall {{bin}}"
     let rules = write_rules(tmp.path(), &body);
 
     let out = Command::new(BIN)
-        .arg("--rules")
+        .arg("--config")
         .arg(&rules)
         .arg("trace")
         .arg("lazygit")

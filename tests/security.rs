@@ -17,7 +17,7 @@ fn write_rules(dir: &Path, body: &str) -> std::path::PathBuf {
 
 fn run(subcommand: &str, rules: &Path, path_value: &str) -> (i32, String, String) {
     let out = Command::new(BIN)
-        .arg("--rules")
+        .arg("--config")
         .arg(rules)
         .arg(subcommand)
         .env("PATH", path_value)
@@ -81,7 +81,7 @@ fn where_rejects_user_source_pointing_at_root() {
     let rules = write_rules(tmp.path(), &body);
 
     let mut cmd = Command::new(BIN);
-    cmd.arg("--rules")
+    cmd.arg("--config")
         .arg(&rules)
         .arg("where")
         .arg("ls")
@@ -222,7 +222,7 @@ fn sort_requires_dry_run_flag() {
     let rules = write_rules(tmp.path(), "");
 
     let mut cmd = Command::new(BIN);
-    cmd.arg("--rules")
+    cmd.arg("--config")
         .arg(&rules)
         .arg("sort")
         .env("PATH", "/usr/bin")
@@ -293,7 +293,7 @@ later = "a"
     let rules = write_rules(tmp.path(), body);
 
     let mut cmd = Command::new(BIN);
-    cmd.arg("--rules")
+    cmd.arg("--config")
         .arg(&rules)
         .arg("sort")
         .arg("--dry-run")
@@ -348,7 +348,7 @@ guest_provider = "a"
     let rules = write_rules(tmp.path(), body);
 
     let mut cmd = Command::new(BIN);
-    cmd.arg("--rules")
+    cmd.arg("--config")
         .arg(&rules)
         .arg("where")
         .arg("ls")
