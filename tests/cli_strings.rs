@@ -18,7 +18,11 @@ fn rules_alias_works_for_backwards_compat() {
     // alias coverage would be lost when the rest of the suite
     // moved over.
     let out = Command::new(BIN)
-        .args(["--rules", "/definitely/does/not/exist/pathlint.toml", "check"])
+        .args([
+            "--rules",
+            "/definitely/does/not/exist/pathlint.toml",
+            "check",
+        ])
         .output()
         .expect("failed to run pathlint");
     let code = out.status.code().unwrap_or(-1);
