@@ -213,6 +213,94 @@ fn check_accepts_relative_symlink_to_real_file() {
     );
 }
 
+#[test]
+fn sort_rejects_user_relation_cycle() {
+    // 0.0.14: every relation consumer (sort/doctor/trace, plus
+    // the pre-existing catalog relations) must surface a cycle as
+    // exit 2. Before 0.0.14, sort silently bubble-passed through
+    // a cycle until its N^2 guard expired and emitted a partial
+    // reorder.
+    let tmp = tempfile::tempdir().unwrap();
+    let body = r#"
+[[relation]]
+kind = "prefer_order_over"
+earlier = "a"
+later = "b"
+
+[[relation]]
+kind = "prefer_order_over"
+earlier = "b"
+later = "a"
+"#;
+    let rules = write_rules(tmp.path(), body);
+
+    let mut cmd = Command::new(BIN);
+    cmd.arg("--rules")
+        .arg(&rules)
+        .arg("sort")
+        .env("PATH", "/usr/bin")
+        .env_remove("XDG_CONFIG_HOME");
+    let out = cmd.output().expect("failed to run pathlint binary");
+    assert_eq!(out.status.code().unwrap_or(-1), 2);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("cycle"),
+        "stderr should mention the cycle: {stderr}"
+    );
+}
+
+#[test]
+fn doctor_rejects_user_relation_cycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = r#"
+[[relation]]
+kind = "depends_on"
+source = "a"
+target = "b"
+
+[[relation]]
+kind = "depends_on"
+source = "b"
+target = "a"
+"#;
+    let rules = write_rules(tmp.path(), body);
+
+    let (code, _stdout, stderr) = run("doctor", &rules, "/usr/bin");
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("cycle"), "stderr: {stderr}");
+}
+
+#[test]
+fn where_rejects_user_relation_cycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    let body = r#"
+[[relation]]
+kind = "served_by_via"
+host = "a"
+guest_pattern = "x-*"
+guest_provider = "b"
+
+[[relation]]
+kind = "served_by_via"
+host = "b"
+guest_pattern = "y-*"
+guest_provider = "a"
+"#;
+    let rules = write_rules(tmp.path(), body);
+
+    let mut cmd = Command::new(BIN);
+    cmd.arg("--rules")
+        .arg(&rules)
+        .arg("where")
+        .arg("ls")
+        .env("PATH", "/usr/bin")
+        .env_remove("XDG_CONFIG_HOME");
+    let out = cmd.output().unwrap();
+    assert_eq!(out.status.code().unwrap_or(-1), 2);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("cycle"), "stderr: {stderr}");
+}
+
 #[cfg(unix)]
 #[test]
 fn check_rejects_relative_symlink_chain() {

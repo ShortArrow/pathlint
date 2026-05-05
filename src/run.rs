@@ -65,6 +65,26 @@ fn enforce_source_validation(
     anyhow::bail!("{} unsafe source definition(s); aborting", warnings.len());
 }
 
+/// Enforce that the merged relation graph is acyclic before any
+/// relation consumer (sort / doctor / trace / catalog relations)
+/// reads it. A cycle in `served_by_via` / `depends_on` /
+/// `prefer_order_over` is a configuration error (exit 2). Without
+/// this gate, `sort`'s `apply_prefer_order_over` would silently
+/// stop after its bubble-pass guard expires, leaving the user
+/// with a partial reorder and no diagnostic. `catalog relations`
+/// already performed this check; 0.0.14 extends it to every
+/// relation consumer for symmetry.
+///
+/// Pure: takes the merged relation slice; emits its effect through
+/// stderr and the returned Result.
+fn enforce_relation_acyclic(relations: &[crate::config::Relation]) -> Result<()> {
+    if let Err(msg) = catalog::check_acyclic(relations) {
+        eprintln!("pathlint: {msg}");
+        anyhow::bail!("relation graph has a cycle; aborting");
+    }
+    Ok(())
+}
+
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
@@ -152,6 +172,7 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     let merged = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&merged, Os::current())?;
     let relations = catalog::merge_with_user_relations(&cfg.relations);
+    enforce_relation_acyclic(&relations)?;
 
     // Validate the filter against built-in kind names plus any
     // user-declared conflict diagnostics from the merged relation
@@ -218,11 +239,10 @@ fn execute_catalog_relations(
     let relations = catalog::merge_with_user_relations(&cfg.relations);
 
     // DAG check: catch a circular `served_by_via` / `depends_on`
-    // before showing the user a list they cannot reason about.
-    if let Err(msg) = catalog::check_acyclic(&relations) {
-        eprintln!("pathlint: {msg}");
-        return Ok(2);
-    }
+    // / `prefer_order_over` before showing the user a list they
+    // cannot reason about. The same gate is applied by every
+    // other relation consumer (doctor / trace / sort) since 0.0.14.
+    enforce_relation_acyclic(&relations)?;
 
     if args.json {
         let json = format::relations_json(&relations)?;
@@ -245,6 +265,7 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
     let merged = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&merged, Os::current())?;
     let relations = catalog::merge_with_user_relations(&cfg.relations);
+    enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
     let outcome = where_cmd::locate(&args.command, &merged, &relations, Os::current(), |cmd| {
@@ -284,9 +305,10 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     };
     let catalog = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&catalog, Os::current())?;
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
+    enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
-    let relations = catalog::merge_with_user_relations(&cfg.relations);
     let plan = crate::sort::sort_path(
         &path_entries,
         &cfg.expectations,
