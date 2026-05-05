@@ -178,16 +178,19 @@ jobs:
         # Re-run the generators from the tagged commit so the
         # release assets match the schemars derives at that
         # version. The drift tests in CI guarantee the results
-        # match schemas/pathlint.schema.json + check.schema.json
-        # on main.
+        # match the checked-in schemas/*.schema.json files on
+        # main.
         run: |
           cargo run --release --bin gen_schema > dist/pathlint.schema.json
           cargo run --release --bin gen_check_schema > dist/check.schema.json
+          cargo run --release --bin gen_doctor_schema > dist/doctor.schema.json
+          cargo run --release --bin gen_trace_schema > dist/trace.schema.json
+          cargo run --release --bin gen_sort_schema > dist/sort.schema.json
 
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum *.tar.gz *.zip pathlint.schema.json check.schema.json 2>/dev/null | tee SHA256SUMS
+          sha256sum *.tar.gz *.zip *.schema.json 2>/dev/null | tee SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
@@ -201,6 +204,9 @@ jobs:
             dist/*.zip
             dist/pathlint.schema.json
             dist/check.schema.json
+            dist/doctor.schema.json
+            dist/trace.schema.json
+            dist/sort.schema.json
             dist/SHA256SUMS
 
   publish-crates:

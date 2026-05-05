@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Diagnostic",
+  "description": "Discriminated union of every doctor diagnostic kind. The `kind` field is the discriminator and the variant payload is flattened alongside it for JSON consumers — e.g. `Shortenable` emits `{\"kind\":\"shortenable\",\"suggestion\":\"...\"}` rather than nesting the suggestion under a wrapper.",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "first_index",
+        "kind"
+      ],
+      "properties": {
+        "first_index": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "duplicate"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "missing"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind",
+        "suggestion"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "shortenable"
+          ]
+        },
+        "suggestion": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "trailing_slash"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "canonical",
+        "kind"
+      ],
+      "properties": {
+        "canonical": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "case_variant"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "short_name"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "malformed"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "description": "Multiple sources that should not coexist in PATH have all fired at once. `diagnostic` is the snake_case label identifying the specific conflict (e.g. `mise_activate_both`) and comes from a `Relation::ConflictsWhenBothInPath`. Each element of `groups` lists the PATH entries that matched the corresponding source in the relation's `sources` array. `Diagnostic.index` points at the first entry of the first non-empty group for sort stability.",
+      "type": "object",
+      "required": [
+        "diagnostic",
+        "groups",
+        "kind"
+      ],
+      "properties": {
+        "diagnostic": {
+          "type": "string"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            }
+          }
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "conflict"
+          ]
+        }
+      }
+    }
+  ],
+  "required": [
+    "entry",
+    "index",
+    "severity"
+  ],
+  "properties": {
+    "entry": {
+      "type": "string"
+    },
+    "index": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0.0
+    },
+    "severity": {
+      "$ref": "#/definitions/Severity"
+    }
+  },
+  "definitions": {
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "warn",
+        "error"
+      ]
+    }
+  }
+}
