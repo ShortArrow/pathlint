@@ -776,7 +776,7 @@ Commands:
     list       list every known source (built-in + user)
     relations  list declared [[relation]] between sources
   doctor   Lint the PATH itself (duplicates, missing dirs, etc.)
-  where    Show where a command resolves from + uninstall hint
+  trace    Show where a command resolves from + uninstall hint
   sort     Propose a PATH order satisfying every [[expect]] rule
   help     Print help
 
@@ -797,6 +797,14 @@ post-1.0 list.
 
 `pathlint catalog relations` prints the source relations declared
 by built-in plugins and any user `[[relation]]` blocks (see §9.1).
+
+**Alias retirement.** `pathlint where` (alias of `pathlint trace`)
+and `--rules` (alias of `--config`) are kept through 0.0.x for
+backwards compatibility with 0.0.13 and earlier. They are slated
+for removal in a future release; the exact timing is undecided
+and will be announced ahead of the breaking release. Until then
+both spellings remain discoverable in `--help` via clap's
+`visible_alias`.
 
 ## 12. Non-functional requirements
 

@@ -54,10 +54,13 @@ TOML の 2 つの概念：
 ## ステータス
 
 0.0.x ラインで 6 サブコマンドが動きます: `check`（デフォルト）/
-`doctor` / `where` / `sort` / `init` / `catalog`（`list` と
-`relations`）。TOML スキーマと CLI 表面は引き続き動きますが、
-解決 / マッチ / レポートの一連は実装済みでテストもあります。
-詳細設計は [docs/PRD.jp.md](PRD.jp.md) を参照。
+`doctor` / `trace` / `sort` / `init` / `catalog`（`list` と
+`relations`）。`pathlint where` は `pathlint trace` の visible
+alias、`--rules` は `--config` の visible alias として 0.0.x
+線では残します。両 alias は将来のリリースで削除予定（時期未定、
+破壊リリース前に告知）。TOML スキーマと CLI 表面は引き続き動き
+ますが、解決 / マッチ / レポートの一連は実装済みでテストもあり
+ます。詳細設計は [docs/PRD.jp.md](PRD.jp.md) を参照。
 
 ## pathlint が **教えてくれない** こと
 
@@ -248,7 +251,7 @@ lazygit
 provenance はパス上の heuristic で source match では**ない**。
 `prefer = ["cargo"]` が `mise/installs/cargo-foo/...` のバイナリに
 マッチすることはない。source ラベルはカタログ駆動のまま、
-provenance は `where` の表示専用。
+provenance は `trace` の表示専用。
 
 `MISE_DATA_DIR` や `XDG_DATA_HOME` で mise を非標準パスに置いて
 いる場合は、3 つのソースをまとめて `pathlint.toml` で上書きする：
