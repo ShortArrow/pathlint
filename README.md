@@ -289,7 +289,7 @@ LSP) and the [Even Better TOML][ebt] VS Code extension:
 ```
 
 Pin to a specific release for reproducibility (replace `<TAG>`
-with the version you want, e.g. `v0.0.14`):
+with the version you want, e.g. `v0.0.17`):
 
 ```toml
 #:schema https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json
