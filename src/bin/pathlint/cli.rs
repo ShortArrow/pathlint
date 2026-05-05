@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::path_source::Target;
+use pathlint::path_source::Target;
 
 #[derive(Debug, Parser)]
 #[command(name = "pathlint", version, about = "Lint PATH against [[expect]] rules", long_about = None)]
