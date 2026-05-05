@@ -63,6 +63,11 @@ are still moving, but the resolve / match / report pipeline is
 in place and covered by tests. See [docs/PRD.md](docs/PRD.md)
 for the full design.
 
+`pathlint --version` typically runs in well under 50 ms on a
+modern host. Verify on your hardware with `scripts/bench.sh`,
+which wraps `hyperfine` around `--version`, `--help`, and
+`catalog list --names-only`.
+
 ## What pathlint *won't* tell you
 
 `pathlint` is **path-prefix based**: it resolves the command, looks at

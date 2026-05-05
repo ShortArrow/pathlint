@@ -13,6 +13,11 @@ Before kicking off the workflow:
   copy-pasting see a known-good URL, not an unreleased one).
   Search for `https://github.com/ShortArrow/pathlint/releases/download/`
   in `README.md`.
+- (optional, recommended) Run `scripts/bench.sh` and paste the
+  hyperfine table into the release notes draft. Include the host
+  description (CPU model, OS) so the numbers stay interpretable
+  later. PRD §12 claims `<50 ms startup` — the bench script is the
+  receipt.
 
 Then:
 
