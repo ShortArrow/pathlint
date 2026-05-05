@@ -1014,11 +1014,47 @@ Tagged with the role(s) each touches.
   0.0.14 — built-in `os_baseline_linux_sbin` source. Add it to
   `prefer` instead of writing your own `[source.usr_sbin]`.)*
 
-## 17. 0.0.14 BREAKING CHANGES
+## 17. 0.0.x BREAKING CHANGES (cumulative)
 
-0.0.14 is the last 0.0.x release that breaks contracts. The
-0.0.x line allows breaks; 0.1.0 will freeze the API surface.
-Breaks bundled into 0.0.14 with sample migrations:
+The 0.0.x line allows breaks (Cargo treats `0.0.x → 0.0.(x+1)` as
+MAJOR-equivalent). Each break is announced in the release notes;
+this section keeps the cumulative list with sample migrations.
+Whether and when 0.0.x graduates to 0.1.0 is undecided.
+
+### 0.0.16
+
+- **Lib resolver signature simplified.** `pathlint::lint::evaluate`
+  and `pathlint::trace::locate` now take a resolver closure
+  returning `Option<std::path::PathBuf>`, not the internal
+  `Resolution { full_path: PathBuf }` wrapper. Embedders that
+  built their own resolver closures must drop the wrapper:
+  `Some(Resolution { full_path: pb })` → `Some(pb)`.
+- **`Resolution` type removed.** `pathlint::resolve::resolve()`
+  now returns `Option<PathBuf>` directly. Internal-only impact —
+  the type was never on the public surface, but downstream
+  embedders accessing pathlint via `git` dependencies might
+  notice.
+
+### 0.0.15
+
+- **`pathlint check --json` discriminator renamed.** Each outcome
+  array element now uses `kind` (matches doctor / trace / sort /
+  catalog relations) instead of the pre-0.0.15 `status`. The
+  values themselves are unchanged. Migration: any consumer that
+  branched on `.status` must read `.kind` instead.
+- **Lib public surface narrowed to nine supported modules.**
+  `config`, `lint`, `trace`, `sort`, `doctor`, `catalog`,
+  `source_match`, `os_detect`, `expand`. Internals are
+  `pub(crate)` or `#[doc(hidden)] pub` (the latter only for
+  `cli` / `run` reachable from `src/main.rs`). Embedders relying
+  on previously-public modules (e.g. `format`, `report`) must
+  migrate.
+- **UserConfig and the embedded catalog file are distinct types.**
+  A user `pathlint.toml` declaring `catalog_version` is now a
+  structural parse error (deny_unknown_fields) instead of the
+  post-parse error 0.0.14 introduced.
+
+### 0.0.14
 
 - **`pathlint where` → `pathlint trace`.** `where` remains as a
   clap visible alias for the rest of 0.0.x.
@@ -1051,15 +1087,12 @@ Breaks bundled into 0.0.14 with sample migrations:
   shipped is `--dry-run`.
 - **`catalog_version = N` in user `pathlint.toml` is rejected.**
   The field was always reserved for the embedded catalog;
-  `Config::from_path` now exits 2 if a user TOML sets it.
+  `Config::from_path` now exits 2 if a user TOML sets it. (0.0.15
+  promoted this from a post-parse to a structural error.)
 - **`depends_on` is descriptive only.** It surfaces in
   `pathlint catalog relations` but does not affect doctor /
   trace / sort behaviour. Confirmed in PRD §9.1 to remove the
   earlier "Surfaced by `pathlint where`" mismatch.
-- **Lib public surface: `pathlint::config` only.** All other
-  modules are `#[doc(hidden)]`. Anyone embedding pathlint as a
-  library should depend on `pathlint::config::Config` and run
-  the binary for everything else.
 - **`build.rs` aggregates referential integrity violations.**
   CI surfaces every offending plugin in one failure instead of
   bailing on the first.
