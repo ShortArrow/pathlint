@@ -122,8 +122,8 @@ pathlint catalog relations        # 0.0.9+: declared source relations
 pathlint catalog relations --json # 0.0.9+: same, machine-readable
 
 # Find a command's provenance and uninstall hint
-pathlint where lazygit            # who installed this binary?
-pathlint where lazygit --json     # 0.0.6+: machine-readable output
+pathlint trace lazygit            # who installed this binary?
+pathlint trace lazygit --json     # 0.0.6+: machine-readable output
 
 # Filter doctor diagnostics for CI
 pathlint doctor --exclude shortenable,missing
@@ -233,14 +233,14 @@ command = "node"
 prefer  = ["mise"]
 ```
 
-`pathlint where <command>` is plugin-aware: when the resolved
+`pathlint trace <command>` is plugin-aware: when the resolved
 binary lives under `mise/installs/<segment>/...` and `<segment>`
 starts with `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`, the
 output adds a `provenance:` line and a `mise uninstall ...` hint
 so you don't have to remember which plugin you used:
 
 ```
-$ pathlint where lazygit
+$ pathlint trace lazygit
 lazygit
   resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
   sources:  mise_installs, mise

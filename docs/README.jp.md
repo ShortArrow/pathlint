@@ -121,8 +121,8 @@ pathlint catalog relations --json # 0.0.9+: 同上、機械可読
 pathlint doctor
 
 # コマンドがどこから来たか + uninstall コマンドのヒント
-pathlint where lazygit
-pathlint where lazygit --json     # 0.0.6+: 機械可読出力
+pathlint trace lazygit
+pathlint trace lazygit --json     # 0.0.6+: 機械可読出力
 
 # CI 用に doctor の診断を絞る
 pathlint doctor --exclude shortenable,missing
@@ -230,14 +230,14 @@ command = "node"
 prefer  = ["mise"]
 ```
 
-`pathlint where <command>` は plugin-aware：解決済みパスが
+`pathlint trace <command>` は plugin-aware：解決済みパスが
 `mise/installs/<segment>/...` の下にあり、`<segment>` が
 `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-` で始まるとき、
 出力に `provenance:` 行と `mise uninstall ...` ヒントが追加される
 （どのプラグインで入れたか思い出さなくて済む）：
 
 ```
-$ pathlint where lazygit
+$ pathlint trace lazygit
 lazygit
   resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
   sources:  mise_installs, mise

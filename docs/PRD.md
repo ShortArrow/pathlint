@@ -28,7 +28,7 @@ the `PATH` itself is often a mess: duplicates, dangling directories,
 8.3 short names, entries that could be written more concisely.
 `pathlint doctor` lints the PATH on its own.
 
-**R4 — Provenance.** `pathlint where <command>` reports the
+**R4 — Provenance.** `pathlint trace <command>` reports the
 resolved binary's full path, the catalog sources it matches, and
 the most plausible uninstall command (`mise uninstall cargo:lazygit`,
 `cargo uninstall lazygit`, ...). For binaries served through mise's
@@ -98,7 +98,7 @@ Per-role:
   another debugging tool. `pathlint check --explain` (0.0.7+) opts
   in to a multi-line breakdown that names the offending `avoid`
   source, lists the `prefer` candidates that didn't match, and
-  points at `pathlint where <command>` for the uninstall hint.
+  points at `pathlint trace <command>` for the uninstall hint.
 - **R2 (existence and shape).** When a command resolves to a path,
   the path must point at an actually-executable file. Symlinks
   must be alive; "executable" must mean it. Today only `not_found`
@@ -125,7 +125,7 @@ The roles above also imply specific *non-roles*:
   logic internally, but it doesn't aim to replace `where` /
   `type -a` / `Get-Command -All`. The R1 question is "is the right
   installer winning?", not "where does this resolve?". R4
-  (`pathlint where`) surfaces the resolved path prominently, but
+  (`pathlint trace`) surfaces the resolved path prominently, but
   with provenance, not as a generic which-clone.
 - **No future install simulation.** pathlint answers about the
   PATH and binaries you have *now*. It does not predict where a
@@ -181,7 +181,7 @@ Mapping subcommands to roles (see §1):
 | R1 — resolve order | `pathlint check` (default) | implemented (0.0.2) |
 | R2 — existence and shape | reuses `[[expect]]` with a `kind` field, exposed in `check` | implemented (0.0.4) |
 | R3 — PATH hygiene | `pathlint doctor` | implemented (0.0.3) |
-| R4 — provenance | `pathlint where <command>` | implemented (0.0.4) |
+| R4 — provenance | `pathlint trace <command>` | implemented (0.0.4) |
 
 `pathlint init` and `pathlint catalog list` are infrastructure
 subcommands (configuration scaffolding, catalog inspection); they
@@ -194,7 +194,7 @@ serve every role but don't belong to any one of them.
 ```
 pathlint                              # = pathlint check
 pathlint --target user                # explicit target
-pathlint --rules ./other.toml
+pathlint --config ./other.toml
 pathlint --verbose                    # also show n/a expectations and resolved PATH
 pathlint --quiet                      # only print failures
 pathlint check --explain              # multi-line NG breakdown (0.0.7+)
@@ -204,8 +204,8 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
 - `--target` default is `process`. `user` / `machine` are accepted
   everywhere but only meaningful on Windows; on Unix they print a
   one-line warning and fall back to `process`.
-- `--rules` default resolution order:
-  1. `--rules <path>` if given.
+- `--config` default resolution order:
+  1. `--config <path>` if given.
   2. `./pathlint.toml` if present.
   3. `$XDG_CONFIG_HOME/pathlint/pathlint.toml` (or
      `$HOME/.config/pathlint/pathlint.toml`).
@@ -357,7 +357,7 @@ Vocabulary stays minimal in 0.0.4: `executable` only. Distinguishing
 `.exe`, Unix shebangs) and would balloon the matrix without
 clear win.
 
-### 7.7 `pathlint where <command>` (R4, implemented in 0.0.4; plugin provenance in 0.0.5)
+### 7.7 `pathlint trace <command>` (R4, implemented in 0.0.4; plugin provenance in 0.0.5)
 
 Surfaces what `check` already computes internally: for the named
 command, print
@@ -673,7 +673,7 @@ Five `kind`s are recognised:
 
 - **`alias_of`** — a parent source is a catch-all over more
   specific children. Matching the parent does not exclude matching
-  the children. `pathlint where` pushes the parent to the end of
+  the children. `pathlint trace` pushes the parent to the end of
   the matched-sources list when at least one child also matched.
   Used for `mise` over `mise_shims` / `mise_installs`.
 - **`conflicts_when_both_in_path`** — two or more sources that
@@ -689,7 +689,7 @@ Five `kind`s are recognised:
   for human-facing output when it differs from the source name —
   e.g. `guest_provider = "pip_user"` but `installer_token = "pipx"`
   because the user runs `mise uninstall pipx:black`.
-  `pathlint where` consumes this directly.
+  `pathlint trace` consumes this directly.
 - **`depends_on`** — `target` is a hard prerequisite of `source`.
   Reads "`source` depends on `target`". Example: `paru` depends on
   `pacman`, so uninstalling `paru` does not remove pacman-managed
@@ -734,7 +734,7 @@ configuration error (exit 2). `alias_of` and
 in the DAG check.
 
 In 0.0.9 the relation list was purely descriptive. 0.0.10
-made `pathlint where` read `served_by_via` + `alias_of` (the
+made `pathlint trace` read `served_by_via` + `alias_of` (the
 old `MISE_PLUGIN_PREFIXES` table is gone) and `pathlint sort`
 read `prefer_order_over`. 0.0.11 closes the loop: `pathlint
 doctor` reads `conflicts_when_both_in_path` to fire
@@ -782,7 +782,7 @@ Commands:
 
 Options (global):
       --target <process|user|machine>  default: process
-      --rules <path>                   default: search ./, then $XDG_CONFIG_HOME/pathlint/
+      --config <path>                   default: search ./, then $XDG_CONFIG_HOME/pathlint/
   -v, --verbose                        print every expectation incl. n/a, plus the resolved PATH
   -q, --quiet                          only print failures
       --color <auto|always|never>      default: auto
@@ -817,7 +817,7 @@ by built-in plugins and any user `[[relation]]` blocks (see §9.1).
   `catalog list`, `catalog relations`, and `check`'s report.
   JSON output is unchanged — `serde_json` already escapes
   control bytes correctly.
-- **Trust boundary for shell strings (0.0.10+).** `pathlint where`
+- **Trust boundary for shell strings (0.0.10+).** `pathlint trace`
   emits commands the user might copy-paste. The `{bin}`
   substitution and the mise plugin segment are quoted via
   `format::quote_for(os, _)` (POSIX single-quote on Unix-likes,
@@ -826,7 +826,7 @@ by built-in plugins and any user `[[relation]]` blocks (see §9.1).
   re-quoted — they come from the catalog author or user config and
   pathlint trusts them.
 - **Rules file DoS guards (0.0.11+).** `Config::from_path` now
-  rejects `--rules` and `pathlint.toml` paths whose final hop is
+  rejects `--config` and `pathlint.toml` paths whose final hop is
   not a regular file (block devices, multi-hop symlinks) and
   caps file size at 16 MiB before any byte is buffered. A single
   symlink hop to a regular file is still allowed so dotfiles
@@ -998,8 +998,65 @@ Tagged with the role(s) each touches.
   catalog list` ships.)*
 - **Catalog versioning.** *(Resolved in 0.0.3 — `catalog_version`
   / `require_catalog`.)*
+- **`pathlint where` vs `which`/`where.exe` confusion.**
+  *(Resolved in 0.0.14 — `pathlint where` is renamed to
+  `pathlint trace`. `where` is kept as a clap visible alias
+  throughout the 0.0.x line.)*
+- **`/usr/sbin` first on Arch / openSUSE TW.** *(Resolved in
+  0.0.14 — built-in `os_baseline_linux_sbin` source. Add it to
+  `prefer` instead of writing your own `[source.usr_sbin]`.)*
 
-## 17. Relationship to other tools
+## 17. 0.0.14 BREAKING CHANGES
+
+0.0.14 is the last 0.0.x release that breaks contracts. The
+0.0.x line allows breaks; 0.1.0 will freeze the API surface.
+Breaks bundled into 0.0.14 with sample migrations:
+
+- **`pathlint where` → `pathlint trace`.** `where` remains as a
+  clap visible alias for the rest of 0.0.x.
+- **`--rules` → `--config`.** `--rules` remains as a visible
+  alias for the rest of 0.0.x.
+- **Source rename, no aliases.** `WindowsApps` → `windows_apps`.
+  `system_windows` / `system_macos` / `system_linux` →
+  `os_baseline_windows` / `os_baseline_macos` /
+  `os_baseline_linux`. New `os_baseline_linux_sbin` for
+  `/usr/sbin`. Migrate with:
+  ```sh
+  sed -i \
+    -e 's/WindowsApps/windows_apps/g' \
+    -e 's/system_windows/os_baseline_windows/g' \
+    -e 's/system_macos/os_baseline_macos/g' \
+    -e 's/system_linux/os_baseline_linux/g' \
+    pathlint.toml
+  ```
+- **`trace --json` shape change.** Top-level `kind` discriminator
+  (`"found"` / `"not_found"`) replaces the old `found: bool`
+  field. JSON consumers that branched on `found` must switch to
+  `kind`.
+- **`Provenance::MiseInstallerPlugin` → `Provenance::WrapperInstaller`.**
+  Visible in `trace --json` as `provenance.kind =
+  "wrapper_installer"`. `installer` and `plugin_segment` payload
+  fields are unchanged.
+- **`sort --dry-run` is opt-in.** `pathlint sort` without
+  `--dry-run` exits 2 with a message naming the flag. A future
+  `--apply` (post-1.0) would override this; today the only mode
+  shipped is `--dry-run`.
+- **`catalog_version = N` in user `pathlint.toml` is rejected.**
+  The field was always reserved for the embedded catalog;
+  `Config::from_path` now exits 2 if a user TOML sets it.
+- **`depends_on` is descriptive only.** It surfaces in
+  `pathlint catalog relations` but does not affect doctor /
+  trace / sort behaviour. Confirmed in PRD §9.1 to remove the
+  earlier "Surfaced by `pathlint where`" mismatch.
+- **Lib public surface: `pathlint::config` only.** All other
+  modules are `#[doc(hidden)]`. Anyone embedding pathlint as a
+  library should depend on `pathlint::config::Config` and run
+  the binary for everything else.
+- **`build.rs` aggregates referential integrity violations.**
+  CI surfaces every offending plugin in one failure instead of
+  bailing on the first.
+
+## 18. Relationship to other tools
 
 - **`which` / `where.exe` / `type -a` / `Get-Command -All`**: tell
   you what wins. `pathlint` tells you whether the right one wins.

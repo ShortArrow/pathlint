@@ -25,7 +25,7 @@ pathlint がチェックする。元来の用途であり、ツールの背骨�
 散らかっている — 重複、不在ディレクトリ、8.3 短縮名、より簡潔に
 書ける エントリ。`pathlint doctor` が PATH 単体で lint する。
 
-**R4 — 出自。** `pathlint where <command>` が解決済みバイナリの
+**R4 — 出自。** `pathlint trace <command>` が解決済みバイナリの
 フルパス、マッチしたカタログ source、最も妥当な uninstall コマンド
 （`mise uninstall cargo:lazygit`、`cargo uninstall lazygit` など）
 を出力する。mise のプラグイン層から提供されたバイナリには上流の
@@ -90,7 +90,7 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
   （0.0.7+）は NG ごとに 6 行（resolved / matched / prefer / avoid
   / diagnosis / hint）の詳細表示に切り替え、`avoid` ヒット時には
   違反 source 名を、`prefer` 不一致時には候補一覧を出し、
-  `pathlint where <command>` への follow-up を案内する。
+  `pathlint trace <command>` への follow-up を案内する。
 - **R2（存在と形状）。** コマンドが path に解決されるとき、その path
   は本当に実行可能ファイルを指している必要がある。symlink は生き
   ていて、「実行可能」が嘘でないこと。今は `not_found` しか報告
@@ -116,7 +116,7 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
   ロジックはあるが、`where` / `type -a` / `Get-Command -All` を
   置き換える意図はない。R1 が答える問いは「正しいインストーラが
   勝っているか？」であって、「これはどこから resolve されるか？」
-  ではない。R4（`pathlint where`）は解決パスを前面に出すが、
+  ではない。R4（`pathlint trace`）は解決パスを前面に出すが、
   generic な which クローンとしてではなく、出自情報付きで。
 - **将来のインストールのシミュレーションはしない。** pathlint は
   *いま*ある PATH とバイナリについて答える。次の `cargo install` が
@@ -169,7 +169,7 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 | R1 — 解決順 | `pathlint check`（デフォルト） | 実装ずみ（0.0.2） |
 | R2 — 存在と形状 | `[[expect]] kind = "..."` を `check` に拡張 | 実装ずみ（0.0.4） |
 | R3 — PATH 衛生 | `pathlint doctor` | 実装ずみ（0.0.3） |
-| R4 — 出自 | `pathlint where <command>` | 実装ずみ（0.0.4） |
+| R4 — 出自 | `pathlint trace <command>` | 実装ずみ（0.0.4） |
 
 `pathlint init` と `pathlint catalog list` はインフラ系（設定の
 雛形、カタログの inspect）でどの役割にも属さない。
@@ -181,7 +181,7 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 ```
 pathlint                              # = pathlint check
 pathlint --target user                # 明示的なターゲット
-pathlint --rules ./other.toml
+pathlint --config ./other.toml
 pathlint --verbose                    # n/a 含む全 expectation と解決後 PATH を表示
 pathlint --quiet                      # 失敗のみ
 pathlint check --explain              # NG ごとに多行詳細を表示（0.0.7+）
@@ -191,8 +191,8 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 - `--target` のデフォルトは `process`。`user` / `machine` はどの OS
   でも受け付けるが Windows でのみ意味を持つ。Unix では 1 行警告を
   出して `process` にフォールバック。
-- `--rules` のデフォルト解決順：
-  1. `--rules <path>` が指定されればそれ。
+- `--config` のデフォルト解決順：
+  1. `--config <path>` が指定されればそれ。
   2. `./pathlint.toml` があればそれ。
   3. `$XDG_CONFIG_HOME/pathlint/pathlint.toml`（または
      `$HOME/.config/pathlint/pathlint.toml`）。
@@ -311,7 +311,7 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 "script" の区別は OS 別の事情が多く（Windows `.cmd` vs `.exe`、
 Unix の shebang）見合うリターンが薄い。
 
-### 7.7 `pathlint where <command>`（R4、0.0.4 で実装、plugin provenance は 0.0.5 で実装）
+### 7.7 `pathlint trace <command>`（R4、0.0.4 で実装、plugin provenance は 0.0.5 で実装）
 
 `check` が内部で計算している情報を表に出す：指定コマンドについて
 
@@ -612,7 +612,7 @@ source 間の関係を表現できる。`pathlint catalog relations` で
 
 - **`alias_of`** — 親 source が、より具体的な複数の子の
   キャッチオール。親にマッチすることが子のマッチを排除しない。
-  0.0.10 以降 `pathlint where` は、子のいずれかが matched に含まれて
+  0.0.10 以降 `pathlint trace` は、子のいずれかが matched に含まれて
   いるとき親をリストの末尾に押し下げる。`mise` が `mise_shims` /
   `mise_installs` の親、として使う。
 - **`conflicts_when_both_in_path`** — PATH に同時に存在すると
@@ -627,7 +627,7 @@ source 間の関係を表現できる。`pathlint catalog relations` で
   出力に使う installer 名で、source 名と異なってよい。例:
   `guest_provider = "pip_user"` だが `installer_token = "pipx"`
   （ユーザーが実行するのは `mise uninstall pipx:black`）。
-  0.0.10 から `pathlint where` がこれを直接読む。
+  0.0.10 から `pathlint trace` がこれを直接読む。
 - **`depends_on`** — `target` が `source` の硬い前提。
   「`source` は `target` に依存する」と読む。例: `paru` は
   `pacman` に依存している（`paru` を uninstall しても pacman 管理
@@ -671,7 +671,7 @@ pathlint は `pathlint catalog relations` を実行したときにマージ
 関係なので DAG 検査には参加しない。
 
 0.0.9 では relation は記述目的のみだったが、0.0.10 で
-`pathlint where` が `served_by_via` + `alias_of` を直接読むように
+`pathlint trace` が `served_by_via` + `alias_of` を直接読むように
 なり（`MISE_PLUGIN_PREFIXES` テーブルは削除）、`pathlint sort` が
 `prefer_order_over` を読むようになった。0.0.11 で
 `pathlint doctor` も `conflicts_when_both_in_path` を読む側に
@@ -718,7 +718,7 @@ Commands:
 
 Options（global）:
       --target <process|user|machine>  デフォルト: process
-      --rules <path>                   デフォルト: ./ → $XDG_CONFIG_HOME/pathlint/
+      --config <path>                   デフォルト: ./ → $XDG_CONFIG_HOME/pathlint/
   -v, --verbose                        n/a 含む全 expectation と解決後 PATH を表示
   -q, --quiet                          失敗のみ
       --color <auto|always|never>      デフォルト: auto
@@ -754,7 +754,7 @@ post-1.0 議題。
   `catalog list` / `catalog relations` / `check` のレポート。
   JSON 出力は `serde_json` が制御バイトを正しく escape するので
   変更不要。
-- **シェル文字列の信頼境界（0.0.10+）。** `pathlint where` の出力は
+- **シェル文字列の信頼境界（0.0.10+）。** `pathlint trace` の出力は
   ユーザーがコピペするかもしれないコマンド文字列。`{bin}` 置換と
   mise plugin segment は `format::quote_for(os, _)` を経由する
   （Unix 系で POSIX 単一クォート、Windows で PowerShell 単一
@@ -762,7 +762,7 @@ post-1.0 議題。
   の中身）は再 quote しない — カタログ作者かユーザー設定由来で、
   pathlint はそこを信頼する。
 - **rules ファイルの DoS 対策（0.0.11+）。** `Config::from_path` は
-  `--rules` / `pathlint.toml` の最終 hop が regular file でない
+  `--config` / `pathlint.toml` の最終 hop が regular file でない
   （ブロックデバイス、複数段の symlink）場合に reject、サイズも
   16 MiB を上限にする。1 段の symlink → regular file は許可
   （dotfiles 管理を壊さないため）。違反は exit 2。
@@ -925,8 +925,56 @@ post-1.0 議題。
   を提供。)*
 - **カタログのバージョニング。** *(0.0.3 で解決 — `catalog_version`
   / `require_catalog`。)*
+- **`pathlint where` と `which` / `where.exe` の混同。**
+  *(0.0.14 で解決 — `pathlint where` を `pathlint trace` に rename。
+  `where` は 0.0.x 線で clap visible alias として残す。)*
+- **Arch / openSUSE TW における `/usr/sbin` 先行レイアウト。**
+  *(0.0.14 で解決 — built-in `os_baseline_linux_sbin` source を追加。
+  自前で `[source.usr_sbin]` を書く代わりに `prefer` に入れる。)*
 
-## 17. 他ツールとの関係
+## 17. 0.0.14 BREAKING CHANGES
+
+0.0.14 は contract を壊せる最後の 0.0.x リリース。0.0.x は破壊許容、
+0.1.0 で API surface を凍結する。0.0.14 に集めた破壊と移行手段：
+
+- **`pathlint where` → `pathlint trace`。** `where` は 0.0.x 線では
+  clap visible alias として残る。
+- **`--rules` → `--config`。** `--rules` も 0.0.x 線では visible alias。
+- **source rename、alias なし。** `WindowsApps` → `windows_apps`。
+  `system_windows` / `system_macos` / `system_linux` →
+  `os_baseline_windows` / `os_baseline_macos` / `os_baseline_linux`。
+  `/usr/sbin` 用に `os_baseline_linux_sbin` を新設。移行例：
+  ```sh
+  sed -i \
+    -e 's/WindowsApps/windows_apps/g' \
+    -e 's/system_windows/os_baseline_windows/g' \
+    -e 's/system_macos/os_baseline_macos/g' \
+    -e 's/system_linux/os_baseline_linux/g' \
+    pathlint.toml
+  ```
+- **`trace --json` の shape 変更。** トップレベル `kind` discriminator
+  （`"found"` / `"not_found"`）が旧 `found: bool` を置換。`found` で
+  分岐していた consumer は `kind` に切り替える。
+- **`Provenance::MiseInstallerPlugin` → `Provenance::WrapperInstaller`。**
+  `trace --json` 上では `provenance.kind = "wrapper_installer"` として
+  見える。`installer` / `plugin_segment` payload field は変更なし。
+- **`sort --dry-run` が opt-in 必須。** `pathlint sort` 単体は exit 2 で
+  flag 名を案内する。post-1.0 の `--apply` で override 予定。今は
+  `--dry-run` のみ shipped。
+- **user `pathlint.toml` の `catalog_version = N` を reject。** 元から
+  embedded catalog 用の予約 field。`Config::from_path` で user TOML が
+  これを設定したら exit 2。
+- **`depends_on` は descriptive only。** `pathlint catalog relations` で
+  表示されるが doctor / trace / sort 挙動には影響しない。PRD §9.1 で
+  以前あった「Surfaced by `pathlint where`」記述との矛盾を解消。
+- **lib 公開面は `pathlint::config` のみ。** 他 module はすべて
+  `#[doc(hidden)]`。pathlint を library として埋め込みたい場合は
+  `pathlint::config::Config` のみに依存し、それ以外は binary 経由で
+  呼ぶ。
+- **`build.rs` の referential-integrity 検査が違反を集約。** 一回の
+  CI 失敗で全違反 plugin を確認できる。
+
+## 18. 他ツールとの関係
 
 - **`which` / `where.exe` / `type -a` / `Get-Command -All`**: 何が
   勝つかを教える。`pathlint` は **正しいやつが勝っているか** を

@@ -924,10 +924,7 @@ mod tests {
         // before formatting — including the header line that
         // names the diagnostic and the per-entry path under each
         // group.
-        let entries = entries(&[
-            "/foo/a\x1b[31m_evil",
-            "/foo/b",
-        ]);
+        let entries = entries(&["/foo/a\x1b[31m_evil", "/foo/b"]);
         let d = Diagnostic {
             index: 0,
             entry: entries[0].clone(),
@@ -938,10 +935,7 @@ mod tests {
             },
         };
         let out = doctor_line(&d, &entries);
-        assert!(
-            !out.contains('\x1b'),
-            "ANSI escape leaked through: {out:?}"
-        );
+        assert!(!out.contains('\x1b'), "ANSI escape leaked through: {out:?}");
         assert!(
             !out.contains('\r'),
             "carriage return leaked through: {out:?}"
