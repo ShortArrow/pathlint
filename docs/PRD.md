@@ -841,11 +841,22 @@ both spellings remain discoverable in `--help` via clap's
   managers continue to work. Failures surface as exit 2.
 - **Built-in catalog versioning.** The catalog is embedded at compile
   time; bumps to it are called out in the GitHub Release notes so
-  users know when defaults change. 0.0.10 bumps `catalog_version`
-  to `3` because relation interpretation changed (where / sort now
-  read the relations). 0.0.11 keeps `catalog_version = 3`: doctor
-  now reads relations too, but the relation TOML is unchanged and
-  no built-in source path moved.
+  users know when defaults change. Bump history:
+  - `0.0.10` → `catalog_version = 3` because relation
+    interpretation changed (`trace` / `sort` now read the
+    relations).
+  - `0.0.11` keeps `catalog_version = 3`: doctor now reads
+    relations too, but the relation TOML is unchanged and no
+    built-in source path moved.
+  - `0.0.14` → `catalog_version = 4` because source names were
+    renamed (`WindowsApps` → `windows_apps`, `system_*` →
+    `os_baseline_*`, plus the new `os_baseline_linux_sbin`
+    entry). User TOMLs that referenced the old names by name
+    must migrate (see §17).
+  - `0.0.15` keeps `catalog_version = 4`: the embedded TOML is
+    unchanged, but the builtin/user split was tightened so a
+    user `pathlint.toml` declaring `catalog_version` is now a
+    structural error rather than a post-parse one.
 
 ## 13. Distribution
 

@@ -774,11 +774,21 @@ post-1.0 議題。
   （dotfiles 管理を壊さないため）。違反は exit 2。
 - **組み込みカタログのバージョニング。** カタログはコンパイル時埋め
   込み。バンプ時は GitHub Release のリリースノートに記載してデフォ
-  ルト変更を周知。0.0.10 で `catalog_version` を `3` に bump
-  （TOML 本文は変わらないが where / sort が relation を読むように
-  解釈が変わったため）。0.0.11 は `catalog_version = 3` を維持：
-  doctor も relation を読むようになったが、relation TOML 本文と
-  ビルトイン source path に変更はない。
+  ルト変更を周知。bump 履歴：
+  - `0.0.10` → `catalog_version = 3`（TOML 本文は変わらないが
+    `trace` / `sort` が relation を読むように解釈が変わったため）。
+  - `0.0.11` は `catalog_version = 3` を維持：doctor も relation
+    を読むようになったが、relation TOML 本文とビルトイン source
+    path に変更はない。
+  - `0.0.14` → `catalog_version = 4`：source 名 rename のため
+    （`WindowsApps` → `windows_apps`、`system_*` →
+    `os_baseline_*`、加えて `os_baseline_linux_sbin` を新設）。
+    旧名で `[source.<name>]` を参照していた user TOML は移行が
+    必要（§17 参照）。
+  - `0.0.15` は `catalog_version = 4` を維持：embedded TOML 本文に
+    変更はないが、user TOML が `catalog_version` を宣言した場合
+    の reject が post-parse から structural（deny_unknown_fields）
+    に格上げされた。
 
 ## 13. 配布
 
