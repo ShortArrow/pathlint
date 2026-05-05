@@ -31,6 +31,25 @@ pub(crate) struct EmbeddedCatalogFile {
     pub relations: Vec<Relation>,
 }
 
+/// Schema of an individual `plugins/<name>.toml` file. Matches
+/// `EmbeddedCatalogFile` minus `catalog_version` — that field
+/// belongs to `plugins/_index.toml` only and is concatenated at
+/// the head of the embedded blob by `build.rs`.
+///
+/// Exposed via `#[doc(hidden)] pub` so `tests/plugin_validation.rs`
+/// can shape-gate every plugin file at `cargo test` time. Not part
+/// of the supported public API surface.
+#[doc(hidden)]
+#[derive(Debug, Default, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PluginFileShape {
+    #[serde(default, rename = "source")]
+    pub sources: BTreeMap<String, SourceDef>,
+
+    #[serde(default, rename = "relation")]
+    pub relations: Vec<Relation>,
+}
+
 /// Parse the embedded catalog once and reuse the result. The TOML
 /// is constant for the lifetime of the process, so the public
 /// read functions below all share a single parse.

@@ -120,9 +120,21 @@ struct IndexFile {
     plugins: Vec<String>,
 }
 
-/// Per-plugin TOML shape — mirrors `src/config.rs` enough to
-/// catch typos and unknown fields at build time. Intentional
-/// duplication; see module docs.
+/// Per-plugin TOML shape — mirrors `pathlint::catalog::PluginFileShape`
+/// (and `src/config.rs::SourceDef` / `Relation` for the nested
+/// payloads) enough to catch typos and unknown fields at build
+/// time. Intentional duplication: build scripts cannot depend on
+/// the crate they're building, so the same shape is declared
+/// twice. When adding a Relation kind or SourceDef field, update:
+///
+///   1. `src/config.rs::Relation` / `SourceDef` (runtime)
+///   2. This `PluginFile` / `PluginRelation` / `PluginSourceDef`
+///      (build-time validation)
+///   3. `pathlint::catalog::PluginFileShape` (test-time gate via
+///      tests/plugin_validation.rs)
+///
+/// Forgetting any of the three breaks `cargo test` for plugin
+/// authors. See module docs for the rationale.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct PluginFile {
