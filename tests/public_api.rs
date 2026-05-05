@@ -12,27 +12,27 @@
 
 #![allow(unused_imports)]
 
-use pathlint::config::{Config, Expectation, Kind, Relation, Severity, SourceDef};
-use pathlint::lint::{
-    CheckOutcomeView, Diagnosis, Outcome, Status, check_shape_filesystem, diagnose, evaluate,
-    exit_code, has_config_error, is_failure,
-};
-use pathlint::trace::{Found, Provenance, TraceOutcome, UninstallHint, locate};
-use pathlint::sort::{EntryMove, SortNote, SortPlan, sort_path};
-use pathlint::doctor::{
-    Diagnostic, Filter, Kind as DoctorKind, Severity as DoctorSeverity, all_kind_names, analyze,
-    analyze_real, env_lookup_real, fs_exists_real, has_error, kind_name,
-    user_diagnostic_names, validate_filter_names,
-};
 use pathlint::catalog::{
     builtin, builtin_relations, check_acyclic, embedded_version, merge_with_user,
     merge_with_user_relations, version_check,
 };
+use pathlint::config::{Config, Expectation, Kind, Relation, Severity, SourceDef};
+use pathlint::doctor::{
+    Diagnostic, Filter, Kind as DoctorKind, Severity as DoctorSeverity, all_kind_names, analyze,
+    analyze_real, env_lookup_real, fs_exists_real, has_error, kind_name, user_diagnostic_names,
+    validate_filter_names,
+};
+use pathlint::expand::{expand_and_normalize, expand_env, normalize};
+use pathlint::lint::{
+    CheckOutcomeView, Diagnosis, Outcome, Status, check_shape_filesystem, diagnose, evaluate,
+    exit_code, has_config_error, is_failure,
+};
+use pathlint::os_detect::{Os, os_filter_applies};
+use pathlint::sort::{EntryMove, SortNote, SortPlan, sort_path};
 use pathlint::source_match::{
     Match, SourceWarning, SourceWarningReason, find, names_only, validate_sources,
 };
-use pathlint::os_detect::{Os, os_filter_applies};
-use pathlint::expand::{expand_and_normalize, expand_env, normalize};
+use pathlint::trace::{Found, Provenance, TraceOutcome, UninstallHint, locate};
 
 #[test]
 fn public_api_compiles() {

@@ -10,7 +10,7 @@ use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::Outcome;
 use crate::os_detect::Os;
 use crate::sort::{SortNote, SortPlan};
-use crate::trace::{Found, Provenance, UninstallHint, TraceOutcome};
+use crate::trace::{Found, Provenance, TraceOutcome, UninstallHint};
 
 /// Render a single doctor diagnostic into a multi-line block
 /// (header line + indented detail). The trailing newline is
@@ -150,22 +150,6 @@ pub fn where_human(found: &Found) -> String {
 /// a hostile CLI argument cannot inject ANSI escapes here either.
 pub fn where_not_found(command: &str) -> String {
     format!("{} — not found on PATH", strip_control_chars(command))
-}
-
-/// Convenience: render a complete `TraceOutcome` to a single
-/// (multi-line) string suitable for `print!`. The caller still
-/// chooses what exit code to use.
-pub fn where_outcome(outcome: &TraceOutcome) -> String {
-    match outcome {
-        TraceOutcome::Found(f) => where_human(f),
-        TraceOutcome::NotFound => {
-            // We don't have the command name here from NotFound
-            // alone; callers that need the original spelling reach
-            // for `where_not_found` directly. For symmetry we
-            // return an empty string so this branch is detectable.
-            String::new()
-        }
-    }
 }
 
 /// Render a `SortPlan` as a multi-line human-readable block. The

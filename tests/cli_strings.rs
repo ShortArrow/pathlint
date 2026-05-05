@@ -16,7 +16,11 @@ fn invalid_config_path_error_uses_canonical_flag_name() {
     // so users may type --rules; our own diagnostic should still
     // speak the canonical name.
     let out = Command::new(BIN)
-        .args(["--config", "/definitely/does/not/exist/pathlint.toml", "check"])
+        .args([
+            "--config",
+            "/definitely/does/not/exist/pathlint.toml",
+            "check",
+        ])
         .output()
         .expect("failed to run pathlint");
     let stderr = String::from_utf8_lossy(&out.stderr);

@@ -55,9 +55,7 @@ pub struct PluginFileShape {
 /// read functions below all share a single parse.
 fn embedded() -> &'static EmbeddedCatalogFile {
     static CACHE: OnceLock<EmbeddedCatalogFile> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        toml::from_str(EMBEDDED).expect("embedded_catalog.toml must parse")
-    })
+    CACHE.get_or_init(|| toml::from_str(EMBEDDED).expect("embedded_catalog.toml must parse"))
 }
 
 /// Built-in source catalog. Cloned out of the cached
