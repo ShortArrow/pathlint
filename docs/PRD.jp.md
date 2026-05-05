@@ -631,7 +631,12 @@ source 間の関係を表現できる。`pathlint catalog relations` で
 - **`depends_on`** — `target` が `source` の硬い前提。
   「`source` は `target` に依存する」と読む。例: `paru` は
   `pacman` に依存している（`paru` を uninstall しても pacman 管理
-  バイナリは残る）。`pathlint where` で表示。
+  バイナリは残る）。**descriptive only** — `pathlint catalog
+  relations` の出力には現れ、cycle check にも参加するが、他の
+  subcommand はこの kind を消費しない。`pathlint trace` から
+  「X も uninstall する必要がある」hint を出すかは post-1.0 検討
+  事項で、それまでは relation はユーザーが grep できるデータで
+  あって runtime signal ではない。
 - **`prefer_order_over`**（0.0.10+） — `earlier` は PATH 内で
   `later` より前にあるべき。`pathlint sort` が preferred / neutral /
   avoided バケット内のタイブレークに使う。バケット境界は跨がない

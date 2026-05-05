@@ -693,7 +693,12 @@ Five `kind`s are recognised:
 - **`depends_on`** — `target` is a hard prerequisite of `source`.
   Reads "`source` depends on `target`". Example: `paru` depends on
   `pacman`, so uninstalling `paru` does not remove pacman-managed
-  binaries. Surfaced by `pathlint where`.
+  binaries. **Descriptive only** — the kind shows up in
+  `pathlint catalog relations` output and participates in the
+  cycle check, but no other subcommand currently consumes it.
+  Surfacing it from `pathlint trace` (e.g. as a "you also need to
+  uninstall X" hint) is post-1.0 work; until then the relation
+  is data the user can grep, not a runtime signal.
 - **`prefer_order_over`** (0.0.10+) — `earlier` should appear in
   PATH before `later`. Consumed by `pathlint sort` to break ties
   inside the preferred / neutral / avoided buckets. Bucket
