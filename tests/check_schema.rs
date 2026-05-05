@@ -1,7 +1,7 @@
 //! Drift gate for the checked-in `schemas/check.schema.json`.
 //!
 //! The schema is generated from
-//! `pathlint::format::CheckOutcomeView` via schemars and committed
+//! `pathlint::lint::CheckOutcomeView` via schemars and committed
 //! to the repo so editors / Schema Store consumers can fetch it by
 //! raw URL. Whenever `CheckOutcomeView` (or its nested `Status` /
 //! `Diagnosis` / `Severity` types) changes, this test fails until
@@ -17,7 +17,7 @@ use std::fs;
 
 #[test]
 fn checked_in_check_schema_matches_generator() {
-    let actual_schema = schemars::schema_for!(pathlint::format::CheckOutcomeView);
+    let actual_schema = schemars::schema_for!(pathlint::lint::CheckOutcomeView);
     let actual =
         serde_json::to_string_pretty(&actual_schema).expect("schemars must serialize to JSON");
     let on_disk = fs::read_to_string("schemas/check.schema.json")

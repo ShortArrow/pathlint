@@ -1,6 +1,6 @@
 //! Print the JSON Schema for `pathlint check --json` to stdout.
 //!
-//! Generated from the live `pathlint::format::CheckOutcomeView`
+//! Generated from the live `pathlint::lint::CheckOutcomeView`
 //! type via `schemars` so the schema cannot drift from what the
 //! formatter actually emits. Used by:
 //!
@@ -15,7 +15,7 @@
 //!     cargo run --bin gen_check_schema > schemas/check.schema.json
 
 fn main() {
-    let schema = schemars::schema_for!(pathlint::format::CheckOutcomeView);
+    let schema = schemars::schema_for!(pathlint::lint::CheckOutcomeView);
     let json =
         serde_json::to_string_pretty(&schema).expect("schemars output must serialize to JSON");
     println!("{json}");
