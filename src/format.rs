@@ -7,10 +7,10 @@
 
 use crate::config::Relation;
 use crate::doctor::{Diagnostic, Kind, Severity};
-use crate::lint::{self, Diagnosis, Outcome, Status};
+use crate::lint::Outcome;
 use crate::os_detect::Os;
 use crate::sort::{SortNote, SortPlan};
-use crate::where_cmd::{Found, Provenance, UninstallHint, WhereOutcome};
+use crate::trace::{Found, Provenance, TraceOutcome, UninstallHint};
 
 /// Render a single doctor diagnostic into a multi-line block
 /// (header line + indented detail). The trailing newline is
@@ -89,7 +89,7 @@ fn doctor_conflict(entries: &[String], diagnostic: &str, groups: &[Vec<usize>]) 
     buf
 }
 
-/// Render a `Found` outcome from `pathlint where` as a multi-line
+/// Render a `Found` outcome from `pathlint trace` as a multi-line
 /// human block. Order: command header, resolved path, sources,
 /// optional provenance, uninstall hint. No trailing newline.
 ///
@@ -150,22 +150,6 @@ pub fn where_human(found: &Found) -> String {
 /// a hostile CLI argument cannot inject ANSI escapes here either.
 pub fn where_not_found(command: &str) -> String {
     format!("{} — not found on PATH", strip_control_chars(command))
-}
-
-/// Convenience: render a complete `WhereOutcome` to a single
-/// (multi-line) string suitable for `print!`. The caller still
-/// chooses what exit code to use.
-pub fn where_outcome(outcome: &WhereOutcome) -> String {
-    match outcome {
-        WhereOutcome::Found(f) => where_human(f),
-        WhereOutcome::NotFound => {
-            // We don't have the command name here from NotFound
-            // alone; callers that need the original spelling reach
-            // for `where_not_found` directly. For symmetry we
-            // return an empty string so this branch is detectable.
-            String::new()
-        }
-    }
 }
 
 /// Render a `SortPlan` as a multi-line human-readable block. The
@@ -363,67 +347,41 @@ pub fn doctor_json(diags: &[&Diagnostic]) -> Result<String, serde_json::Error> {
 
 /// Render `check` outcomes as a pretty-printed JSON array — the
 /// machine-readable counterpart of `--explain`. Each element
-/// carries the per-expectation status, resolved path (when known),
-/// the matched / prefer / avoid sets, and a tagged `diagnosis`
-/// object derived from `lint::diagnose`.
+/// carries the per-expectation outcome kind, resolved path (when
+/// known), the matched / prefer / avoid sets, and a tagged
+/// `diagnosis` object derived from `lint::diagnose`.
 ///
-/// Schema is stable through `0.0.x`. The `diagnosis` field uses a
-/// `kind` discriminator (`"wrong_source"` / `"unknown_source"` /
-/// `"not_found"` / `"not_executable"` / `"config"`) so consumers
-/// can pattern-match instead of string-searching.
+/// Schema (0.0.15+): the top-level discriminator is `kind` —
+/// `"ok"` / `"ng_wrong_source"` / `"ng_not_found"` /
+/// `"ng_not_executable"` / `"skip"`. This matches the `kind`
+/// discriminator already used by doctor / trace / sort / catalog
+/// relations JSON. The pre-0.0.15 `status` field name is gone.
+///
+/// The `diagnosis` field uses its own `kind` discriminator
+/// (`"wrong_source"` / `"unknown_source"` / `"not_found"` /
+/// `"not_executable"` / `"config"`) so consumers can
+/// pattern-match instead of string-searching.
 ///
 /// Pure: callers do the printing and exit-code mapping.
 pub fn check_json(outcomes: &[Outcome]) -> Result<String, serde_json::Error> {
-    let view: Vec<OutcomeView<'_>> = outcomes.iter().map(OutcomeView::from).collect();
+    let view: Vec<crate::lint::CheckOutcomeView> = outcomes
+        .iter()
+        .map(crate::lint::CheckOutcomeView::from)
+        .collect();
     serde_json::to_string_pretty(&view)
 }
 
-#[derive(serde::Serialize)]
-struct OutcomeView<'a> {
-    command: &'a str,
-    status: &'a Status,
-    /// Per-rule severity copied from the Outcome. Always emitted
-    /// (even for `error`, the default) so a downstream consumer
-    /// gating on severity does not need a fallback for the absent
-    /// case.
-    severity: crate::config::Severity,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    resolved: Option<String>,
-    matched_sources: &'a [String],
-    #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    prefer: &'a [String],
-    #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    avoid: &'a [String],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    diagnosis: Option<Diagnosis>,
-}
-
-impl<'a> From<&'a Outcome> for OutcomeView<'a> {
-    fn from(o: &'a Outcome) -> Self {
-        OutcomeView {
-            command: &o.command,
-            status: &o.status,
-            severity: o.severity,
-            resolved: o.resolved.as_ref().map(|p| p.display().to_string()),
-            matched_sources: &o.matched_sources,
-            prefer: &o.prefer,
-            avoid: &o.avoid,
-            diagnosis: lint::diagnose(o),
-        }
-    }
-}
-
-/// Render the `where` outcome as pretty-printed JSON. The schema
+/// Render the trace outcome as pretty-printed JSON. The schema
 /// is documented in PRD §7.7 and stable for `0.0.x`. Used by
-/// `pathlint where --json`.
+/// `pathlint trace --json`.
 ///
-/// `command` is needed because `WhereOutcome::NotFound` carries no
+/// `command` is needed because `TraceOutcome::NotFound` carries no
 /// data. As of 0.0.14 the JSON shape uses a top-level `kind`
 /// discriminator (`"found"` or `"not_found"`) so future variants
 /// (e.g. an "ambiguous" outcome covering wrapper layers) can land
 /// without breaking consumers that pattern-matched on
 /// `found: true|false`. The previous `found: bool` field is gone.
-pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde_json::Error> {
+pub fn where_json(command: &str, outcome: &TraceOutcome) -> Result<String, serde_json::Error> {
     #[derive(serde::Serialize)]
     #[serde(tag = "kind", rename_all = "snake_case")]
     enum Out<'a> {
@@ -437,8 +395,8 @@ pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde
     }
 
     let payload = match outcome {
-        WhereOutcome::NotFound => Out::NotFound { command },
-        WhereOutcome::Found(f) => Out::Found { inner: f },
+        TraceOutcome::NotFound => Out::NotFound { command },
+        TraceOutcome::Found(f) => Out::Found { inner: f },
     };
     serde_json::to_string_pretty(&payload)
 }
@@ -448,7 +406,7 @@ pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde
 /// formatters rely on them. Pure; returns the input unchanged
 /// (`Cow::Borrowed`) when nothing needed replacement.
 ///
-/// Used by `pathlint where`'s human renderer so a hostile PATH
+/// Used by `pathlint trace`'s human renderer so a hostile PATH
 /// segment containing `\x1b[31m...` cannot recolor or rewrite the
 /// terminal output.
 pub fn strip_control_chars(s: &str) -> std::borrow::Cow<'_, str> {
@@ -477,7 +435,7 @@ fn is_disallowed_byte(b: u8) -> bool {
 /// escaped quote, reopen). Always quotes — even simple inputs —
 /// so the caller never has to decide whether quoting is needed.
 ///
-/// Used by `pathlint where` to keep an attacker-controlled PATH
+/// Used by `pathlint trace` to keep an attacker-controlled PATH
 /// segment from breaking out of an uninstall hint string when the
 /// user copy-pastes it into bash / zsh / sh.
 pub fn posix_quote(s: &str) -> String {
@@ -528,6 +486,7 @@ pub fn quote_for(os: Os, s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lint::Status;
     use std::path::PathBuf;
 
     fn entries(strs: &[&str]) -> Vec<String> {
@@ -690,7 +649,7 @@ mod tests {
 
     #[test]
     fn where_json_found_carries_kind_discriminators() {
-        let out = where_json("rustc", &WhereOutcome::Found(found_minimal())).unwrap();
+        let out = where_json("rustc", &TraceOutcome::Found(found_minimal())).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         // 0.0.14: top-level kind discriminator instead of found:bool.
         assert_eq!(v["kind"], "found");
@@ -702,7 +661,7 @@ mod tests {
 
     #[test]
     fn where_json_not_found_is_compact() {
-        let out = where_json("ghost", &WhereOutcome::NotFound).unwrap();
+        let out = where_json("ghost", &TraceOutcome::NotFound).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         // 0.0.14: top-level kind = "not_found" replaces found:false.
         assert_eq!(v["kind"], "not_found");
@@ -717,7 +676,7 @@ mod tests {
             installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
-        let out = where_json("foo", &WhereOutcome::Found(f)).unwrap();
+        let out = where_json("foo", &TraceOutcome::Found(f)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         // 0.0.14: variant renamed from MiseInstallerPlugin →
         // WrapperInstaller; serde tag = "wrapper_installer".
@@ -963,17 +922,23 @@ mod tests {
     }
 
     #[test]
-    fn check_json_emits_array_with_status_resolved_and_diagnosis() {
+    fn check_json_emits_array_with_kind_resolved_and_diagnosis() {
+        // 0.0.15: top-level discriminator is `kind`, not `status`.
+        // The pre-0.0.15 `status` field name is gone.
         let out = check_json(&[check_outcome_ok(), check_outcome_wrong_source()]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v[0]["command"], "rg");
-        assert_eq!(v[0]["status"], "ok");
+        assert_eq!(v[0]["kind"], "ok");
+        assert!(
+            v[0].get("status").is_none(),
+            "stale `status` field leaked: {out}"
+        );
         assert_eq!(v[0]["resolved"], "/home/u/.cargo/bin/rg");
         assert!(
             v[0].get("diagnosis").is_none(),
             "ok must not carry diagnosis"
         );
-        assert_eq!(v[1]["status"], "ng_wrong_source");
+        assert_eq!(v[1]["kind"], "ng_wrong_source");
         assert_eq!(v[1]["diagnosis"]["kind"], "wrong_source");
         assert_eq!(v[1]["diagnosis"]["matched"][0], "scoop");
         assert_eq!(v[1]["diagnosis"]["prefer_missed"][0], "cargo");
@@ -1019,7 +984,7 @@ mod tests {
         };
         let out = check_json(&[skip]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v[0]["status"], "skip");
+        assert_eq!(v[0]["kind"], "skip");
         assert!(v[0].get("diagnosis").is_none());
     }
 

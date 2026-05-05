@@ -38,7 +38,9 @@ pub enum Command {
     /// Show where a command resolves from, which sources it matches,
     /// and the most plausible uninstall command. Renamed from `where`
     /// in 0.0.14; `pathlint where` keeps working as a visible alias
-    /// throughout the 0.0.x line.
+    /// throughout the 0.0.x line. The alias is slated for removal
+    /// in a future release — exact timing TBD; until then it remains
+    /// discoverable in `--help`.
     #[command(visible_alias = "where")]
     Trace(TraceArgs),
 
@@ -136,7 +138,7 @@ pub enum CatalogCommand {
     /// List every declared `[[relation]]` between sources, both
     /// built-in (from `plugins/*.toml`) and user-defined (from
     /// `pathlint.toml`). Useful for understanding why a doctor
-    /// diagnostic fires or how `pathlint where` infers provenance.
+    /// diagnostic fires or how `pathlint trace` infers provenance.
     Relations(CatalogRelationsArgs),
 }
 
@@ -184,7 +186,9 @@ pub struct GlobalOpts {
     /// Path to pathlint.toml. Default search: ./pathlint.toml then
     /// $XDG_CONFIG_HOME/pathlint/pathlint.toml. Renamed from
     /// `--rules` in 0.0.14; the old `--rules` spelling stays as an
-    /// alias throughout the 0.0.x line.
+    /// alias throughout the 0.0.x line. The alias is slated for
+    /// removal in a future release — exact timing TBD; until then
+    /// it remains discoverable in `--help`.
     #[arg(long = "config", visible_alias = "rules")]
     pub config: Option<PathBuf>,
 

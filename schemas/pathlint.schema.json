@@ -1,19 +1,9 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "pathlint.toml",
-  "description": "Top-level `pathlint.toml` document.",
+  "description": "Top-level `pathlint.toml` document.\n\n`catalog_version` is intentionally absent from this struct. It belongs to the embedded catalog file (see `pathlint::catalog::EmbeddedCatalogFile`); declaring it in a user `pathlint.toml` is a structural error caught by serde's `deny_unknown_fields`. Use `require_catalog = N` instead to pin a minimum embedded catalog version.",
   "type": "object",
   "properties": {
-    "catalog_version": {
-      "description": "Reserved for the embedded catalog. The build script sets this in `embedded_catalog.toml`; user `pathlint.toml` files must NOT declare it. As of 0.0.14, parsing a user config that contains `catalog_version` is a configuration error (exit 2) — use `require_catalog = N` instead to pin the minimum catalog version your rules require.",
-      "default": null,
-      "type": [
-        "integer",
-        "null"
-      ],
-      "format": "uint32",
-      "minimum": 0.0
-    },
     "expect": {
       "type": "array",
       "items": {
@@ -29,7 +19,7 @@
       }
     },
     "require_catalog": {
-      "description": "Minimum embedded catalog version this `pathlint.toml` requires. If set, pathlint refuses to run when the binary's `catalog_version` is lower (config error, exit 2). Leave unset to opt out of the check.",
+      "description": "Minimum embedded catalog version this `pathlint.toml` requires. If set, pathlint refuses to run when the binary's embedded catalog version is lower (config error, exit 2). Leave unset to opt out of the check.",
       "default": null,
       "type": [
         "integer",
@@ -178,7 +168,7 @@
           "additionalProperties": false
         },
         {
-          "description": "`host` serves binaries that originally came from `guest_provider` via paths matching `guest_pattern`. Used by `pathlint where` to attribute provenance through wrapper installers (e.g. mise installing a cargo binary).\n\n`installer_token` (0.0.10+) is the human-facing installer name that uninstall hints quote — it can differ from the `guest_provider` source name. For example, `guest_provider = \"pip_user\"` but `installer_token = \"pipx\"` because `mise uninstall pipx:black` is what the user runs. `None` falls back to `guest_provider`.",
+          "description": "`host` serves binaries that originally came from `guest_provider` via paths matching `guest_pattern`. Used by `pathlint trace` to attribute provenance through wrapper installers (e.g. mise installing a cargo binary).\n\n`installer_token` (0.0.10+) is the human-facing installer name that uninstall hints quote — it can differ from the `guest_provider` source name. For example, `guest_provider = \"pip_user\"` but `installer_token = \"pipx\"` because `mise uninstall pipx:black` is what the user runs. `None` falls back to `guest_provider`.",
           "type": "object",
           "required": [
             "guest_pattern",
@@ -213,7 +203,7 @@
           "additionalProperties": false
         },
         {
-          "description": "`target` is a hard prerequisite of the source declaring this relation (the implicit subject is the plugin file's source). Surfaced by `pathlint where` so users know that uninstalling a wrapper does not remove the underlying tool.",
+          "description": "`target` is a hard prerequisite of the source declaring this relation (the implicit subject is the plugin file's source). Surfaced by `pathlint trace` so users know that uninstalling a wrapper does not remove the underlying tool.",
           "type": "object",
           "required": [
             "kind",
@@ -314,7 +304,7 @@
           ]
         },
         "uninstall_command": {
-          "description": "R4 — shell command template that uninstalls a binary served by this source. The substring `{bin}` is substituted with the resolved binary's stem (filename without extension). Used by `pathlint where`. Leave unset for sources where uninstall is not a meaningful single command (e.g. shim layers, system_*).",
+          "description": "R4 — shell command template that uninstalls a binary served by this source. The substring `{bin}` is substituted with the resolved binary's stem (filename without extension). Used by `pathlint trace`. Leave unset for sources where uninstall is not a meaningful single command (e.g. shim layers, system_*).",
           "default": null,
           "type": [
             "string",

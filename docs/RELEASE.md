@@ -6,6 +6,16 @@ and GitHub Release. crates.io publishing is opt-in.
 
 ## How to release
 
+Before kicking off the workflow:
+
+- Update `README.md`'s schema-pin example so the `<TAG>` placeholder
+  example reads as the **previous** released version (so users
+  copy-pasting see a known-good URL, not an unreleased one).
+  Search for `https://github.com/ShortArrow/pathlint/releases/download/`
+  in `README.md`.
+
+Then:
+
 1. Open the repo on GitHub. Go to **Actions** → **release** →
    **Run workflow**.
 2. Enter the new version number (e.g. `0.0.10`). Don't include the

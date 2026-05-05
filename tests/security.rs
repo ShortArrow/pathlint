@@ -255,6 +255,23 @@ fn check_rejects_user_catalog_version() {
 }
 
 #[test]
+fn user_config_rejects_catalog_version_via_deny_unknown_fields() {
+    // 0.0.15 Step B: catalog_version is structurally absent from
+    // UserConfig. The reject path is now serde's
+    // deny_unknown_fields, not a post-parse ConfigError variant.
+    // The error message must still mention the field so 0.0.14
+    // users keep recognising the error.
+    let body = "catalog_version = 5\n";
+    let err = pathlint::config::Config::parse_toml(body)
+        .expect_err("user TOML must reject catalog_version");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("catalog_version"),
+        "error must mention the field: {msg}"
+    );
+}
+
+#[test]
 fn sort_rejects_user_relation_cycle() {
     // 0.0.14: every relation consumer (sort/doctor/trace, plus
     // the pre-existing catalog relations) must surface a cycle as

@@ -712,7 +712,7 @@ Commands:
     list       全 source を列挙（組み込み + ユーザー定義）
     relations  source 間の宣言された [[relation]] を列挙
   doctor   PATH 自体を lint（重複、不在ディレクトリ等）
-  where    コマンドがどこから来るかと uninstall ヒント
+  trace    コマンドがどこから来るかと uninstall ヒント
   sort     全 [[expect]] を満たす PATH 順序を提案
   help     ヘルプ表示
 
@@ -734,6 +734,12 @@ post-1.0 議題。
 `pathlint catalog relations` は組み込みプラグインとユーザー
 `[[relation]]` ブロックが宣言した source 間の関係を表示する
 （§9.1 参照）。
+
+**alias の退役。** `pathlint where`（`pathlint trace` の alias）と
+`--rules`（`--config` の alias）は 0.0.13 以前との後方互換のため
+0.0.x 線では維持する。将来のリリースで削除予定だが、削除タイミング
+は未定で、破壊リリース前に告知する。それまでは clap の
+`visible_alias` 経由で `--help` に両方の綴りが表示される。
 
 ## 12. 非機能要件
 

@@ -9,23 +9,21 @@ use std::path::Path;
 use serde::Deserialize;
 
 /// Top-level `pathlint.toml` document.
+///
+/// `catalog_version` is intentionally absent from this struct. It
+/// belongs to the embedded catalog file (see
+/// `pathlint::catalog::EmbeddedCatalogFile`); declaring it in a
+/// user `pathlint.toml` is a structural error caught by serde's
+/// `deny_unknown_fields`. Use `require_catalog = N` instead to
+/// pin a minimum embedded catalog version.
 #[derive(Debug, Default, Deserialize, Clone, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "pathlint.toml")]
 pub struct Config {
-    /// Reserved for the embedded catalog. The build script sets
-    /// this in `embedded_catalog.toml`; user `pathlint.toml` files
-    /// must NOT declare it. As of 0.0.14, parsing a user config
-    /// that contains `catalog_version` is a configuration error
-    /// (exit 2) — use `require_catalog = N` instead to pin the
-    /// minimum catalog version your rules require.
-    #[serde(default)]
-    pub catalog_version: Option<u32>,
-
     /// Minimum embedded catalog version this `pathlint.toml`
     /// requires. If set, pathlint refuses to run when the binary's
-    /// `catalog_version` is lower (config error, exit 2). Leave
-    /// unset to opt out of the check.
+    /// embedded catalog version is lower (config error, exit 2).
+    /// Leave unset to opt out of the check.
     #[serde(default)]
     pub require_catalog: Option<u32>,
 
@@ -70,7 +68,7 @@ pub enum Relation {
 
     /// `host` serves binaries that originally came from
     /// `guest_provider` via paths matching `guest_pattern`. Used by
-    /// `pathlint where` to attribute provenance through wrapper
+    /// `pathlint trace` to attribute provenance through wrapper
     /// installers (e.g. mise installing a cargo binary).
     ///
     /// `installer_token` (0.0.10+) is the human-facing installer
@@ -89,7 +87,7 @@ pub enum Relation {
 
     /// `target` is a hard prerequisite of the source declaring this
     /// relation (the implicit subject is the plugin file's source).
-    /// Surfaced by `pathlint where` so users know that uninstalling
+    /// Surfaced by `pathlint trace` so users know that uninstalling
     /// a wrapper does not remove the underlying tool.
     DependsOn { source: String, target: String },
 
@@ -186,7 +184,7 @@ pub struct SourceDef {
     /// R4 — shell command template that uninstalls a binary served
     /// by this source. The substring `{bin}` is substituted with
     /// the resolved binary's stem (filename without extension).
-    /// Used by `pathlint where`. Leave unset for sources where
+    /// Used by `pathlint trace`. Leave unset for sources where
     /// uninstall is not a meaningful single command (e.g. shim
     /// layers, system_*).
     #[serde(default)]
@@ -242,13 +240,7 @@ impl Config {
 
     pub fn from_path(path: &Path) -> Result<Self, ConfigError> {
         let text = load_rules_text(path)?;
-        let cfg = Self::parse_toml(&text)?;
-        if cfg.catalog_version.is_some() {
-            return Err(ConfigError::CatalogVersionInUserConfig(
-                path.display().to_string(),
-            ));
-        }
-        Ok(cfg)
+        Self::parse_toml(&text)
     }
 }
 
@@ -270,7 +262,7 @@ pub const RULES_MAX_BYTES: u64 = 16 * 1024 * 1024;
 ///    target.
 /// 2. **Size cap**: `RULES_MAX_BYTES` (16 MiB). Anything beyond
 ///    is rejected before any byte is buffered. Without this a
-///    `--rules /dev/zero` would happily consume all RAM.
+///    `--config /dev/zero` would happily consume all RAM.
 ///
 /// 0.0.13 hardens this against a TOCTOU race that 0.0.11–0.0.12
 /// inherited: `File::open(path)` is called once, and every
@@ -362,11 +354,6 @@ pub enum ConfigError {
     RulesNotRegularFile(String),
     #[error("{0} is too large ({1} bytes); rules files are capped at 16 MiB")]
     RulesTooLarge(String, u64),
-    #[error(
-        "{0} declares `catalog_version`; that field is reserved for the embedded catalog. \
-         Use `require_catalog = N` instead to pin a minimum catalog version your rules require."
-    )]
-    CatalogVersionInUserConfig(String),
 }
 
 #[cfg(test)]
@@ -441,54 +428,39 @@ unknown_field = true
     }
 
     #[test]
-    fn parse_toml_accepts_catalog_version_for_embedded_catalog_use() {
-        // parse_toml is the entry point used by the build script for
-        // embedded_catalog.toml; it must accept catalog_version. The
-        // user-facing reject lives in from_path (see
-        // from_path_rejects_user_catalog_version below) so production
-        // hostile pathlint.toml files cannot smuggle a fake version.
-        let cfg = Config::parse_toml(
+    fn parse_toml_rejects_catalog_version_via_deny_unknown_fields() {
+        // 0.0.15: catalog_version is structurally absent from
+        // Config. Embedded catalog use lives in
+        // pathlint::catalog::EmbeddedCatalogFile, so a hostile or
+        // accidental user pathlint.toml that declares it gets a
+        // serde unknown-field error at parse time — no post-parse
+        // guard needed.
+        let err = Config::parse_toml(
             r#"
 catalog_version = 7
-require_catalog = 5
 "#,
         )
-        .unwrap();
-        assert_eq!(cfg.catalog_version, Some(7));
-        assert_eq!(cfg.require_catalog, Some(5));
-    }
-
-    #[test]
-    fn from_path_rejects_user_catalog_version() {
-        // 0.0.14: declaring catalog_version in pathlint.toml is a
-        // config error. The field is reserved for embedded catalog
-        // use; users must use require_catalog instead.
-        let tmp = tempfile::tempdir().unwrap();
-        let p = tmp.path().join("pathlint.toml");
-        std::fs::write(&p, "catalog_version = 5\n").unwrap();
-        let err = Config::from_path(&p).unwrap_err();
-        match err {
-            ConfigError::CatalogVersionInUserConfig(_) => {}
-            other => panic!("expected CatalogVersionInUserConfig, got {other:?}"),
-        }
+        .expect_err("user TOML must reject catalog_version");
+        assert!(
+            err.to_string().contains("catalog_version"),
+            "error must mention the field: {err}"
+        );
     }
 
     #[test]
     fn from_path_accepts_user_require_catalog() {
-        // require_catalog stays valid in user files even after the
-        // 0.0.14 catalog_version reject lands.
+        // require_catalog stays valid in user files; only
+        // catalog_version is rejected.
         let tmp = tempfile::tempdir().unwrap();
         let p = tmp.path().join("pathlint.toml");
         std::fs::write(&p, "require_catalog = 1\n").unwrap();
         let cfg = Config::from_path(&p).unwrap();
-        assert_eq!(cfg.catalog_version, None);
         assert_eq!(cfg.require_catalog, Some(1));
     }
 
     #[test]
     fn require_catalog_is_optional() {
         let cfg = Config::parse_toml("").unwrap();
-        assert_eq!(cfg.catalog_version, None);
         assert_eq!(cfg.require_catalog, None);
     }
 

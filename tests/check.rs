@@ -444,12 +444,12 @@ os      = ["{other}"]
 }
 
 #[test]
-fn missing_rules_path_is_reported_with_exit_2() {
+fn missing_config_path_is_reported_with_exit_2() {
     let tmp = tempfile::tempdir().unwrap();
     let nope = tmp.path().join("does_not_exist.toml");
     let (code, _stdout, stderr) = run(&nope, "");
     assert_eq!(code, 2);
-    assert!(stderr.contains("--rules"), "stderr was: {stderr}");
+    assert!(stderr.contains("--config"), "stderr was: {stderr}");
 }
 
 #[test]
@@ -488,7 +488,7 @@ require_catalog = 9999
 fn explain_flag_expands_ng_into_multiline_diagnosis_and_hint() {
     // `pathlint check --explain` swaps the one-line NG detail for a
     // multi-line breakdown. The new rows must include `diagnosis:`,
-    // `hint:`, and a `pathlint where ...` follow-up suggestion so the
+    // `hint:`, and a `pathlint trace ...` follow-up suggestion so the
     // user knows what to do next.
     let tmp = tempfile::tempdir().unwrap();
     let bad_dir = tmp.path().join("bad");
@@ -517,7 +517,7 @@ prefer  = ["good"]
     assert!(stdout.contains("diagnosis:"), "stdout was: {stdout}");
     assert!(stdout.contains("hint:"), "stdout was: {stdout}");
     assert!(
-        stdout.contains("pathlint where tooly"),
+        stdout.contains("pathlint trace tooly"),
         "stdout was: {stdout}"
     );
 }
@@ -551,7 +551,7 @@ prefer  = ["good"]
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     assert!(v.is_array(), "stdout: {stdout}");
     assert_eq!(v[0]["command"], "tooly");
-    assert_eq!(v[0]["status"], "ng_wrong_source");
+    assert_eq!(v[0]["kind"], "ng_wrong_source");
     assert_eq!(v[0]["diagnosis"]["kind"], "wrong_source");
     assert_eq!(v[0]["diagnosis"]["matched"][0], "bad");
 }
@@ -623,7 +623,7 @@ severity = "warn"
     );
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     assert_eq!(v[0]["severity"], "warn");
-    assert_eq!(v[0]["status"], "ng_wrong_source");
+    assert_eq!(v[0]["kind"], "ng_wrong_source");
 }
 
 #[test]

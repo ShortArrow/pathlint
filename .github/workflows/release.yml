@@ -174,17 +174,20 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - name: Generate JSON Schema
-        # Re-run the generator from the tagged commit so the
-        # release asset matches the schemars derive at that
-        # version. The drift test in CI guarantees the result
-        # matches schemas/pathlint.schema.json on main.
-        run: cargo run --release --bin gen_schema > dist/pathlint.schema.json
+      - name: Generate JSON Schemas
+        # Re-run the generators from the tagged commit so the
+        # release assets match the schemars derives at that
+        # version. The drift tests in CI guarantee the results
+        # match schemas/pathlint.schema.json + check.schema.json
+        # on main.
+        run: |
+          cargo run --release --bin gen_schema > dist/pathlint.schema.json
+          cargo run --release --bin gen_check_schema > dist/check.schema.json
 
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum *.tar.gz *.zip pathlint.schema.json 2>/dev/null | tee SHA256SUMS
+          sha256sum *.tar.gz *.zip pathlint.schema.json check.schema.json 2>/dev/null | tee SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
@@ -197,6 +200,7 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/pathlint.schema.json
+            dist/check.schema.json
             dist/SHA256SUMS
 
   publish-crates:

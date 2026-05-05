@@ -53,10 +53,15 @@ location to the source labels.
 ## Status
 
 The 0.0.x line ships six subcommands: `check` (default), `doctor`,
-`where`, `sort`, `init`, and `catalog` (with `list` and
-`relations`). The TOML schema and CLI surface are still moving,
-but the resolve / match / report pipeline is in place and covered
-by tests. See [docs/PRD.md](docs/PRD.md) for the full design.
+`trace`, `sort`, `init`, and `catalog` (with `list` and
+`relations`). `pathlint where` is kept as a visible alias of
+`pathlint trace`, and `--rules` is kept as a visible alias of
+`--config`. Both aliases are slated for removal in a future
+release; the exact timing is undecided and will be announced
+ahead of the breaking version. The TOML schema and CLI surface
+are still moving, but the resolve / match / report pipeline is
+in place and covered by tests. See [docs/PRD.md](docs/PRD.md)
+for the full design.
 
 ## What pathlint *won't* tell you
 
@@ -279,14 +284,16 @@ LSP) and the [Even Better TOML][ebt] VS Code extension:
 ```
 
 Pin to a specific release for reproducibility (replace `<TAG>`
-with the version you want, e.g. `v0.0.13`):
+with the version you want, e.g. `v0.0.14`):
 
 ```toml
 #:schema https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json
 ```
 
 The schema is also attached as `pathlint.schema.json` to every
-GitHub Release alongside the binaries.
+GitHub Release alongside the binaries. As of 0.0.15 each release
+also ships `check.schema.json`, which describes the JSON shape of
+`pathlint check --json` output for downstream consumers.
 
 [Taplo]: https://taplo.tamasfe.dev/
 [ebt]: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml
