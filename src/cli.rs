@@ -36,8 +36,11 @@ pub enum Command {
     Doctor(DoctorArgs),
 
     /// Show where a command resolves from, which sources it matches,
-    /// and the most plausible uninstall command.
-    Where(WhereArgs),
+    /// and the most plausible uninstall command. Renamed from `where`
+    /// in 0.0.14; `pathlint where` keeps working as a visible alias
+    /// throughout the 0.0.x line.
+    #[command(visible_alias = "where")]
+    Trace(TraceArgs),
 
     /// Propose a PATH order that satisfies every applicable
     /// `[[expect]]` rule. Read-only by design — pathlint never
@@ -83,7 +86,7 @@ pub struct CheckArgs {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct WhereArgs {
+pub struct TraceArgs {
     /// The command to look up on PATH.
     pub command: String,
 

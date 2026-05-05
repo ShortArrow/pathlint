@@ -8,7 +8,7 @@ use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
 use crate::cli::{
     CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
-    InitArgs, SortArgs, WhereArgs,
+    InitArgs, SortArgs, TraceArgs,
 };
 use crate::config::Config;
 use crate::doctor::{self, Diagnostic, Filter, Severity};
@@ -97,7 +97,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
             action: CatalogCommand::Relations(args),
         }) => return execute_catalog_relations(&args, cli.global.rules.as_deref()),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
-        Some(Command::Where(args)) => return execute_where(&args, &cli.global),
+        Some(Command::Trace(args)) => return execute_trace(&args, &cli.global),
         Some(Command::Sort(args)) => return execute_sort(&args, &cli.global),
         Some(Command::Check(args)) => args,
         None => CheckArgs::default(),
@@ -253,7 +253,7 @@ fn execute_catalog_relations(
     Ok(0)
 }
 
-fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
     // R4 reads the same merged catalog `check` does so user
     // overrides apply; the rules file's `[[expect]]` block is
     // ignored — `where` is per-command, not rule-driven.
