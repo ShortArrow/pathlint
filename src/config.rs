@@ -164,7 +164,7 @@ pub enum Kind {
 
 /// A `[source.<name>]` definition. Each per-OS field is an optional
 /// substring (post env-var expansion / slash normalization).
-#[derive(Debug, Default, Deserialize, Clone, schemars::JsonSchema)]
+#[derive(Debug, Default, Deserialize, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceDef {
     #[serde(default)]

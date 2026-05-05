@@ -48,10 +48,20 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
         Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
         Kind::Malformed { reason } => format!("malformed entry: {}", strip_control_chars(reason)),
         Kind::Conflict { .. } => unreachable!("handled by early return above"),
+        Kind::PerSourceMissingRequired { source } => format!(
+            "declared `[source.{}]` path does not exist on this host",
+            strip_control_chars(source)
+        ),
+    };
+    // Per-source diagnostics use usize::MAX as the "no PATH index"
+    // sentinel; render that as "(catalog)" instead of a number.
+    let idx_render = if d.index == usize::MAX {
+        "(catalog)".to_string()
+    } else {
+        format!("#{idx:>3}", idx = d.index)
     };
     format!(
-        "{tag} #{idx:>3} {entry}\n      {detail}",
-        idx = d.index,
+        "{tag} {idx_render} {entry}\n      {detail}",
         entry = strip_control_chars(&d.entry)
     )
 }

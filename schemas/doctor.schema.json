@@ -150,6 +150,25 @@
           ]
         }
       }
+    },
+    {
+      "description": "A `[source.<name>]` declared in the merged catalog points at a per-OS path that does not exist on the filesystem. Common when a user's `pathlint.toml` declares a source for a tool they don't actually have installed (e.g. `[source.cargo] unix = \"$HOME/.cargo/bin\"` on a host without rust). 0.0.18+. `entry` is the expanded path that was checked; `Diagnostic.index` is fixed at `usize::MAX` because the diagnostic is per-source, not per-PATH-entry.",
+      "type": "object",
+      "required": [
+        "kind",
+        "source"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "per_source_missing_required"
+          ]
+        },
+        "source": {
+          "type": "string"
+        }
+      }
     }
   ],
   "required": [
