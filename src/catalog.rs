@@ -109,6 +109,100 @@ pub fn merge_with_user(user: &BTreeMap<String, SourceDef>) -> BTreeMap<String, S
     out
 }
 
+/// Typed view over a `&[Relation]` slice. 0.0.18 introduced this
+/// so consumers (sort / doctor / trace / format / cycle check) can
+/// iterate just the relation kind they care about, instead of
+/// `match Relation { ... }` over the whole sum type at every call
+/// site.
+///
+/// The wire shape (`pathlint::config::Relation` plus `[[relation]]
+/// kind = "..."`) is unchanged — `RelationIndex` is purely an
+/// internal accessor sugar. Borrows the input slice; cheap to
+/// construct.
+///
+/// codex review on 0.0.18 plan suggested this shape over a
+/// section-split TOML rewrite (which would have been a large
+/// BREAKING change for plugin authors). `RelationIndex` keeps the
+/// external contract intact while letting consumers code against
+/// "give me the things I care about" instead of an open match.
+pub struct RelationIndex<'a> {
+    relations: &'a [Relation],
+}
+
+/// Snapshot of `Relation::ServedByVia` borrowed from the underlying
+/// slice. Mirrors the variant fields so consumers don't have to
+/// destructure the enum themselves.
+pub struct ProvenanceRef<'a> {
+    pub host: &'a str,
+    pub guest_pattern: &'a str,
+    pub guest_provider: &'a str,
+    pub installer_token: Option<&'a str>,
+}
+
+impl<'a> RelationIndex<'a> {
+    /// Wrap a relation slice. Pure, allocation-free.
+    pub fn from_slice(relations: &'a [Relation]) -> Self {
+        Self { relations }
+    }
+
+    /// Iterate every `AliasOf` relation as `(parent, children)`.
+    pub fn iter_aliases(&self) -> impl Iterator<Item = (&'a str, &'a [String])> {
+        self.relations.iter().filter_map(|r| match r {
+            Relation::AliasOf { parent, children } => Some((parent.as_str(), children.as_slice())),
+            _ => None,
+        })
+    }
+
+    /// Iterate every `ConflictsWhenBothInPath` relation as
+    /// `(sources, diagnostic)`.
+    pub fn iter_conflicts(&self) -> impl Iterator<Item = (&'a [String], &'a str)> {
+        self.relations.iter().filter_map(|r| match r {
+            Relation::ConflictsWhenBothInPath {
+                sources,
+                diagnostic,
+            } => Some((sources.as_slice(), diagnostic.as_str())),
+            _ => None,
+        })
+    }
+
+    /// Iterate every `ServedByVia` relation as a `ProvenanceRef`.
+    pub fn iter_provenances(&self) -> impl Iterator<Item = ProvenanceRef<'a>> {
+        self.relations.iter().filter_map(|r| match r {
+            Relation::ServedByVia {
+                host,
+                guest_pattern,
+                guest_provider,
+                installer_token,
+            } => Some(ProvenanceRef {
+                host: host.as_str(),
+                guest_pattern: guest_pattern.as_str(),
+                guest_provider: guest_provider.as_str(),
+                installer_token: installer_token.as_deref(),
+            }),
+            _ => None,
+        })
+    }
+
+    /// Iterate every `DependsOn` relation as `(source, target)`.
+    pub fn iter_depends_on(&self) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.relations.iter().filter_map(|r| match r {
+            Relation::DependsOn { source, target } => Some((source.as_str(), target.as_str())),
+            _ => None,
+        })
+    }
+
+    /// Iterate every `PreferOrderOver` relation as
+    /// `(earlier, later)`.
+    pub fn iter_prefer_orders(&self) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.relations.iter().filter_map(|r| match r {
+            Relation::PreferOrderOver { earlier, later } => {
+                Some((earlier.as_str(), later.as_str()))
+            }
+            _ => None,
+        })
+    }
+}
+
 /// Built-in relations declared by `plugins/<name>.toml`. Returned
 /// in the order they appear in the embedded catalog (which is the
 /// order set by `plugins/_index.toml`).
@@ -139,22 +233,21 @@ pub fn merge_with_user_relations(user: &[Relation]) -> Vec<Relation> {
 pub fn check_acyclic(relations: &[Relation]) -> Result<(), String> {
     use std::collections::BTreeSet;
 
+    // 0.0.18: read directional relations through RelationIndex so
+    // each accessor names exactly the kind it depends on. AliasOf
+    // and ConflictsWhenBothInPath are symmetric / set semantics
+    // and have no `iter_*` call here (and therefore don't need
+    // an explicit `_ => {}` arm).
+    let index = RelationIndex::from_slice(relations);
     let mut edges: Vec<(String, String)> = Vec::new();
-    for rel in relations {
-        match rel {
-            Relation::ServedByVia {
-                host,
-                guest_provider,
-                ..
-            } => edges.push((host.clone(), guest_provider.clone())),
-            Relation::DependsOn { source, target } => edges.push((source.clone(), target.clone())),
-            Relation::PreferOrderOver { earlier, later } => {
-                edges.push((earlier.clone(), later.clone()))
-            }
-            // alias_of / conflicts_when_both_in_path: symmetric / set
-            // semantics, no direction to check.
-            _ => {}
-        }
+    for prov in index.iter_provenances() {
+        edges.push((prov.host.to_string(), prov.guest_provider.to_string()));
+    }
+    for (source, target) in index.iter_depends_on() {
+        edges.push((source.to_string(), target.to_string()));
+    }
+    for (earlier, later) in index.iter_prefer_orders() {
+        edges.push((earlier.to_string(), later.to_string()));
     }
     let mut adj: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (from, to) in &edges {

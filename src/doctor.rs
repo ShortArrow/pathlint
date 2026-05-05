@@ -215,12 +215,12 @@ pub fn validate_filter_names(filter: &Filter, extra_known: &[String]) -> Result<
 /// `validate_filter_names` so user-defined conflict names flow
 /// through `--include` / `--exclude` correctly. Pure.
 pub fn user_diagnostic_names(relations: &[Relation]) -> Vec<String> {
-    relations
-        .iter()
-        .filter_map(|r| match r {
-            Relation::ConflictsWhenBothInPath { diagnostic, .. } => Some(diagnostic.clone()),
-            _ => None,
-        })
+    // 0.0.18: read conflict diagnostics via RelationIndex so this
+    // call site no longer pattern-matches on the Relation sum type
+    // directly.
+    crate::catalog::RelationIndex::from_slice(relations)
+        .iter_conflicts()
+        .map(|(_sources, diagnostic)| diagnostic.to_string())
         .collect()
 }
 
@@ -504,14 +504,10 @@ fn add_relation_conflict_diagnostics(
     os: Os,
     out: &mut Vec<Diagnostic>,
 ) {
-    for rel in relations {
-        let Relation::ConflictsWhenBothInPath {
-            sources: src_names,
-            diagnostic,
-        } = rel
-        else {
-            continue;
-        };
+    // 0.0.18: walk conflicts via RelationIndex so this call site
+    // does not destructure the Relation enum.
+    let index = crate::catalog::RelationIndex::from_slice(relations);
+    for (src_names, diagnostic) in index.iter_conflicts() {
         let groups: Vec<Vec<usize>> = src_names
             .iter()
             .map(|name| matched_entries_for_source(name, normalized, sources, os))
@@ -529,7 +525,7 @@ fn add_relation_conflict_diagnostics(
             entry: raw[anchor].clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
-                diagnostic: diagnostic.clone(),
+                diagnostic: diagnostic.to_string(),
                 groups,
             },
         });
