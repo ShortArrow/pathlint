@@ -694,14 +694,14 @@ installer_token = "pipx"
 [[relation]]
 kind = "prefer_order_over"
 earlier = "cargo"
-later = "system_linux"
+later = "os_baseline_linux"
 "#,
         )
         .unwrap();
         match &cfg.relations[0] {
             Relation::PreferOrderOver { earlier, later } => {
                 assert_eq!(earlier, "cargo");
-                assert_eq!(later, "system_linux");
+                assert_eq!(later, "os_baseline_linux");
             }
             other => panic!("expected PreferOrderOver, got {other:?}"),
         }

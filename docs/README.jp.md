@@ -21,7 +21,7 @@
 - このマシンで `cargo install runex` したのに、走るのは `winget` の
   古いほう。同名・別ファイル。
 - `python` は `mise` 由来であってほしい、Microsoft Store の
-  `WindowsApps` スタブからではなく。
+  `windows_apps` スタブからではなく。
 - `node` は `volta` 由来がいい、システムの `apt` インストールでは
   なく。
 - macOS の `gcc` は Homebrew 由来であってほしい、`/usr/bin/gcc` から
@@ -45,7 +45,7 @@ TOML の 2 つの概念：
    （「`cargo` は `~/.cargo/bin` にいる」）。pathlint が `cargo`、
    `mise`、`volta`、`aqua`、`winget`、`choco`、`scoop`、`brew_arm`、
    `brew_intel`、`apt`、`pacman`、`dnf`、`pkg`、`flatpak`、`snap`、
-   `WindowsApps` などの組み込みデフォルトを持つ。ユーザーは標準と違う
+   `windows_apps` などの組み込みデフォルトを持つ。ユーザーは標準と違う
    レイアウトのときだけ上書きする。
 
 各 `[[expect]]` について、pathlint はコマンドを実 PATH から resolve
@@ -145,7 +145,7 @@ avoid   = ["winget"]
 [[expect]]
 command = "python"
 prefer  = ["mise"]
-avoid   = ["WindowsApps", "choco"]
+avoid   = ["windows_apps", "choco"]
 
 [[expect]]
 command = "node"

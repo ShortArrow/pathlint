@@ -21,7 +21,7 @@ executable resolves first.** Examples:
 - I `cargo install runex` on this machine, but the binary that runs
   is the older one from `winget` — same name, different file.
 - `python` should come from `mise`, not from the Microsoft Store
-  `WindowsApps` stub.
+  `windows_apps` stub.
 - `node` should come from `volta`, not from the system `apt` install.
 - macOS `gcc` should come from Homebrew, not from `/usr/bin/gcc`.
 
@@ -43,7 +43,7 @@ Two TOML concepts:
    ("`cargo` lives at `~/.cargo/bin`"). pathlint ships built-in
    defaults for `cargo`, `mise`, `volta`, `aqua`, `winget`, `choco`,
    `scoop`, `brew_arm`, `brew_intel`, `apt`, `pacman`, `dnf`, `pkg`,
-   `flatpak`, `snap`, `WindowsApps`, and more — users only override
+   `flatpak`, `snap`, `windows_apps`, and more — users only override
    when their layout is non-standard.
 
 For each `[[expect]]`, pathlint resolves the command against the real
@@ -140,7 +140,7 @@ avoid   = ["winget"]
 [[expect]]
 command = "python"
 prefer  = ["mise"]
-avoid   = ["WindowsApps", "choco"]
+avoid   = ["windows_apps", "choco"]
 
 [[expect]]
 command = "node"

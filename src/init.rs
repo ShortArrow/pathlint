@@ -118,7 +118,7 @@ prefer  = ["cargo", "scoop", "winget"]
 [[expect]]
 command = "python"
 prefer  = ["mise_shims", "scoop"]
-avoid   = ["WindowsApps", "choco"]
+avoid   = ["windows_apps", "choco"]
 os      = ["windows"]
 
 [[expect]]
@@ -158,7 +158,7 @@ os      = ["macos"]
 [[expect]]
 command = "gcc"
 prefer  = ["brew_arm", "brew_intel"]
-avoid   = ["system_macos"]
+avoid   = ["os_baseline_macos"]
 os      = ["macos"]
 
 # severity = "warn" surfaces the NG without blocking exit 0 — use

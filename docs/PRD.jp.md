@@ -38,7 +38,7 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 `pathlint` は well-known な source の **組み込みカタログ** を持つ
 （`cargo`、`mise`、`mise_shims`、`mise_installs`、`volta`、`winget`、
 `choco`、`scoop`、`brew_arm`、`brew_intel`、`apt`、`pacman`、`pkg`、
-`flatpak`、`WindowsApps` …）。ユーザーは **expectation を書くだけ** で
+`flatpak`、`windows_apps` …）。ユーザーは **expectation を書くだけ** で
 よく、source は名前で参照されて自動解決される。
 
 ## 2. 課題定義
@@ -49,7 +49,7 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 - このマシンで `cargo install runex` したのに、実際に走るのは
   `WinGet/Links` にある古いほう。同名・別ファイル。
 - `python` は `mise` 由来であってほしい、Microsoft Store の
-  `WindowsApps` スタブからではなく。
+  `windows_apps` スタブからではなく。
 - `node` は `volta` 由来がいい、システムの `apt` インストールでは
   なく。
 - macOS の `gcc` は Homebrew 由来であってほしい、`/usr/bin/gcc`
@@ -433,7 +433,7 @@ os      = ["windows", "macos", "linux", "termux"]   # 任意。デフォルト�
 [[expect]]
 command = "python"
 prefer  = ["mise"]
-avoid   = ["WindowsApps", "choco"]
+avoid   = ["windows_apps", "choco"]
 os      = ["windows"]
 
 [[expect]]
@@ -573,11 +573,11 @@ Even Better TOML がユーザー設定なしで自動解決する。Schema Store
 | 言語ツールチェーン | `cargo`, `go`, `npm_global`, `pip_user` |
 | 多言語バージョンマネージャ | `mise` / `mise_shims` / `mise_installs`, `volta`, `aqua`, `asdf` |
 | Windows パッケージマネージャ | `winget`, `choco`, `scoop` |
-| Windows 固有 | `WindowsApps`, `strawberry`, `mingw`, `msys` |
+| Windows 固有 | `windows_apps`, `strawberry`, `mingw`, `msys` |
 | macOS パッケージマネージャ | `brew_arm`, `brew_intel`, `macports` |
 | Linux パッケージマネージャ | `apt`, `pacman`, `dnf`, `flatpak`, `snap` |
 | Termux | `pkg`, `termux_user_bin` |
-| OS ベースライン | `system_windows`, `system_macos`, `system_linux` |
+| OS ベースライン | `os_baseline_windows`, `os_baseline_macos`, `os_baseline_linux` |
 
 `pathlint catalog list` を実行すれば、各 source の OS 別パスを
 含めた解決済みカタログをダンプできる（ユーザー上書き分も含む）。各プラグインの TOML は
@@ -598,7 +598,7 @@ boundary 検査がパス segment 境界を跨ぐ過剰マッチを防ぐ。
 - `brew_arm` と `brew_intel` を分けたのは、Mac 1 台での
   `/opt/homebrew/bin` vs `/usr/local/bin` 順序自体が頻出バグ源
   だから。
-- `WindowsApps` と `strawberry` は主に `avoid = [...]` リスト用
+- `windows_apps` と `strawberry` は主に `avoid = [...]` リスト用
   に用意。
 
 ### 9.1 source 間の関係性（0.0.9+）
@@ -817,7 +817,7 @@ post-1.0 議題。
 - **[R1] シンボリックリンクされたシステムディレクトリ。** Arch /
   Solus / openSUSE TW などで `/usr/sbin → /usr/bin`。`which` は
   `/usr/sbin/<cmd>` を返すので、組み込みの `apt` / `pacman` /
-  `dnf` / `system_linux`（`linux = "/usr/bin"` のみ）に substring
+  `dnf` / `os_baseline_linux`（`linux = "/usr/bin"` のみ）に substring
   マッチしない → ユーザー側で `[source.usr_sbin] linux =
   "/usr/sbin"` を追加するか、カタログに合成エントリを足すか。path
   canonicalize は採用しない方針：レポート上に出る source ラベルを

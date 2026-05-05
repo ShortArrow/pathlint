@@ -41,7 +41,7 @@ and each `[[expect]]` may carry an `os = [...]` filter.
 `pathlint` ships with a built-in catalog of well-known sources
 (`cargo`, `mise`, `mise_shims`, `mise_installs`, `volta`, `winget`,
 `choco`, `scoop`, `brew_arm`, `brew_intel`, `apt`, `pacman`, `pkg`,
-`flatpak`, `WindowsApps`, ...). Users only have to write their
+`flatpak`, `windows_apps`, ...). Users only have to write their
 **expectations**; sources are looked up by name.
 
 ## 2. Problem statement
@@ -53,7 +53,7 @@ care which one wins:
   actually fires is the older one in `WinGet/Links` — same name,
   different file.
 - `python` should come from `mise`, not from the Microsoft Store
-  `WindowsApps` stub.
+  `windows_apps` stub.
 - `node` should come from `volta`, not the system `apt` install.
 - On macOS `gcc` should come from Homebrew, not from `/usr/bin/gcc`
   (which used to be a clang shim).
@@ -489,7 +489,7 @@ os      = ["windows", "macos", "linux", "termux"]   # optional; default = all
 [[expect]]
 command = "python"
 prefer  = ["mise"]
-avoid   = ["WindowsApps", "choco"]
+avoid   = ["windows_apps", "choco"]
 os      = ["windows"]
 
 [[expect]]
@@ -630,11 +630,11 @@ The current set, grouped:
 | Language toolchains | `cargo`, `go`, `npm_global`, `pip_user` |
 | Polyglot version managers | `mise` / `mise_shims` / `mise_installs`, `volta`, `aqua`, `asdf` |
 | Windows package managers | `winget`, `choco`, `scoop` |
-| Windows-specific | `WindowsApps`, `strawberry`, `mingw`, `msys` |
+| Windows-specific | `windows_apps`, `strawberry`, `mingw`, `msys` |
 | macOS package managers | `brew_arm`, `brew_intel`, `macports` |
 | Linux package managers | `apt`, `pacman`, `dnf`, `flatpak`, `snap` |
 | Termux | `pkg`, `termux_user_bin` |
-| OS baseline | `system_windows`, `system_macos`, `system_linux` |
+| OS baseline | `os_baseline_windows`, `os_baseline_macos`, `os_baseline_linux` |
 
 Run `pathlint catalog list` to dump the resolved catalog with
 each source's per-OS path, including any overrides the user
@@ -658,7 +658,7 @@ Notes on the design:
 - `brew_arm` and `brew_intel` are split because `/opt/homebrew/bin`
   vs `/usr/local/bin` ordering on a single Mac is itself a typical
   source of bugs.
-- `WindowsApps` and `strawberry` are listed primarily so they can
+- `windows_apps` and `strawberry` are listed primarily so they can
   appear in `avoid = [...]` lists.
 
 ### 9.1 Relations between sources (0.0.9+)
@@ -883,7 +883,7 @@ Tagged with the role(s) each touches.
 - **[R1] Symlinked system dirs.** On Arch, Solus, openSUSE TW etc.,
   `/usr/sbin` is a symlink to `/usr/bin`, and `which` reports
   `/usr/sbin/<cmd>`. The built-in `apt` / `pacman` / `dnf` /
-  `system_linux` sources declare `linux = "/usr/bin"` only, so the
+  `os_baseline_linux` sources declare `linux = "/usr/bin"` only, so the
   substring miss makes pathlint report `NG (unknown source)` even
   though the binary is the distro one. Either the user adds
   `[source.usr_sbin] linux = "/usr/sbin"`, or the catalog grows a
