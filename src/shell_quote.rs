@@ -12,9 +12,11 @@
 //!
 //! With this module in place the dependency direction is:
 //!
-//!     trace → shell_quote          (uninstall command templating)
-//!     format → trace                (rendering domain values)
-//!     format → shell_quote          (still allowed if needed)
+//! ```text
+//! trace → shell_quote          (uninstall command templating)
+//! format → trace                (rendering domain values)
+//! format → shell_quote          (still allowed if needed)
+//! ```
 //!
 //! No cycle.
 //!

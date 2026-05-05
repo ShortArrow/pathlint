@@ -8,7 +8,6 @@
 use crate::config::Relation;
 use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::Outcome;
-use crate::os_detect::Os;
 use crate::sort::{SortNote, SortPlan};
 use crate::trace::{Found, Provenance, TraceOutcome, UninstallHint};
 
@@ -626,6 +625,7 @@ mod tests {
             prefer: vec!["cargo".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         }
     }
 
@@ -638,6 +638,7 @@ mod tests {
             prefer: vec!["cargo".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         }
     }
 
@@ -896,6 +897,7 @@ mod tests {
             prefer: vec!["cargo".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         };
         let out = check_json(&[not_found]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
@@ -969,6 +971,7 @@ mod tests {
             prefer: vec![],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         };
         let out = check_json(&[skip]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
