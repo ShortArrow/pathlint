@@ -73,9 +73,15 @@ should know about:
   pathlint can't tell that case apart from a real misordering.
 - **Symlinked system dirs.** On Arch / openSUSE TW / Solus,
   `/usr/sbin → /usr/bin`. `which ls` reports `/usr/sbin/ls`, so the
-  built-in `apt` / `pacman` / `dnf` source (`/usr/bin`) doesn't match.
-  Add `[source.usr_sbin] linux = "/usr/sbin"` to your `pathlint.toml`
-  if you hit this.
+  built-in `apt` / `pacman` / `dnf` source (`/usr/bin`) doesn't match
+  alone. Reference the built-in `os_baseline_linux_sbin` source
+  alongside the package manager:
+
+  ```toml
+  [[expect]]
+  command = "ls"
+  prefer = ["pacman", "os_baseline_linux_sbin"]
+  ```
 - **Which package owns this binary.** `pathlint` does not call
   `dpkg -S` / `rpm -qf` / `pacman -Qo` / `brew which-formula`. That's
   intentional in 0.0.x for speed and offline correctness; revisiting

@@ -880,14 +880,23 @@ Tagged with the role(s) each touches.
 
 ### R1 — resolve order
 
-- **[R1] Symlinked system dirs.** On Arch, Solus, openSUSE TW etc.,
-  `/usr/sbin` is a symlink to `/usr/bin`, and `which` reports
-  `/usr/sbin/<cmd>`. The built-in `apt` / `pacman` / `dnf` /
-  `os_baseline_linux` sources declare `linux = "/usr/bin"` only, so the
-  substring miss makes pathlint report `NG (unknown source)` even
-  though the binary is the distro one. Either the user adds
-  `[source.usr_sbin] linux = "/usr/sbin"`, or the catalog grows a
-  combined entry. Path-canonicalize is rejected for now because it
+- **[R1] Symlinked system dirs.** *(Resolved in 0.0.14 by adding
+  `os_baseline_linux_sbin = "/usr/sbin"` to the built-in catalog.)*
+  On Arch, Solus, openSUSE TW etc., `/usr/sbin` is a symlink to
+  `/usr/bin` and `which` reports `/usr/sbin/<cmd>`. The
+  `apt` / `pacman` / `dnf` / `os_baseline_linux` sources still
+  declare `linux = "/usr/bin"` only because that's where their
+  packages land on traditional distros; users on a symlinked
+  layout reference `os_baseline_linux_sbin` alongside the package
+  manager:
+
+  ```toml
+  [[expect]]
+  command = "ls"
+  prefer = ["pacman", "os_baseline_linux_sbin"]
+  ```
+
+  Path-canonicalize was rejected as an alternative because it
   silently changes which source label appears in the output and
   breaks shim-aware matching for mise / volta / asdf.
 - **[R1] `prefer` ordering.** Currently `prefer = ["mise", "volta"]`

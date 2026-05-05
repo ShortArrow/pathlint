@@ -17,3 +17,17 @@ macos = "/usr/bin"
 
 [source.os_baseline_linux]
 linux = "/usr/bin"
+
+# /usr/sbin is a separate source on Linux because Arch / openSUSE
+# Tumbleweed / Solus symlink /usr/sbin → /usr/bin while traditional
+# distros keep them split. `which ls` reports /usr/sbin/ls on the
+# symlinked layout, so a rule that prefers `apt` / `pacman` /
+# `dnf` (all `/usr/bin`-only) would miss. Reference
+# `os_baseline_linux_sbin` alongside the package manager when you
+# want both layouts to satisfy the rule:
+#
+#   [[expect]]
+#   command = "ls"
+#   prefer = ["pacman", "os_baseline_linux_sbin"]
+[source.os_baseline_linux_sbin]
+linux = "/usr/sbin"

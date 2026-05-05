@@ -186,11 +186,11 @@ prefer  = ["cargo"]
 # ---- Linux-specific examples ----
 #
 # On Arch / openSUSE TW / Solus, /usr/sbin is a symlink to /usr/bin
-# and `which` reports /usr/sbin/<cmd>. The built-in apt / pacman /
-# dnf sources cover /usr/bin only, so `prefer = ["pacman"]` would
-# miss on those distros. Either reference both `pacman` and
-# `usr_sbin` here, or add `[source.usr_sbin] linux = "/usr/sbin"`
-# in your own [source.*] section below.
+# and `which` reports /usr/sbin/<cmd>. apt / pacman / dnf cover
+# /usr/bin only; reference the built-in `os_baseline_linux_sbin`
+# source alongside the package manager so both layouts satisfy the
+# rule. (0.0.14+; was a manual `[source.usr_sbin]` workaround
+# before.)
 
 [[expect]]
 command = "python"
@@ -207,7 +207,7 @@ os      = ["linux"]
 # this for nudges where a single rogue path shouldn't fail CI.
 [[expect]]
 command  = "rg"
-prefer   = ["cargo", "apt", "pacman", "dnf"]
+prefer   = ["cargo", "apt", "pacman", "dnf", "os_baseline_linux_sbin"]
 severity = "warn"
 
 # kind = "executable" also verifies the resolved path is a real
@@ -217,9 +217,6 @@ severity = "warn"
 command = "rustc"
 prefer  = ["cargo"]
 kind    = "executable"
-
-[source.usr_sbin]
-linux = "/usr/sbin"
 "#;
 
 const TERMUX_STARTER: &str = r#"# ---- Cross-OS examples ----

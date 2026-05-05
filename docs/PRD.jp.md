@@ -814,15 +814,23 @@ post-1.0 議題。
 
 ### R1 — 解決順
 
-- **[R1] シンボリックリンクされたシステムディレクトリ。** Arch /
-  Solus / openSUSE TW などで `/usr/sbin → /usr/bin`。`which` は
-  `/usr/sbin/<cmd>` を返すので、組み込みの `apt` / `pacman` /
-  `dnf` / `os_baseline_linux`（`linux = "/usr/bin"` のみ）に substring
-  マッチしない → ユーザー側で `[source.usr_sbin] linux =
-  "/usr/sbin"` を追加するか、カタログに合成エントリを足すか。path
-  canonicalize は採用しない方針：レポート上に出る source ラベルを
-  silent に変える上、mise / volta / asdf の shim ベースマッチを
-  壊す。
+- **[R1] シンボリックリンクされたシステムディレクトリ。** *(0.0.14
+  でカタログに `os_baseline_linux_sbin = "/usr/sbin"` を追加して解決
+  済み。)* Arch / Solus / openSUSE TW などで `/usr/sbin → /usr/bin`、
+  `which` は `/usr/sbin/<cmd>` を返す。`apt` / `pacman` / `dnf` /
+  `os_baseline_linux` は伝統的ディストロ用に `linux = "/usr/bin"`
+  のままで、symlinked レイアウトを使うユーザーは
+  `os_baseline_linux_sbin` を package manager と並べて参照する：
+
+  ```toml
+  [[expect]]
+  command = "ls"
+  prefer = ["pacman", "os_baseline_linux_sbin"]
+  ```
+
+  path canonicalize は採用しない方針：レポート上に出る source
+  ラベルを silent に変える上、mise / volta / asdf の shim ベース
+  マッチを壊す。
 - **[R1] `prefer` の順序。** 現状 `prefer = ["mise", "volta"]` は
   集合扱い（「どれか満たせば OK」）。`sort` のとき優先順位として
   使うか。post-MVP の `pathlint sort` 設計と一体。
