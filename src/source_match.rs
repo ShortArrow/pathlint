@@ -3,7 +3,7 @@
 //! Pure function that asks: "for this path, which `[source.<name>]`
 //! entries point at a directory the path lives inside?" Used by
 //! both `lint::evaluate` (to decide whether `prefer` / `avoid`
-//! intersects the matches) and `where_cmd::locate` (to rank
+//! intersects the matches) and `trace::locate` (to rank
 //! sources by specificity before picking an uninstall hint).
 //!
 //! The single entry point is `find` — callers consume the ranked

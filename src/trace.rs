@@ -19,7 +19,7 @@ use crate::resolve::Resolution;
 use crate::source_match;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum WhereOutcome {
+pub enum TraceOutcome {
     /// The command resolved; here is everything we know about it.
     Found(Found),
     /// The command did not resolve from PATH at all.
@@ -85,12 +85,12 @@ pub fn locate<R>(
     relations: &[Relation],
     os: Os,
     mut resolver: R,
-) -> WhereOutcome
+) -> TraceOutcome
 where
     R: FnMut(&str) -> Option<Resolution>,
 {
     let Some(resolution) = resolver(command) else {
-        return WhereOutcome::NotFound;
+        return TraceOutcome::NotFound;
     };
 
     let haystack = normalize(&resolution.full_path.to_string_lossy());
@@ -110,7 +110,7 @@ where
     // matched — the catch-all is least informative.
     let matched = rank_aliases_last(matched, relations);
 
-    WhereOutcome::Found(Found {
+    TraceOutcome::Found(Found {
         command: command.to_string(),
         resolved: resolution.full_path,
         matched_sources: matched,
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn not_found_when_resolver_returns_none() {
         let out = locate("ghost", &BTreeMap::new(), &[], Os::Linux, |_| None);
-        assert_eq!(out, WhereOutcome::NotFound);
+        assert_eq!(out, TraceOutcome::NotFound);
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod tests {
             Some(resolution("/home/u/.cargo/bin/lazygit"))
         });
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert_eq!(f.matched_sources, vec!["cargo".to_string()]);
                 assert_eq!(
                     f.uninstall,
@@ -403,7 +403,7 @@ mod tests {
             ))
         });
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert_eq!(f.matched_sources[0], "mise_installs");
                 // `mise` alias is at the back when a more specific
                 // mise_* match is present.
@@ -440,7 +440,7 @@ mod tests {
             ))
         });
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::NoTemplate {
@@ -461,7 +461,7 @@ mod tests {
             Some(resolution("/opt/local-stuff/bin/orphan"))
         });
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert!(f.matched_sources.is_empty());
                 assert_eq!(f.uninstall, UninstallHint::NoSource);
             }
@@ -482,7 +482,7 @@ mod tests {
             Some(resolution("/home/u/.cargo/bin/lazygit.exe"))
         });
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert_eq!(
                     f.uninstall,
                     UninstallHint::Command {
@@ -517,7 +517,7 @@ mod tests {
             },
         );
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 match &f.provenance {
                     Some(Provenance::WrapperInstaller {
                         installer,
@@ -558,7 +558,7 @@ mod tests {
             },
         );
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert!(f.provenance.is_none());
             }
             other => panic!("expected Found, got {other:?}"),
@@ -582,7 +582,7 @@ mod tests {
             },
         );
         match out {
-            WhereOutcome::Found(f) => match &f.provenance {
+            TraceOutcome::Found(f) => match &f.provenance {
                 Some(Provenance::WrapperInstaller {
                     installer,
                     plugin_segment,
@@ -609,7 +609,7 @@ mod tests {
             ))
         });
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert!(f.provenance.is_none());
             }
             other => panic!("expected Found, got {other:?}"),
@@ -634,7 +634,7 @@ mod tests {
             |_| Some(resolution("/home/u/.cargo/bin/cargo-lazygit")),
         );
         match out {
-            WhereOutcome::Found(f) => {
+            TraceOutcome::Found(f) => {
                 assert!(f.provenance.is_none());
                 assert_eq!(
                     f.uninstall,

@@ -20,7 +20,7 @@ use crate::path_source::{self, Target};
 use crate::report;
 use crate::resolve;
 use crate::source_match::{self, SourceWarningReason};
-use crate::where_cmd::{self, WhereOutcome};
+use crate::trace::{self, TraceOutcome};
 
 /// Read PATH for the chosen `--target`, surface any warning, and
 /// split it into entries. The three caller sites (`check`,
@@ -268,7 +268,7 @@ fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8
     enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
-    let outcome = where_cmd::locate(&args.command, &merged, &relations, Os::current(), |cmd| {
+    let outcome = trace::locate(&args.command, &merged, &relations, Os::current(), |cmd| {
         resolve::resolve(cmd, &path_entries)
     });
 
@@ -276,17 +276,17 @@ fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8
         let json = format::where_json(&args.command, &outcome)?;
         println!("{json}");
         return Ok(match outcome {
-            WhereOutcome::NotFound => 1,
-            WhereOutcome::Found(_) => 0,
+            TraceOutcome::NotFound => 1,
+            TraceOutcome::Found(_) => 0,
         });
     }
 
     match outcome {
-        WhereOutcome::NotFound => {
+        TraceOutcome::NotFound => {
             println!("{}", format::where_not_found(&args.command));
             Ok(1)
         }
-        WhereOutcome::Found(found) => {
+        TraceOutcome::Found(found) => {
             println!("{}", format::where_human(&found));
             Ok(0)
         }

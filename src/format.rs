@@ -10,7 +10,7 @@ use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::{self, Diagnosis, Outcome, Status};
 use crate::os_detect::Os;
 use crate::sort::{SortNote, SortPlan};
-use crate::where_cmd::{Found, Provenance, UninstallHint, WhereOutcome};
+use crate::trace::{Found, Provenance, UninstallHint, TraceOutcome};
 
 /// Render a single doctor diagnostic into a multi-line block
 /// (header line + indented detail). The trailing newline is
@@ -152,13 +152,13 @@ pub fn where_not_found(command: &str) -> String {
     format!("{} — not found on PATH", strip_control_chars(command))
 }
 
-/// Convenience: render a complete `WhereOutcome` to a single
+/// Convenience: render a complete `TraceOutcome` to a single
 /// (multi-line) string suitable for `print!`. The caller still
 /// chooses what exit code to use.
-pub fn where_outcome(outcome: &WhereOutcome) -> String {
+pub fn where_outcome(outcome: &TraceOutcome) -> String {
     match outcome {
-        WhereOutcome::Found(f) => where_human(f),
-        WhereOutcome::NotFound => {
+        TraceOutcome::Found(f) => where_human(f),
+        TraceOutcome::NotFound => {
             // We don't have the command name here from NotFound
             // alone; callers that need the original spelling reach
             // for `where_not_found` directly. For symmetry we
@@ -417,13 +417,13 @@ impl<'a> From<&'a Outcome> for OutcomeView<'a> {
 /// is documented in PRD §7.7 and stable for `0.0.x`. Used by
 /// `pathlint where --json`.
 ///
-/// `command` is needed because `WhereOutcome::NotFound` carries no
+/// `command` is needed because `TraceOutcome::NotFound` carries no
 /// data. As of 0.0.14 the JSON shape uses a top-level `kind`
 /// discriminator (`"found"` or `"not_found"`) so future variants
 /// (e.g. an "ambiguous" outcome covering wrapper layers) can land
 /// without breaking consumers that pattern-matched on
 /// `found: true|false`. The previous `found: bool` field is gone.
-pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde_json::Error> {
+pub fn where_json(command: &str, outcome: &TraceOutcome) -> Result<String, serde_json::Error> {
     #[derive(serde::Serialize)]
     #[serde(tag = "kind", rename_all = "snake_case")]
     enum Out<'a> {
@@ -437,8 +437,8 @@ pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde
     }
 
     let payload = match outcome {
-        WhereOutcome::NotFound => Out::NotFound { command },
-        WhereOutcome::Found(f) => Out::Found { inner: f },
+        TraceOutcome::NotFound => Out::NotFound { command },
+        TraceOutcome::Found(f) => Out::Found { inner: f },
     };
     serde_json::to_string_pretty(&payload)
 }
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn where_json_found_carries_kind_discriminators() {
-        let out = where_json("rustc", &WhereOutcome::Found(found_minimal())).unwrap();
+        let out = where_json("rustc", &TraceOutcome::Found(found_minimal())).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         // 0.0.14: top-level kind discriminator instead of found:bool.
         assert_eq!(v["kind"], "found");
@@ -702,7 +702,7 @@ mod tests {
 
     #[test]
     fn where_json_not_found_is_compact() {
-        let out = where_json("ghost", &WhereOutcome::NotFound).unwrap();
+        let out = where_json("ghost", &TraceOutcome::NotFound).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         // 0.0.14: top-level kind = "not_found" replaces found:false.
         assert_eq!(v["kind"], "not_found");
@@ -717,7 +717,7 @@ mod tests {
             installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
-        let out = where_json("foo", &WhereOutcome::Found(f)).unwrap();
+        let out = where_json("foo", &TraceOutcome::Found(f)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         // 0.0.14: variant renamed from MiseInstallerPlugin →
         // WrapperInstaller; serde tag = "wrapper_installer".

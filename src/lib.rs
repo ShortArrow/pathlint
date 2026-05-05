@@ -43,4 +43,4 @@ pub mod sort;
 #[doc(hidden)]
 pub mod source_match;
 #[doc(hidden)]
-pub mod where_cmd;
+pub mod trace;
