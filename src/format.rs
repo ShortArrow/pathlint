@@ -186,10 +186,7 @@ pub fn where_human(found: &Found, style: Style) -> String {
 /// a hostile CLI argument cannot inject ANSI escapes here either.
 pub fn where_not_found(command: &str, style: Style) -> String {
     let dash = glyph(style, "—", "-");
-    format!(
-        "{} {dash} not found on PATH",
-        strip_control_chars(command)
-    )
+    format!("{} {dash} not found on PATH", strip_control_chars(command))
 }
 
 /// Render a `SortPlan` as a multi-line human-readable block. The

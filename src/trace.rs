@@ -161,7 +161,11 @@ fn rank_aliases_last(matched: Vec<String>, relations: &[Relation]) -> Vec<String
         .iter_aliases()
         .filter_map(|(parent, children)| {
             let any_child_matched = children.iter().any(|c| matched.contains(c));
-            if any_child_matched { Some(parent) } else { None }
+            if any_child_matched {
+                Some(parent)
+            } else {
+                None
+            }
         })
         .collect();
     if parents.is_empty() {

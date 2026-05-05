@@ -101,7 +101,9 @@ pub enum Kind {
     /// without rust). 0.0.18+. `entry` is the expanded path that
     /// was checked; `Diagnostic.index` is fixed at `usize::MAX`
     /// because the diagnostic is per-source, not per-PATH-entry.
-    PerSourceMissingRequired { source: String },
+    PerSourceMissingRequired {
+        source: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -1186,11 +1188,9 @@ mod tests {
         let sources = cat_local(&[("cargo", unix_source("$HOME/.cargo/bin"))]);
         let env = env_map(&[("HOME", "/tmp/no_such_path")]);
         let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env);
-        assert!(
-            diags
-                .iter()
-                .any(|d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo"))
-        );
+        assert!(diags.iter().any(
+            |d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo")
+        ));
     }
 
     // ---- Filter / validate / has_error ---------------------------

@@ -207,10 +207,9 @@ fn apply_prefer_order_over(
 ) {
     // 0.0.18: read prefer_order_over edges via RelationIndex so
     // sort no longer touches the Relation sum type directly.
-    let order_pairs: Vec<(&str, &str)> =
-        crate::catalog::RelationIndex::from_slice(relations)
-            .iter_prefer_orders()
-            .collect();
+    let order_pairs: Vec<(&str, &str)> = crate::catalog::RelationIndex::from_slice(relations)
+        .iter_prefer_orders()
+        .collect();
     if order_pairs.is_empty() {
         return;
     }
