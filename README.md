@@ -284,14 +284,16 @@ LSP) and the [Even Better TOML][ebt] VS Code extension:
 ```
 
 Pin to a specific release for reproducibility (replace `<TAG>`
-with the version you want, e.g. `v0.0.13`):
+with the version you want, e.g. `v0.0.14`):
 
 ```toml
 #:schema https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json
 ```
 
 The schema is also attached as `pathlint.schema.json` to every
-GitHub Release alongside the binaries.
+GitHub Release alongside the binaries. As of 0.0.15 each release
+also ships `check.schema.json`, which describes the JSON shape of
+`pathlint check --json` output for downstream consumers.
 
 [Taplo]: https://taplo.tamasfe.dev/
 [ebt]: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml
