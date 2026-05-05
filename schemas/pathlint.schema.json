@@ -1,19 +1,9 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "pathlint.toml",
-  "description": "Top-level `pathlint.toml` document.",
+  "description": "Top-level `pathlint.toml` document.\n\n`catalog_version` is intentionally absent from this struct. It belongs to the embedded catalog file (see `pathlint::catalog::EmbeddedCatalogFile`); declaring it in a user `pathlint.toml` is a structural error caught by serde's `deny_unknown_fields`. Use `require_catalog = N` instead to pin a minimum embedded catalog version.",
   "type": "object",
   "properties": {
-    "catalog_version": {
-      "description": "Reserved for the embedded catalog. The build script sets this in `embedded_catalog.toml`; user `pathlint.toml` files must NOT declare it. As of 0.0.14, parsing a user config that contains `catalog_version` is a configuration error (exit 2) — use `require_catalog = N` instead to pin the minimum catalog version your rules require.",
-      "default": null,
-      "type": [
-        "integer",
-        "null"
-      ],
-      "format": "uint32",
-      "minimum": 0.0
-    },
     "expect": {
       "type": "array",
       "items": {
@@ -29,7 +19,7 @@
       }
     },
     "require_catalog": {
-      "description": "Minimum embedded catalog version this `pathlint.toml` requires. If set, pathlint refuses to run when the binary's `catalog_version` is lower (config error, exit 2). Leave unset to opt out of the check.",
+      "description": "Minimum embedded catalog version this `pathlint.toml` requires. If set, pathlint refuses to run when the binary's embedded catalog version is lower (config error, exit 2). Leave unset to opt out of the check.",
       "default": null,
       "type": [
         "integer",
