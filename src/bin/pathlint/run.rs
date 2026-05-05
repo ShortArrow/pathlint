@@ -95,7 +95,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         }) => return execute_catalog_list(&args, cli.global.config.as_deref()),
         Some(Command::Catalog {
             action: CatalogCommand::Relations(args),
-        }) => return execute_catalog_relations(&args, cli.global.config.as_deref()),
+        }) => return execute_catalog_relations(&args, &cli.global),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
         Some(Command::Trace(args)) => return execute_trace(&args, &cli.global),
         Some(Command::Sort(args)) => return execute_sort(&args, &cli.global),
@@ -205,8 +205,11 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
         } else {
             kept.clone()
         };
+        let style = format::Style {
+            no_glyphs: global.no_glyphs,
+        };
         for d in &printable {
-            println!("{}", format::doctor_line(d, &entries));
+            println!("{}", format::doctor_line(d, &entries, style));
         }
     }
 
@@ -232,9 +235,9 @@ fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -
 
 fn execute_catalog_relations(
     args: &CatalogRelationsArgs,
-    explicit_rules: Option<&Path>,
+    global: &crate::cli::GlobalOpts,
 ) -> Result<u8> {
-    let cfg = match locate_rules(explicit_rules)? {
+    let cfg = match locate_rules(global.config.as_deref())? {
         Some(p) => Config::from_path(&p)?,
         None => Config::default(),
     };
@@ -250,7 +253,10 @@ fn execute_catalog_relations(
         let json = format::relations_json(&relations)?;
         println!("{json}");
     } else {
-        println!("{}", format::relations_human(&relations));
+        let style = format::Style {
+            no_glyphs: global.no_glyphs,
+        };
+        println!("{}", format::relations_human(&relations, style));
     }
     Ok(0)
 }
@@ -283,13 +289,16 @@ fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8
         });
     }
 
+    let style = format::Style {
+        no_glyphs: global.no_glyphs,
+    };
     match outcome {
         TraceOutcome::NotFound => {
-            println!("{}", format::where_not_found(&args.command));
+            println!("{}", format::where_not_found(&args.command, style));
             Ok(1)
         }
         TraceOutcome::Found(found) => {
-            println!("{}", format::where_human(&found));
+            println!("{}", format::where_human(&found, style));
             Ok(0)
         }
     }
@@ -334,7 +343,10 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
         let json = format::sort_json(&plan)?;
         println!("{json}");
     } else {
-        println!("{}", format::sort_human(&plan));
+        let style = format::Style {
+            no_glyphs: global.no_glyphs,
+        };
+        println!("{}", format::sort_human(&plan, style));
     }
 
     // sort is a *suggestion* command — it never reports failure,
