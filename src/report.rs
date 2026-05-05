@@ -23,6 +23,12 @@ pub struct Style {
     /// of resolved / matched / prefer / avoid / diagnosis / hint
     /// instead of the one-line detail.
     pub explain: bool,
+    /// Whether to wrap status tags in ANSI colour escapes. The CLI
+    /// layer resolves `--color auto|always|never` against
+    /// `is_terminal::IsTerminal` and passes the bool here. 0.0.17
+    /// promoted this from a parsed-but-ignored flag to an
+    /// effective contract.
+    pub color: bool,
 }
 
 impl Style {
@@ -51,7 +57,8 @@ pub fn render(outcomes: &[Outcome], style: Style) -> String {
 }
 
 fn render_one(o: &Outcome, style: Style) -> String {
-    let tag = status_tag(o, style.no_glyphs);
+    let raw_tag = status_tag(o, style.no_glyphs);
+    let tag = colourize_tag(raw_tag, &o.status, style.color, o.severity);
     // command flows from CLI args / [[expect]] entries which can
     // be arbitrary user strings; strip control chars so a hostile
     // pathlint.toml cannot inject ANSI escapes via `command = "..."`.
@@ -143,7 +150,7 @@ fn status_tag(o: &Outcome, no_glyphs: bool) -> &'static str {
             Status::NgWrongSource
             | Status::NgUnknownSource
             | Status::NgNotFound
-            | Status::NgNotExecutable(_),
+            | Status::NgNotExecutable,
             false,
             true,
         ) => "[warn]",
@@ -151,19 +158,19 @@ fn status_tag(o: &Outcome, no_glyphs: bool) -> &'static str {
             Status::NgWrongSource
             | Status::NgUnknownSource
             | Status::NgNotFound
-            | Status::NgNotExecutable(_),
+            | Status::NgNotExecutable,
             false,
             false,
         ) => "[NG]  ",
         (Status::Skip, false, _) => "[skip]",
         (Status::NotApplicable, false, _) => "[n/a] ",
-        (Status::ConfigError(_), false, _) => "[ERR] ",
+        (Status::ConfigError, false, _) => "[ERR] ",
         (Status::Ok, true, _) => "OK   ",
         (
             Status::NgWrongSource
             | Status::NgUnknownSource
             | Status::NgNotFound
-            | Status::NgNotExecutable(_),
+            | Status::NgNotExecutable,
             true,
             true,
         ) => "warn ",
@@ -171,14 +178,49 @@ fn status_tag(o: &Outcome, no_glyphs: bool) -> &'static str {
             Status::NgWrongSource
             | Status::NgUnknownSource
             | Status::NgNotFound
-            | Status::NgNotExecutable(_),
+            | Status::NgNotExecutable,
             true,
             false,
         ) => "NG   ",
         (Status::Skip, true, _) => "skip ",
         (Status::NotApplicable, true, _) => "n/a  ",
-        (Status::ConfigError(_), true, _) => "ERR  ",
+        (Status::ConfigError, true, _) => "ERR  ",
     }
+}
+
+/// Wrap the raw status tag in an ANSI colour escape when `color`
+/// is true; pass through unchanged otherwise. Colours follow the
+/// usual lint-output convention: green for OK, red for NG /
+/// config error, yellow for warn / skip / n/a.
+///
+/// 0.0.17 introduced this so the global `--color` flag actually
+/// affects output. Pre-0.0.17 the flag was parsed by clap and then
+/// silently ignored.
+fn colourize_tag(
+    raw: &'static str,
+    status: &Status,
+    color: bool,
+    severity: crate::config::Severity,
+) -> String {
+    if !color {
+        return raw.to_string();
+    }
+    use crate::config::Severity as RuleSeverity;
+    let is_warn_failure = lint::is_failure(status) && severity == RuleSeverity::Warn;
+    let code = match (status, is_warn_failure) {
+        (Status::Ok, _) => "32", // green
+        (_, true) => "33",       // yellow (warn-severity NG)
+        (Status::ConfigError, _) => "31",
+        (
+            Status::NgWrongSource
+            | Status::NgUnknownSource
+            | Status::NgNotFound
+            | Status::NgNotExecutable,
+            false,
+        ) => "31", // red
+        (Status::Skip | Status::NotApplicable, _) => "33", // yellow
+    };
+    format!("\x1b[{code}m{raw}\x1b[0m")
 }
 
 /// Render a structured, multi-line diagnosis for a single Outcome.
@@ -308,6 +350,7 @@ mod tests {
             prefer: prefer.iter().map(|s| s.to_string()).collect(),
             avoid: avoid.iter().map(|s| s.to_string()).collect(),
             severity: crate::config::Severity::Error,
+            reason: None,
         }
     }
 
@@ -321,6 +364,7 @@ mod tests {
             prefer: vec!["cargo".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         };
         assert!(explain_lines(&o).is_empty());
     }
@@ -362,6 +406,7 @@ mod tests {
             prefer: vec!["cargo".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         };
         let lines = explain_lines(&o);
         assert!(
@@ -386,6 +431,7 @@ mod tests {
             prefer: vec!["cargo".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         };
         let lines = explain_lines(&o);
         assert!(lines.iter().any(|l| l.contains("not found on any PATH")));
@@ -396,12 +442,13 @@ mod tests {
     fn explain_lines_not_executable_carries_reason_and_shadow_hint() {
         let o = Outcome {
             command: "rg".into(),
-            status: Status::NgNotExecutable("is a directory".into()),
+            status: Status::NgNotExecutable,
             resolved: Some(PathBuf::from("/tmp/rg")),
             matched_sources: vec!["custom".into()],
             prefer: vec!["custom".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: Some("is a directory".into()),
         };
         let lines = explain_lines(&o);
         assert!(
@@ -418,6 +465,7 @@ mod tests {
             verbose: false,
             quiet: false,
             explain,
+            color: false,
         }
     }
 
@@ -480,6 +528,7 @@ mod tests {
             prefer: vec!["cargo".into()],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         };
         let out = render(&[ok], style(true));
         assert!(out.contains("[OK]"), "out: {out:?}");
@@ -510,6 +559,7 @@ mod tests {
             prefer: vec![],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         };
         let out = render(&[evil], style(false));
         assert!(!out.contains('\x1b'));
@@ -520,12 +570,13 @@ mod tests {
     fn explain_lines_config_error_quotes_the_underlying_message() {
         let o = Outcome {
             command: "rg".into(),
-            status: Status::ConfigError("undefined source name: typo".into()),
+            status: Status::ConfigError,
             resolved: None,
             matched_sources: vec![],
             prefer: vec![],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: Some("undefined source name: typo".into()),
         };
         let lines = explain_lines(&o);
         assert!(lines[0].contains("undefined source name: typo"));
@@ -543,6 +594,7 @@ mod tests {
             prefer: vec![],
             avoid: vec![],
             severity: crate::config::Severity::Error,
+            reason: None,
         }
     }
 

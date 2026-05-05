@@ -4,23 +4,23 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::catalog;
-use crate::catalog_view::{self, ListStyle};
 use crate::cli::{
     CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
     InitArgs, SortArgs, TraceArgs,
 };
-use crate::config::Config;
-use crate::doctor::{self, Diagnostic, Filter, Severity};
-use crate::format;
-use crate::init::{self, InitOptions, InitOutcome};
-use crate::lint;
-use crate::os_detect::Os;
-use crate::path_source::{self, Target};
-use crate::report;
-use crate::resolve;
-use crate::source_match::{self, SourceWarningReason};
-use crate::trace::{self, TraceOutcome};
+use pathlint::catalog;
+use pathlint::catalog_view::{self, ListStyle};
+use pathlint::config::Config;
+use pathlint::doctor::{self, Diagnostic, Filter, Severity};
+use pathlint::format;
+use pathlint::init::{self, InitOptions, InitOutcome};
+use pathlint::lint;
+use pathlint::os_detect::Os;
+use pathlint::path_source::{self, Target};
+use pathlint::report;
+use pathlint::resolve;
+use pathlint::source_match::{self, SourceWarningReason};
+use pathlint::trace::{self, TraceOutcome};
 
 /// Read PATH for the chosen `--target`, surface any warning, and
 /// split it into entries. The three caller sites (`check`,
@@ -44,7 +44,7 @@ fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<String> {
 /// effect through stderr lines and the returned `Result`. Called
 /// from every subcommand that consumes the merged catalog.
 fn enforce_source_validation(
-    sources: &std::collections::BTreeMap<String, crate::config::SourceDef>,
+    sources: &std::collections::BTreeMap<String, pathlint::config::SourceDef>,
     os: Os,
 ) -> Result<()> {
     let warnings = source_match::validate_sources(sources, os);
@@ -77,7 +77,7 @@ fn enforce_source_validation(
 ///
 /// Pure: takes the merged relation slice; emits its effect through
 /// stderr and the returned Result.
-fn enforce_relation_acyclic(relations: &[crate::config::Relation]) -> Result<()> {
+fn enforce_relation_acyclic(relations: &[pathlint::config::Relation]) -> Result<()> {
     if let Err(msg) = catalog::check_acyclic(relations) {
         eprintln!("pathlint: {msg}");
         anyhow::bail!("relation graph has a cycle; aborting");
@@ -142,11 +142,13 @@ pub fn execute(cli: Cli) -> Result<u8> {
         let json = format::check_json(&outcomes)?;
         println!("{json}");
     } else {
+        use std::io::IsTerminal;
         let style = report::Style {
             no_glyphs: cli.global.no_glyphs,
             verbose: cli.global.verbose,
             quiet: cli.global.quiet,
             explain: check_args.explain,
+            color: cli.global.color.resolve(std::io::stdout().is_terminal()),
         };
         print!("{}", report::render(&outcomes, style));
     }
@@ -311,8 +313,8 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     // input — `prefer` rules drive the reordering.
     let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
-        Some(p) => crate::config::Config::from_path(p)?,
-        None => crate::config::Config::default(),
+        Some(p) => pathlint::config::Config::from_path(p)?,
+        None => pathlint::config::Config::default(),
     };
     let catalog = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&catalog, Os::current())?;
@@ -320,7 +322,7 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
-    let plan = crate::sort::sort_path(
+    let plan = pathlint::sort::sort_path(
         &path_entries,
         &cfg.expectations,
         &catalog,

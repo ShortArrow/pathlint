@@ -12,6 +12,17 @@ use crate::expand::normalize;
 use crate::os_detect::Os;
 use crate::source_match;
 
+/// Outcome status discriminator. Unit-only enum so every variant
+/// serialises as a snake_case string — `pathlint check --json`
+/// uses this as the top-level `kind` field and consumers can
+/// switch on a string the same way they do for doctor / trace /
+/// sort / catalog relations.
+///
+/// 0.0.17 dropped the `String` payloads that
+/// `NgNotExecutable(reason)` / `ConfigError(message)` used to
+/// carry. The reason text now lives on `Outcome::reason` (a
+/// separate `Option<String>` field), keeping `kind` as a pure
+/// discriminator.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -20,13 +31,12 @@ pub enum Status {
     NgUnknownSource,
     NgNotFound,
     /// R2 — resolved path failed `kind` shape check (directory,
-    /// broken symlink, missing exec bit, etc.). Carries a short
-    /// human-readable reason.
-    #[serde(rename = "ng_not_executable")]
-    NgNotExecutable(String),
+    /// broken symlink, missing exec bit, etc.). The
+    /// human-readable reason rides on `Outcome::reason`.
+    NgNotExecutable,
     Skip, // optional + not on PATH
     NotApplicable,
-    ConfigError(String),
+    ConfigError,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +52,12 @@ pub struct Outcome {
     /// `lint::exit_code` reads it to decide whether an NG escalates
     /// to exit 1 or stays at exit 0.
     pub severity: Severity,
+    /// Human-readable detail for `NgNotExecutable` and
+    /// `ConfigError`. `None` for every other Status. 0.0.17 split
+    /// this off from the Status enum so `check --json` can keep
+    /// `kind` as a flat string discriminator. Fed by
+    /// `Outcome::with_reason` and surfaced in `CheckOutcomeView`.
+    pub reason: Option<String>,
 }
 
 impl Default for Outcome {
@@ -54,6 +70,7 @@ impl Default for Outcome {
             prefer: Vec::new(),
             avoid: Vec::new(),
             severity: Severity::Error,
+            reason: None,
         }
     }
 }
@@ -71,7 +88,8 @@ pub struct CheckOutcomeView {
     /// Outcome kind discriminator: `"ok"`, `"ng_wrong_source"`,
     /// `"ng_unknown_source"`, `"ng_not_found"`,
     /// `"ng_not_executable"`, `"skip"`, `"not_applicable"`, or
-    /// `"config_error"`.
+    /// `"config_error"`. Always a flat string (no nested object)
+    /// since 0.0.17.
     pub kind: Status,
     /// Per-rule severity copied from the Outcome. Always emitted
     /// (even for `error`, the default) so a downstream consumer
@@ -80,12 +98,31 @@ pub struct CheckOutcomeView {
     pub severity: Severity,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<String>,
+    /// Sources matched against the resolved path. Always emitted —
+    /// even an empty array — so consumers do not have to special-case
+    /// "field present" vs "field absent". 0.0.17 hoisted this from
+    /// schema-required-with-skip-serializing into a stable always-emit
+    /// shape so the schema and the wire form match.
     pub matched_sources: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// `prefer` set copied from the source `[[expect]]` rule. Skipped
+    /// when empty so consumers reading typical Ok / Skip outcomes
+    /// don't have to dig past the empty array. Schema marks the field
+    /// optional via `#[serde(default)]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prefer: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// `avoid` set copied from the source `[[expect]]` rule. Same
+    /// optional-when-empty story as `prefer`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub avoid: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Human-readable reason. Populated for
+    /// `kind = "ng_not_executable"` (R2 shape check rejection) and
+    /// `kind = "config_error"` (e.g. undefined source name).
+    /// Absent otherwise. 0.0.17 split this off from the kind
+    /// discriminator so consumers can branch on `kind` as a
+    /// string and read `reason` separately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnosis: Option<Diagnosis>,
 }
 
@@ -99,6 +136,7 @@ impl From<&Outcome> for CheckOutcomeView {
             matched_sources: o.matched_sources.clone(),
             prefer: o.prefer.clone(),
             avoid: o.avoid.clone(),
+            reason: o.reason.clone(),
             diagnosis: diagnose(o),
         }
     }
@@ -124,6 +162,7 @@ impl Outcome {
             prefer: expect.prefer.clone(),
             avoid: expect.avoid.clone(),
             severity: expect.severity,
+            reason: None,
         }
     }
 
@@ -142,6 +181,13 @@ impl Outcome {
     /// Builder: set the matched-source list.
     pub fn with_matched_sources(mut self, matched: Vec<String>) -> Self {
         self.matched_sources = matched;
+        self
+    }
+
+    /// Builder: set the human-readable reason (for
+    /// `NgNotExecutable` / `ConfigError`). 0.0.17.
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
         self
     }
 }
@@ -199,7 +245,7 @@ pub fn is_failure(status: &Status) -> bool {
         Status::NgWrongSource
             | Status::NgUnknownSource
             | Status::NgNotFound
-            | Status::NgNotExecutable(_)
+            | Status::NgNotExecutable
     )
 }
 
@@ -208,7 +254,7 @@ pub fn is_failure(status: &Status) -> bool {
 pub fn has_config_error(outcomes: &[Outcome]) -> bool {
     outcomes
         .iter()
-        .any(|o| matches!(o.status, Status::ConfigError(_)))
+        .any(|o| matches!(o.status, Status::ConfigError))
 }
 
 /// Map a slice of outcomes to a process exit code. Pure.
@@ -264,12 +310,12 @@ pub fn diagnose(o: &Outcome) -> Option<Diagnosis> {
         Status::NgNotFound => Some(Diagnosis::NotFound {
             prefer: o.prefer.clone(),
         }),
-        Status::NgNotExecutable(reason) => Some(Diagnosis::NotExecutable {
-            reason: reason.clone(),
+        Status::NgNotExecutable => Some(Diagnosis::NotExecutable {
+            reason: o.reason.clone().unwrap_or_default(),
             matched: o.matched_sources.clone(),
         }),
-        Status::ConfigError(msg) => Some(Diagnosis::Config {
-            message: msg.clone(),
+        Status::ConfigError => Some(Diagnosis::Config {
+            message: o.reason.clone().unwrap_or_default(),
         }),
     }
 }
@@ -317,9 +363,9 @@ where
     }
 
     if let Some(name) = first_undefined(&expect.prefer, &expect.avoid, sources) {
-        return base.with_status(Status::ConfigError(format!(
-            "undefined source name: {name}"
-        )));
+        return base
+            .with_status(Status::ConfigError)
+            .with_reason(format!("undefined source name: {name}"));
     }
 
     let Some(resolved_path) = resolver(&expect.command) else {
@@ -341,17 +387,24 @@ where
     // same expectation. The shape check only escalates an OK status
     // into a NG, never the other way around. Delegated to the
     // injected `shape_check` closure so this function stays pure.
-    let final_status = match (&source_status, expect.kind) {
+    // 0.0.17 carries the reason string in `Outcome::reason` rather
+    // than as a Status payload; collect it alongside the new status.
+    let (final_status, shape_reason) = match (&source_status, expect.kind) {
         (Status::Ok, Some(kind)) => match shape_check(&resolved_path, kind) {
-            Ok(()) => Status::Ok,
-            Err(reason) => Status::NgNotExecutable(reason),
+            Ok(()) => (Status::Ok, None),
+            Err(reason) => (Status::NgNotExecutable, Some(reason)),
         },
-        _ => source_status,
+        _ => (source_status, None),
     };
 
-    base.with_resolved(resolved_path)
+    let mut out = base
+        .with_resolved(resolved_path)
         .with_matched_sources(matched)
-        .with_status(final_status)
+        .with_status(final_status);
+    if let Some(r) = shape_reason {
+        out = out.with_reason(r);
+    }
+    out
 }
 
 /// Default shape-check implementation: hits the filesystem via
@@ -610,7 +663,15 @@ mod tests {
             |_| panic!("must not resolve when config is invalid"),
             shape_ok,
         );
-        assert!(matches!(out[0].status, Status::ConfigError(_)));
+        assert_eq!(out[0].status, Status::ConfigError);
+        assert!(
+            out[0]
+                .reason
+                .as_deref()
+                .is_some_and(|r| r.contains("undefined source")),
+            "reason must explain the misuse: {:?}",
+            out[0].reason
+        );
     }
 
     #[test]
@@ -903,10 +964,8 @@ mod tests {
             |_| Some(resolved("/some/dir/rogue_bin")),
             shape_err("is a directory"),
         );
-        match &out[0].status {
-            Status::NgNotExecutable(reason) => assert_eq!(reason, "is a directory"),
-            other => panic!("expected NgNotExecutable, got {other:?}"),
-        }
+        assert_eq!(out[0].status, Status::NgNotExecutable);
+        assert_eq!(out[0].reason.as_deref(), Some("is a directory"));
     }
 
     #[test]
@@ -923,10 +982,8 @@ mod tests {
                 |_| Some(resolved("/no/such/place/ghost")),
                 shape_err(reason),
             );
-            assert!(matches!(
-                out[0].status,
-                Status::NgNotExecutable(ref r) if r == reason
-            ));
+            assert_eq!(out[0].status, Status::NgNotExecutable);
+            assert_eq!(out[0].reason.as_deref(), Some(reason));
         }
     }
 
@@ -996,6 +1053,7 @@ mod tests {
             prefer: prefer.iter().map(|s| s.to_string()).collect(),
             avoid: avoid.iter().map(|s| s.to_string()).collect(),
             severity: Severity::Error,
+            reason: None,
         }
     }
 
@@ -1062,12 +1120,8 @@ mod tests {
 
     #[test]
     fn diagnose_not_executable_keeps_reason_and_matched() {
-        let o = outcome(
-            Status::NgNotExecutable("is a directory".into()),
-            &["custom"],
-            &["custom"],
-            &[],
-        );
+        let mut o = outcome(Status::NgNotExecutable, &["custom"], &["custom"], &[]);
+        o.reason = Some("is a directory".into());
         let d = diagnose(&o).unwrap();
         match d {
             Diagnosis::NotExecutable { reason, matched } => {
@@ -1080,12 +1134,8 @@ mod tests {
 
     #[test]
     fn diagnose_config_error_propagates_message() {
-        let o = outcome(
-            Status::ConfigError("undefined source name: typo".into()),
-            &[],
-            &[],
-            &[],
-        );
+        let mut o = outcome(Status::ConfigError, &[], &[], &[]);
+        o.reason = Some("undefined source name: typo".into());
         let d = diagnose(&o).unwrap();
         assert!(matches!(d, Diagnosis::Config { ref message } if message.contains("typo")));
     }
@@ -1131,7 +1181,7 @@ mod tests {
     fn exit_code_two_when_any_config_error_present() {
         let out = vec![
             outcome_status(Status::Ok),
-            outcome_status(Status::ConfigError("typo".into())),
+            outcome_status(Status::ConfigError),
         ];
         assert_eq!(exit_code(&out), 2);
     }
@@ -1143,7 +1193,7 @@ mod tests {
         // config error a second time.
         let out = vec![
             outcome_status(Status::NgWrongSource),
-            outcome_status(Status::ConfigError("undefined".into())),
+            outcome_status(Status::ConfigError),
         ];
         assert_eq!(exit_code(&out), 2);
     }
@@ -1188,7 +1238,7 @@ mod tests {
         // mask it.
         let out = vec![
             outcome_with_severity(Status::NgWrongSource, Severity::Warn),
-            outcome_with_severity(Status::ConfigError("typo".into()), Severity::Warn),
+            outcome_with_severity(Status::ConfigError, Severity::Warn),
         ];
         assert_eq!(exit_code(&out), 2);
     }
@@ -1198,7 +1248,7 @@ mod tests {
         assert!(is_failure(&Status::NgWrongSource));
         assert!(is_failure(&Status::NgUnknownSource));
         assert!(is_failure(&Status::NgNotFound));
-        assert!(is_failure(&Status::NgNotExecutable("x".into())));
+        assert!(is_failure(&Status::NgNotExecutable));
     }
 
     #[test]
@@ -1208,7 +1258,7 @@ mod tests {
         assert!(!is_failure(&Status::NotApplicable));
         // ConfigError is *not* a "failure" per is_failure — it gets
         // exit code 2 via has_config_error and exit_code instead.
-        assert!(!is_failure(&Status::ConfigError("x".into())));
+        assert!(!is_failure(&Status::ConfigError));
     }
 
     // ---- Outcome smart constructor + builders --------------------

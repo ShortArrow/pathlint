@@ -955,6 +955,39 @@ post-1.0 議題。
 累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどうか、上がるなら
 いつかは未定。
 
+### 0.0.17
+
+- **`Status` enum を unit-only 化、`Outcome` に `reason` 追加。**
+  `Status::NgNotExecutable(String)` / `Status::ConfigError(String)`
+  の payload に乗っていた reason 文字列を `Outcome::reason:
+  Option<String>` に分離。`pathlint check --json` の出力が
+  `{"kind": {"ng_not_executable": "..."}}` から
+  `{"kind": "ng_not_executable", "reason": "..."}` に変わる。
+  consumer は `kind` を常に string として分岐できる。
+- **`pathlint::cli` と `pathlint::run` を lib から削除。** 旧
+  `#[doc(hidden)] pub mod` だった両 module が `src/bin/pathlint/`
+  配下に move、binary-only に。pathlint を library として
+  embed するときに `pathlint::cli` / `pathlint::run` を import
+  できなくなる (元から supported surface ではない)。
+- **lib 内部 module を `#[doc(hidden)] pub` に。** `catalog_view`
+  / `format` / `init` / `path_source` / `report` / `resolve` が
+  `pub(crate)` から `#[doc(hidden)] pub` に変更。docs.rs には
+  出ないが crate boundary を越えて binary から呼べる形に。
+  cli/run が pre-0.0.17 にしていたのと同じ妥協。
+- **`check.schema.json` の `required` から `prefer` / `avoid`
+  / `reason` / `diagnosis` / `resolved` を除外。** 元から
+  runtime は `skip_serializing_if` でこれらを省略していたのに
+  schema は required 扱いだった。schema が wire form と一致。
+- **shell quoting を internal `shell_quote` module に分離。**
+  `pathlint::format::quote_for` 等が pub から pub(crate) に。
+  元から supported でなかったが embed 利用者は注意。代わりに
+  `trace --json uninstall.command` の quoted 文字列を読む。
+- **`--color` flag が actually 効くように。** pre-0.0.17 は
+  parse のみで silent ignore だったが、0.0.17 で human 出力の
+  status tag に色が付く（`auto`/`always`/`never`）。`pathlint
+  check` の stdout を pipe で取っている script は `--color
+  never` を明示するか tty 判定の自動 disable に頼ること。
+
 ### 0.0.16
 
 - **lib resolver シグネチャ簡素化。** `pathlint::lint::evaluate` と

@@ -52,25 +52,28 @@ pub mod sort;
 pub mod source_match;
 pub mod trace;
 
-// Internal modules. Two visibility tiers:
+// Internal modules — `#[doc(hidden)] pub` for the ones the
+// `pathlint` binary in `src/bin/pathlint/` needs to call across
+// the lib/bin boundary, `pub(crate)` for everything strictly
+// internal to the lib. Neither tier appears on docs.rs and
+// neither is part of the library contract.
 //
-// * `pub(crate)` for everything that only needs to be reachable
-//   inside the lib crate itself (formatter, presentation, embed
-//   reader, init template). These do not appear on docs.rs and
-//   do not figure in the library contract.
-// * `#[doc(hidden)] pub` for `cli` and `run`, which are reached
-//   from `src/main.rs`. Cargo treats `src/main.rs` as a separate
-//   crate that depends on `pathlint`, so `pub(crate)` would hide
-//   them from the binary. They remain hidden from docs.rs and
-//   are explicitly NOT part of the supported library surface.
-pub(crate) mod catalog_view;
-pub(crate) mod format;
-pub(crate) mod init;
-pub(crate) mod path_source;
-pub(crate) mod report;
-pub(crate) mod resolve;
-
+// 0.0.17 moved `cli` and `run` out of the lib entirely; they now
+// live in `src/bin/pathlint/` alongside `main.rs`. The binary
+// still consumes some lib internals (formatter, presentation,
+// init template, OS PATH reader, command resolver) — those stay
+// `#[doc(hidden)] pub` so Cargo can route the call across the
+// crate boundary without putting them on the public surface.
 #[doc(hidden)]
-pub mod cli;
+pub mod catalog_view;
 #[doc(hidden)]
-pub mod run;
+pub mod format;
+#[doc(hidden)]
+pub mod init;
+#[doc(hidden)]
+pub mod path_source;
+#[doc(hidden)]
+pub mod report;
+#[doc(hidden)]
+pub mod resolve;
+pub(crate) mod shell_quote;

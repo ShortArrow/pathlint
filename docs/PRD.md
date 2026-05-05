@@ -1032,6 +1032,50 @@ MAJOR-equivalent). Each break is announced in the release notes;
 this section keeps the cumulative list with sample migrations.
 Whether and when 0.0.x graduates to 0.1.0 is undecided.
 
+### 0.0.17
+
+- **`Status` enum is unit-only; `Outcome` gains `reason`.**
+  `Status::NgNotExecutable(String)` and `Status::ConfigError(String)`
+  used to carry their human-readable detail in the variant
+  payload. As of 0.0.17 the payload is gone and the detail
+  rides on a separate `Outcome::reason: Option<String>`.
+  Downstream effect: `pathlint check --json` now emits
+  `{"kind": "ng_not_executable", "reason": "..."}` instead of
+  `{"kind": {"ng_not_executable": "..."}}`. Consumers branching
+  on `kind` as a string can finally do so without a fallback
+  for the two payload-carrying variants.
+- **`pathlint::cli` and `pathlint::run` removed from the lib.**
+  Both modules used to be `#[doc(hidden)] pub mod` so the
+  binary in `src/main.rs` could reach across the crate
+  boundary. They now live in `src/bin/pathlint/` and are
+  binary-only. Anything embedding pathlint as a library had no
+  business calling them; they are gone from the surface.
+- **Lib internal modules behind `#[doc(hidden)] pub`.**
+  `catalog_view`, `format`, `init`, `path_source`, `report`,
+  `resolve` shifted from `pub(crate)` to `#[doc(hidden)] pub`
+  so the binary at `src/bin/pathlint/` can call them across
+  the lib/bin boundary. Same compromise cli/run had pre-0.0.17.
+- **`check.schema.json` `required` no longer lists
+  `prefer` / `avoid` / `reason` / `diagnosis` / `resolved`.**
+  The runtime applied `skip_serializing_if` on these fields,
+  but the schema flagged them as required. The schema is now
+  honest about what the wire form actually emits. JSON
+  validators that assumed those fields were always present
+  must accept their absence.
+- **Shell quoting moved to internal `shell_quote` module.**
+  Pre-0.0.17 `pathlint::format::quote_for` etc. were public.
+  They were never advertised as supported and are now
+  `pub(crate)` in `pathlint::shell_quote`. Embedders should
+  read the already-quoted string from
+  `trace --json uninstall.command`.
+- **`--color` flag is now effective.** Pre-0.0.17 the global
+  `--color {auto,always,never}` flag was parsed by clap and
+  silently ignored. As of 0.0.17 it actually colourises status
+  tags in the human output (and respects `--color never`).
+  Output of pipelines that captured `pathlint check` stdout
+  may now contain ANSI escapes when the captured stream is
+  also pathlint's stdout and `--color always` is set.
+
 ### 0.0.16
 
 - **Lib resolver signature simplified.** `pathlint::lint::evaluate`

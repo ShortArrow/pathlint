@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use crate::path_source::Target;
+use pathlint::path_source::Target;
 
 #[derive(Debug, Parser)]
 #[command(name = "pathlint", version, about = "Lint PATH against [[expect]] rules", long_about = None)]
@@ -231,4 +231,21 @@ pub enum ColorArg {
     Auto,
     Always,
     Never,
+}
+
+impl ColorArg {
+    /// Resolve `auto` against the terminal-detection signal a caller
+    /// already obtained (typically `std::io::stdout().is_terminal()`).
+    /// `always` and `never` ignore the signal.
+    ///
+    /// 0.0.17 promoted this from a parsed-but-ignored CLI flag to an
+    /// effective contract; the `bool` return is what
+    /// `report::Style::color` consumes.
+    pub fn resolve(self, is_tty: bool) -> bool {
+        match self {
+            ColorArg::Always => true,
+            ColorArg::Never => false,
+            ColorArg::Auto => is_tty,
+        }
+    }
 }

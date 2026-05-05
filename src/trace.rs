@@ -191,14 +191,14 @@ fn derive_uninstall(
     // Walk matched sources in order; the first one with an uninstall
     // template wins. That's why ranking by specificity matters.
     //
-    // The `{bin}` substitution goes through `format::quote_for` so
+    // The `{bin}` substitution goes through `shell_quote::quote_for` so
     // hostile bin names like `$(rm -rf ~)` cannot escape the
     // template even when the user copy-pastes the result. The
     // surrounding template text (the part the catalog author
     // controls) is not escaped — that is the "trust the catalog
     // author" boundary documented in PRD §12.
     let bin = bin_stem(resolved);
-    let quoted_bin = crate::format::quote_for(os, &bin);
+    let quoted_bin = crate::shell_quote::quote_for(os, &bin);
     for name in matched {
         let Some(def) = sources.get(name) else {
             continue;
@@ -306,7 +306,7 @@ fn uninstall_for_provenance(prov: &Provenance, os: Os) -> UninstallHint {
             let rest = plugin_segment
                 .strip_prefix(&format!("{installer}-"))
                 .unwrap_or(plugin_segment);
-            let quoted_rest = crate::format::quote_for(os, rest);
+            let quoted_rest = crate::shell_quote::quote_for(os, rest);
             UninstallHint::Command {
                 command: format!(
                     "mise uninstall {installer}:{quoted_rest}  (best-guess; verify with `mise plugins ls`)"
