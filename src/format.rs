@@ -382,22 +382,7 @@ pub fn check_json(outcomes: &[Outcome]) -> Result<String, serde_json::Error> {
 /// without breaking consumers that pattern-matched on
 /// `found: true|false`. The previous `found: bool` field is gone.
 pub fn where_json(command: &str, outcome: &TraceOutcome) -> Result<String, serde_json::Error> {
-    #[derive(serde::Serialize)]
-    #[serde(tag = "kind", rename_all = "snake_case")]
-    enum Out<'a> {
-        NotFound {
-            command: &'a str,
-        },
-        Found {
-            #[serde(flatten)]
-            inner: &'a Found,
-        },
-    }
-
-    let payload = match outcome {
-        TraceOutcome::NotFound => Out::NotFound { command },
-        TraceOutcome::Found(f) => Out::Found { inner: f },
-    };
+    let payload = crate::trace::TraceJsonOutput::from_outcome(command, outcome);
     serde_json::to_string_pretty(&payload)
 }
 

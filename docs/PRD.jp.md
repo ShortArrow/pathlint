@@ -774,11 +774,21 @@ post-1.0 議題。
   （dotfiles 管理を壊さないため）。違反は exit 2。
 - **組み込みカタログのバージョニング。** カタログはコンパイル時埋め
   込み。バンプ時は GitHub Release のリリースノートに記載してデフォ
-  ルト変更を周知。0.0.10 で `catalog_version` を `3` に bump
-  （TOML 本文は変わらないが where / sort が relation を読むように
-  解釈が変わったため）。0.0.11 は `catalog_version = 3` を維持：
-  doctor も relation を読むようになったが、relation TOML 本文と
-  ビルトイン source path に変更はない。
+  ルト変更を周知。bump 履歴：
+  - `0.0.10` → `catalog_version = 3`（TOML 本文は変わらないが
+    `trace` / `sort` が relation を読むように解釈が変わったため）。
+  - `0.0.11` は `catalog_version = 3` を維持：doctor も relation
+    を読むようになったが、relation TOML 本文とビルトイン source
+    path に変更はない。
+  - `0.0.14` → `catalog_version = 4`：source 名 rename のため
+    （`WindowsApps` → `windows_apps`、`system_*` →
+    `os_baseline_*`、加えて `os_baseline_linux_sbin` を新設）。
+    旧名で `[source.<name>]` を参照していた user TOML は移行が
+    必要（§17 参照）。
+  - `0.0.15` は `catalog_version = 4` を維持：embedded TOML 本文に
+    変更はないが、user TOML が `catalog_version` を宣言した場合
+    の reject が post-parse から structural（deny_unknown_fields）
+    に格上げされた。
 
 ## 13. 配布
 
@@ -938,10 +948,44 @@ post-1.0 議題。
   *(0.0.14 で解決 — built-in `os_baseline_linux_sbin` source を追加。
   自前で `[source.usr_sbin]` を書く代わりに `prefer` に入れる。)*
 
-## 17. 0.0.14 BREAKING CHANGES
+## 17. 0.0.x BREAKING CHANGES（累積）
 
-0.0.14 は contract を壊せる最後の 0.0.x リリース。0.0.x は破壊許容、
-0.1.0 で API surface を凍結する。0.0.14 に集めた破壊と移行手段：
+0.0.x 線は破壊を許容する（Cargo は `0.0.x → 0.0.(x+1)` を MAJOR 相当
+として扱う）。各破壊は対応リリースの notes で告知する。本 section は
+累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどうか、上がるなら
+いつかは未定。
+
+### 0.0.16
+
+- **lib resolver シグネチャ簡素化。** `pathlint::lint::evaluate` と
+  `pathlint::trace::locate` の resolver closure が
+  `Option<std::path::PathBuf>` を返す形に変わった（旧 internal の
+  `Resolution { full_path: PathBuf }` ラッパー経由を撤廃）。自前
+  resolver closure を書いていた埋め込み利用者は
+  `Some(Resolution { full_path: pb })` → `Some(pb)` に直す。
+- **`Resolution` 型を削除。** `pathlint::resolve::resolve()` が
+  `Option<PathBuf>` を直接返すように。元から非公開の型なので
+  影響範囲は内部のみだが、`git` 依存で取り込んでいた consumer は
+  注意。
+
+### 0.0.15
+
+- **`pathlint check --json` の discriminator 名変更。** 各 outcome
+  の top-level discriminator が `kind` (doctor / trace / sort /
+  catalog relations と一致) に。値自体は変わらず。`status` で
+  分岐していた consumer は `kind` に切り替える。
+- **lib 公開面を 9 module に narrow。** `config` / `lint` / `trace`
+  / `sort` / `doctor` / `catalog` / `source_match` / `os_detect` /
+  `expand`。内部 module は `pub(crate)` または `#[doc(hidden)] pub`
+  (後者は `src/main.rs` から到達可能な `cli` / `run` のみ)。以前
+  公開だった `format` / `report` 等を embed 利用していた場合は移行
+  が必要。
+- **UserConfig と embedded catalog file が別型に。** user
+  `pathlint.toml` で `catalog_version` を宣言すると 0.0.14 では
+  post-parse error、0.0.15 からは structural parse error
+  (deny_unknown_fields)。
+
+### 0.0.14
 
 - **`pathlint where` → `pathlint trace`。** `where` は 0.0.x 線では
   clap visible alias として残る。
@@ -969,14 +1013,11 @@ post-1.0 議題。
   `--dry-run` のみ shipped。
 - **user `pathlint.toml` の `catalog_version = N` を reject。** 元から
   embedded catalog 用の予約 field。`Config::from_path` で user TOML が
-  これを設定したら exit 2。
+  これを設定したら exit 2。（0.0.15 からは post-parse ではなく
+  structural parse error に格上げ。）
 - **`depends_on` は descriptive only。** `pathlint catalog relations` で
   表示されるが doctor / trace / sort 挙動には影響しない。PRD §9.1 で
   以前あった「Surfaced by `pathlint where`」記述との矛盾を解消。
-- **lib 公開面は `pathlint::config` のみ。** 他 module はすべて
-  `#[doc(hidden)]`。pathlint を library として埋め込みたい場合は
-  `pathlint::config::Config` のみに依存し、それ以外は binary 経由で
-  呼ぶ。
 - **`build.rs` の referential-integrity 検査が違反を集約。** 一回の
   CI 失敗で全違反 plugin を確認できる。
 

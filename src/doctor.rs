@@ -51,7 +51,7 @@ pub fn analyze_real(
     )
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     Warn,
@@ -63,7 +63,7 @@ pub enum Severity {
 /// flattened alongside it for JSON consumers — e.g. `Shortenable`
 /// emits `{"kind":"shortenable","suggestion":"..."}` rather than
 /// nesting the suggestion under a wrapper.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Kind {
     Duplicate {
@@ -95,7 +95,7 @@ pub enum Kind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 pub struct Diagnostic {
     pub index: usize,
     pub entry: String,

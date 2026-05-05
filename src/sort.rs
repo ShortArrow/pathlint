@@ -41,7 +41,7 @@ use crate::source_match;
 /// One entry's movement from old to new index. Only emitted when
 /// the entry actually moved; entries that stayed in place do not
 /// generate a `EntryMove`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 pub struct EntryMove {
     pub entry: String,
     pub from: usize,
@@ -57,7 +57,7 @@ pub struct EntryMove {
 /// source), so `sort` cannot fix it by reordering — the user has
 /// to install the missing tool or adjust the rule. Surfaced so the
 /// human view can include it as an "fyi" line below the diff.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SortNote {
     /// `prefer` is non-empty but no PATH entry currently matches any
@@ -72,7 +72,7 @@ pub enum SortNote {
 /// `original` and the `sorted` vector, so consumers (human view /
 /// JSON) can present a self-contained before / after without
 /// re-running the algorithm.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 pub struct SortPlan {
     pub original: Vec<String>,
     pub sorted: Vec<String>,

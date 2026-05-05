@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SortPlan",
+  "description": "Pure-data result of [`sort_path`]. Always carries both the `original` and the `sorted` vector, so consumers (human view / JSON) can present a self-contained before / after without re-running the algorithm.",
+  "type": "object",
+  "required": [
+    "moves",
+    "notes",
+    "original",
+    "sorted"
+  ],
+  "properties": {
+    "moves": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/EntryMove"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/SortNote"
+      }
+    },
+    "original": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sorted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "EntryMove": {
+      "description": "One entry's movement from old to new index. Only emitted when the entry actually moved; entries that stayed in place do not generate a `EntryMove`.",
+      "type": "object",
+      "required": [
+        "entry",
+        "from",
+        "reason",
+        "to"
+      ],
+      "properties": {
+        "entry": {
+          "type": "string"
+        },
+        "from": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "reason": {
+          "description": "Why the entry moved — names a command for which this entry is now preferred over the one it overtook. Free-form, single short sentence; meant for the human view.",
+          "type": "string"
+        },
+        "to": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      }
+    },
+    "SortNote": {
+      "description": "Non-blocking observation about a `[[expect]]` rule. The current PATH cannot satisfy `prefer` (no PATH entry matches any preferred source), so `sort` cannot fix it by reordering — the user has to install the missing tool or adjust the rule. Surfaced so the human view can include it as an \"fyi\" line below the diff.",
+      "oneOf": [
+        {
+          "description": "`prefer` is non-empty but no PATH entry currently matches any of the listed sources, so reordering cannot fix this rule.",
+          "type": "object",
+          "required": [
+            "command",
+            "kind",
+            "prefer"
+          ],
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "unsatisfiable_prefer"
+              ]
+            },
+            "prefer": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

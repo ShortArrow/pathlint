@@ -2,19 +2,36 @@
 //!
 //! # Public API surface (0.0.15+)
 //!
-//! The supported library surface is **nine modules**:
+//! The supported library surface is **nine modules**, each
+//! described below by a few representative symbols. The
+//! authoritative contract is `tests/public_api.rs`, which
+//! imports every symbol pathlint promises here and fails the
+//! build if any is moved or removed.
 //!
-//! - [`config`]: TOML schema (Config / Expectation / SourceDef / Relation / Severity / Kind).
-//! - [`lint`]: core PATH evaluation (Outcome / Status / Diagnosis / evaluate / exit_code / CheckOutcomeView).
-//! - [`trace`]: provenance lookup (TraceOutcome / Found / Provenance / UninstallHint / locate).
-//! - [`sort`]: PATH repair proposals (SortPlan / EntryMove / SortNote / sort_path).
-//! - [`doctor`]: PATH hygiene (Diagnostic / Kind / Severity / analyze / analyze_real / Filter).
-//! - [`catalog`]: built-in source catalog (builtin / merge_with_user / merge_with_user_relations / check_acyclic).
-//! - [`source_match`]: path → source matching (find / names_only / validate_sources / Match / SourceWarning).
-//! - [`os_detect`]: runtime OS dispatch (Os / os_filter_applies).
-//! - [`expand`]: env-var expansion + slash normalisation (expand_env / normalize / expand_and_normalize).
+//! - [`config`]: TOML schema. Headlines: `Config`, `Expectation`,
+//!   `SourceDef`, `Relation`, `Severity`, `Kind`.
+//! - [`lint`]: core PATH evaluation. Headlines: `evaluate`,
+//!   `exit_code`, `Outcome`, `Status`, `Diagnosis`,
+//!   `CheckOutcomeView`. Resolver closures take
+//!   `&str -> Option<std::path::PathBuf>` (0.0.16+).
+//! - [`trace`]: provenance lookup. Headlines: `locate`,
+//!   `TraceOutcome`, `Found`, `Provenance`, `UninstallHint`.
+//! - [`sort`]: PATH repair proposals. Headlines: `sort_path`,
+//!   `SortPlan`, `EntryMove`, `SortNote`.
+//! - [`doctor`]: PATH hygiene. Headlines: `analyze`,
+//!   `analyze_real`, `Diagnostic`, `Filter`,
+//!   plus the `Kind` / `Severity` enums.
+//! - [`catalog`]: built-in source catalog. Headlines: `builtin`,
+//!   `builtin_relations`, `merge_with_user`,
+//!   `merge_with_user_relations`, `check_acyclic`,
+//!   `version_check`, `embedded_version`.
+//! - [`source_match`]: path → source matching. Headlines: `find`,
+//!   `names_only`, `validate_sources`, `Match`, `SourceWarning`.
+//! - [`os_detect`]: runtime OS dispatch. Headlines: `Os`,
+//!   `os_filter_applies`.
+//! - [`expand`]: env-var expansion + slash normalisation.
+//!   Headlines: `expand_env`, `normalize`, `expand_and_normalize`.
 //!
-//! `tests/public_api.rs` pins every symbol pathlint promises here.
 //! Anything not exported through one of those modules — including
 //! the CLI plumbing, presentation layer, registry reader, and
 //! orchestration glue — is **internal** and may change between

@@ -324,7 +324,7 @@ fn doctor_warns_when_mise_shim_and_install_coexist() {
 
     let path = join_path(&[&shims, &installs_python]);
     let out = Command::new(BIN)
-        .arg("--rules")
+        .arg("--config")
         .arg(&rules)
         .arg("doctor")
         .env("PATH", &path)
@@ -365,7 +365,7 @@ diagnostic = "foo_overlap"
 
     // Empty PATH so no built-in diagnostic fires either.
     let out = Command::new(BIN)
-        .arg("--rules")
+        .arg("--config")
         .arg(&rules)
         .arg("doctor")
         .arg("--include")
@@ -396,7 +396,7 @@ fn doctor_include_still_rejects_unknown_typos() {
     fs::write(&rules, "").unwrap();
 
     let out = Command::new(BIN)
-        .arg("--rules")
+        .arg("--config")
         .arg(&rules)
         .arg("doctor")
         .arg("--include")

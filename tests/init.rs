@@ -92,7 +92,7 @@ fn check_consumes_starter_without_error() {
 
     let starter = tmp.path().join("pathlint.toml");
     let out = Command::new(BIN)
-        .arg("--rules")
+        .arg("--config")
         .arg(&starter)
         .env("PATH", "")
         .env_remove("XDG_CONFIG_HOME")

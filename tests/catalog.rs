@@ -78,7 +78,7 @@ unix = "$HOME/dotfiles/bin"
 
     let (code, stdout, _) = run_with_global(
         tmp.path(),
-        &["--rules", rules.to_str().unwrap()],
+        &["--config", rules.to_str().unwrap()],
         &["--names-only"],
     );
     assert_eq!(code, 0);
@@ -178,7 +178,7 @@ target = "pacman"
 
     let (code, stdout, _) = run_catalog_relations(
         tmp.path(),
-        &["--rules", rules.to_str().unwrap()],
+        &["--config", rules.to_str().unwrap()],
         &["--json"],
     );
     assert_eq!(code, 0);
@@ -213,7 +213,7 @@ target = "a"
     .unwrap();
 
     let (code, _stdout, stderr) =
-        run_catalog_relations(tmp.path(), &["--rules", rules.to_str().unwrap()], &[]);
+        run_catalog_relations(tmp.path(), &["--config", rules.to_str().unwrap()], &[]);
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(stderr.contains("cycle"), "stderr: {stderr}");
 }
@@ -266,7 +266,7 @@ later = "os_baseline_linux"
 
     let (code, stdout, _) = run_catalog_relations(
         tmp.path(),
-        &["--rules", rules.to_str().unwrap()],
+        &["--config", rules.to_str().unwrap()],
         &["--json"],
     );
     assert_eq!(code, 0);
@@ -301,7 +301,7 @@ later = "a"
     .unwrap();
 
     let (code, _stdout, stderr) =
-        run_catalog_relations(tmp.path(), &["--rules", rules.to_str().unwrap()], &[]);
+        run_catalog_relations(tmp.path(), &["--config", rules.to_str().unwrap()], &[]);
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(stderr.contains("cycle"), "stderr: {stderr}");
 }

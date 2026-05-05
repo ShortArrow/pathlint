@@ -14,7 +14,7 @@ fn run(rules: &Path, path_value: &str) -> (i32, String, String) {
 
 fn run_with_args(rules: &Path, path_value: &str, extra: &[&str]) -> (i32, String, String) {
     let mut cmd = Command::new(BIN);
-    cmd.arg("--rules")
+    cmd.arg("--config")
         .arg(rules)
         .arg("--no-glyphs")
         .env("PATH", path_value)

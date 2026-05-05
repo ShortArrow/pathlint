@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use crate::config::{Expectation, Kind, Severity, SourceDef};
 use crate::expand::normalize;
 use crate::os_detect::Os;
-use crate::resolve::Resolution;
 use crate::source_match;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -291,7 +290,7 @@ pub fn evaluate<R, S>(
     mut shape_check: S,
 ) -> Vec<Outcome>
 where
-    R: FnMut(&str) -> Option<Resolution>,
+    R: FnMut(&str) -> Option<PathBuf>,
     S: FnMut(&std::path::Path, Kind) -> Result<(), String>,
 {
     expectations
@@ -308,7 +307,7 @@ fn evaluate_one<R, S>(
     shape_check: &mut S,
 ) -> Outcome
 where
-    R: FnMut(&str) -> Option<Resolution>,
+    R: FnMut(&str) -> Option<PathBuf>,
     S: FnMut(&std::path::Path, Kind) -> Result<(), String>,
 {
     let base = Outcome::initial(expect);
@@ -323,7 +322,7 @@ where
         )));
     }
 
-    let Some(resolution) = resolver(&expect.command) else {
+    let Some(resolved_path) = resolver(&expect.command) else {
         let status = if expect.optional {
             Status::Skip
         } else {
@@ -332,7 +331,7 @@ where
         return base.with_status(status);
     };
 
-    let haystack = normalize(&resolution.full_path.to_string_lossy());
+    let haystack = normalize(&resolved_path.to_string_lossy());
     let matched = source_match::names_only(&haystack, sources, os);
     let source_status = decide(&matched, &expect.prefer, &expect.avoid);
 
@@ -343,14 +342,14 @@ where
     // into a NG, never the other way around. Delegated to the
     // injected `shape_check` closure so this function stays pure.
     let final_status = match (&source_status, expect.kind) {
-        (Status::Ok, Some(kind)) => match shape_check(&resolution.full_path, kind) {
+        (Status::Ok, Some(kind)) => match shape_check(&resolved_path, kind) {
             Ok(()) => Status::Ok,
             Err(reason) => Status::NgNotExecutable(reason),
         },
         _ => source_status,
     };
 
-    base.with_resolved(resolution.full_path)
+    base.with_resolved(resolved_path)
         .with_matched_sources(matched)
         .with_status(final_status)
 }
@@ -454,10 +453,8 @@ mod tests {
             .collect()
     }
 
-    fn resolved(p: &str) -> Resolution {
-        Resolution {
-            full_path: PathBuf::from(p),
-        }
+    fn resolved(p: &str) -> PathBuf {
+        PathBuf::from(p)
     }
 
     /// Stub shape-check that always passes. Used by tests that
