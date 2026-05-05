@@ -76,7 +76,7 @@ const HEADER: &str = "\
 #
 #   pathlint check --explain   show the full diagnosis for each NG
 #   pathlint check --json      machine-readable for CI
-#   pathlint where <command>   look up provenance + uninstall hint
+#   pathlint trace <command>   look up provenance + uninstall hint
 #   pathlint sort              propose a PATH order (read-only)
 #   pathlint doctor            lint PATH itself (duplicates, etc.)
 #

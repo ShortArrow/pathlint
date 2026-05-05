@@ -1,4 +1,4 @@
-//! R4 — `pathlint where <command>` provenance.
+//! R4 — `pathlint trace <command>` provenance.
 //!
 //! Given a command name, resolve it against the merged catalog and
 //! produce a structured answer: where it lives, which sources match,

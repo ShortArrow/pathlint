@@ -1,4 +1,4 @@
-//! `pathlint where <command>` end-to-end tests.
+//! `pathlint trace <command>` end-to-end tests.
 
 use std::fs;
 use std::path::Path;
@@ -107,7 +107,7 @@ fn where_escapes_metachars_in_bin_substitution() {
 
     // The actual binary file name on disk has to be filesystem-safe.
     // We instead drive escaping through an attacker-controlled
-    // `command` arg containing `$(whoami)`. `pathlint where` echoes
+    // `command` arg containing `$(whoami)`. `pathlint trace` echoes
     // the requested command back verbatim into the uninstall hint
     // via the `{bin}` token.
     stub(&dir, "lazygit");

@@ -70,7 +70,7 @@ pub enum Relation {
 
     /// `host` serves binaries that originally came from
     /// `guest_provider` via paths matching `guest_pattern`. Used by
-    /// `pathlint where` to attribute provenance through wrapper
+    /// `pathlint trace` to attribute provenance through wrapper
     /// installers (e.g. mise installing a cargo binary).
     ///
     /// `installer_token` (0.0.10+) is the human-facing installer
@@ -89,7 +89,7 @@ pub enum Relation {
 
     /// `target` is a hard prerequisite of the source declaring this
     /// relation (the implicit subject is the plugin file's source).
-    /// Surfaced by `pathlint where` so users know that uninstalling
+    /// Surfaced by `pathlint trace` so users know that uninstalling
     /// a wrapper does not remove the underlying tool.
     DependsOn { source: String, target: String },
 
@@ -186,7 +186,7 @@ pub struct SourceDef {
     /// R4 — shell command template that uninstalls a binary served
     /// by this source. The substring `{bin}` is substituted with
     /// the resolved binary's stem (filename without extension).
-    /// Used by `pathlint where`. Leave unset for sources where
+    /// Used by `pathlint trace`. Leave unset for sources where
     /// uninstall is not a meaningful single command (e.g. shim
     /// layers, system_*).
     #[serde(default)]
@@ -270,7 +270,7 @@ pub const RULES_MAX_BYTES: u64 = 16 * 1024 * 1024;
 ///    target.
 /// 2. **Size cap**: `RULES_MAX_BYTES` (16 MiB). Anything beyond
 ///    is rejected before any byte is buffered. Without this a
-///    `--rules /dev/zero` would happily consume all RAM.
+///    `--config /dev/zero` would happily consume all RAM.
 ///
 /// 0.0.13 hardens this against a TOCTOU race that 0.0.11–0.0.12
 /// inherited: `File::open(path)` is called once, and every

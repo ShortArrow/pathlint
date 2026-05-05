@@ -365,7 +365,7 @@ fn execute_init(args: &InitArgs) -> Result<u8> {
 fn locate_rules(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     if let Some(p) = explicit {
         if !p.is_file() {
-            anyhow::bail!("--rules path not found: {}", p.display());
+            anyhow::bail!("--config path not found: {}", p.display());
         }
         return Ok(Some(p.to_path_buf()));
     }

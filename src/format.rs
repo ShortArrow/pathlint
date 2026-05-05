@@ -89,7 +89,7 @@ fn doctor_conflict(entries: &[String], diagnostic: &str, groups: &[Vec<usize>]) 
     buf
 }
 
-/// Render a `Found` outcome from `pathlint where` as a multi-line
+/// Render a `Found` outcome from `pathlint trace` as a multi-line
 /// human block. Order: command header, resolved path, sources,
 /// optional provenance, uninstall hint. No trailing newline.
 ///
@@ -413,9 +413,9 @@ impl<'a> From<&'a Outcome> for OutcomeView<'a> {
     }
 }
 
-/// Render the `where` outcome as pretty-printed JSON. The schema
+/// Render the trace outcome as pretty-printed JSON. The schema
 /// is documented in PRD §7.7 and stable for `0.0.x`. Used by
-/// `pathlint where --json`.
+/// `pathlint trace --json`.
 ///
 /// `command` is needed because `TraceOutcome::NotFound` carries no
 /// data. As of 0.0.14 the JSON shape uses a top-level `kind`
@@ -448,7 +448,7 @@ pub fn where_json(command: &str, outcome: &TraceOutcome) -> Result<String, serde
 /// formatters rely on them. Pure; returns the input unchanged
 /// (`Cow::Borrowed`) when nothing needed replacement.
 ///
-/// Used by `pathlint where`'s human renderer so a hostile PATH
+/// Used by `pathlint trace`'s human renderer so a hostile PATH
 /// segment containing `\x1b[31m...` cannot recolor or rewrite the
 /// terminal output.
 pub fn strip_control_chars(s: &str) -> std::borrow::Cow<'_, str> {
@@ -477,7 +477,7 @@ fn is_disallowed_byte(b: u8) -> bool {
 /// escaped quote, reopen). Always quotes — even simple inputs —
 /// so the caller never has to decide whether quoting is needed.
 ///
-/// Used by `pathlint where` to keep an attacker-controlled PATH
+/// Used by `pathlint trace` to keep an attacker-controlled PATH
 /// segment from breaking out of an uninstall hint string when the
 /// user copy-pastes it into bash / zsh / sh.
 pub fn posix_quote(s: &str) -> String {

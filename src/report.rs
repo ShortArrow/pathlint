@@ -213,7 +213,7 @@ fn explain_lines_from(o: &Outcome, diagnosis: &Diagnosis) -> Vec<String> {
                 wrong_source_sentence(matched, prefer_missed, avoid_hits)
             ),
             format!(
-                "hint:            run `pathlint where {}` for uninstall guidance.",
+                "hint:            run `pathlint trace {}` for uninstall guidance.",
                 strip_control_chars(&o.command)
             ),
         ],
@@ -227,7 +227,7 @@ fn explain_lines_from(o: &Outcome, diagnosis: &Diagnosis) -> Vec<String> {
                 directory from PATH."
                 .into(),
             format!(
-                "hint:            run `pathlint where {}` to see the full path; \
+                "hint:            run `pathlint trace {}` to see the full path; \
                 add `[source.X]` matching it if you want this case to pass.",
                 strip_control_chars(&o.command)
             ),
@@ -336,7 +336,7 @@ mod tests {
         assert!(lines[4].starts_with("diagnosis:"));
         assert!(lines[4].contains("none of which are in `prefer`"));
         assert!(lines[5].starts_with("hint:"));
-        assert!(lines[5].contains("pathlint where rg"));
+        assert!(lines[5].contains("pathlint trace rg"));
     }
 
     #[test]
@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(n_lines, 7, "out:\n{out}");
         assert!(out.contains("    resolved:        /usr/local/bin/rg"));
         assert!(out.contains("    diagnosis:"));
-        assert!(out.contains("    hint:            run `pathlint where rg`"));
+        assert!(out.contains("    hint:            run `pathlint trace rg`"));
     }
 
     #[test]

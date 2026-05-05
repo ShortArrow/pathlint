@@ -136,7 +136,7 @@ pub enum CatalogCommand {
     /// List every declared `[[relation]]` between sources, both
     /// built-in (from `plugins/*.toml`) and user-defined (from
     /// `pathlint.toml`). Useful for understanding why a doctor
-    /// diagnostic fires or how `pathlint where` infers provenance.
+    /// diagnostic fires or how `pathlint trace` infers provenance.
     Relations(CatalogRelationsArgs),
 }
 
