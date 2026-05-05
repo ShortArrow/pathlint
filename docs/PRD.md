@@ -935,9 +935,10 @@ Tagged with the role(s) each touches.
   prepend `mise/shims/` to PATH or rewrite PATH with the
   per-runtime `installs/<lang>/<ver>/bin/` directly. *(0.0.5
   resolved the "warn when both layers coexist" half — `pathlint
-  doctor` now emits a `MiseActivateBoth` diagnostic listing every
-  shim entry alongside every install entry. Users still pick a
-  mode for `[[expect]]` rules; pathlint does not auto-detect.)*
+  doctor` now emits a `Kind::Conflict { diagnostic =
+  "mise_activate_both" }` diagnostic listing every shim group
+  alongside every install group. Users still pick a mode for
+  `[[expect]]` rules; pathlint does not auto-detect.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP and out of
   the 0.0.x line — flagged here as a 0.1.x candidate. Three

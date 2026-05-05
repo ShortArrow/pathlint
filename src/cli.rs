@@ -118,10 +118,11 @@ pub struct DoctorArgs {
     /// machine-readable counterpart of the human view. Each element
     /// has `index`, `entry`, `severity`, `kind`, plus any per-kind
     /// payload fields (`suggestion`, `canonical`, `first_index`,
-    /// `reason`, `shim_indices` / `install_indices`). Schema is
-    /// stable through 0.0.x, parallels `check --json`. The
-    /// include / exclude filters still apply; `--quiet` is ignored
-    /// in JSON mode (the output is intended to be complete).
+    /// `reason`, or `diagnostic` + `groups` for the `conflict`
+    /// kind). Schema is stable through 0.0.x, parallels
+    /// `check --json`. The include / exclude filters still apply;
+    /// `--quiet` is ignored in JSON mode (the output is intended
+    /// to be complete).
     #[arg(long)]
     pub json: bool,
 }

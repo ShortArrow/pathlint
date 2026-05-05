@@ -864,8 +864,9 @@ post-1.0 議題。
 - **[R3] mise activate vs shims モード。** `mise activate` は PATH
   先頭に `mise/shims/` を前置する形と、`installs/<lang>/<ver>/bin/`
   を直接 PATH 書き換えする形の 2 通り。*(0.0.5 で「両層が同時存在
-  したら警告」の半分を解決 — `pathlint doctor` が `MiseActivateBoth`
-  diagnostic を出して shim / install 両方のエントリを列挙する。
+  したら警告」の半分を解決 — `pathlint doctor` が `Kind::Conflict {
+  diagnostic = "mise_activate_both" }` diagnostic を出して shim /
+  install 両 group を列挙する。
   expect ルール側でどちらを選ぶかはユーザーが決める、pathlint は
   自動判別しない。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定

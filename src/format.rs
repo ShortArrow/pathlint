@@ -273,8 +273,9 @@ pub fn sort_json(plan: &SortPlan) -> Result<String, serde_json::Error> {
 /// Each element carries `index`, `entry`, `severity`, the
 /// discriminator `kind`, and any per-variant payload fields
 /// (e.g. `suggestion` for shortenable, `canonical` for
-/// case_variant, `shim_indices` / `install_indices` for
-/// mise_activate_both).
+/// case_variant, `diagnostic` + `groups` for conflict — the
+/// 0.0.11 generalisation that retired the old `shim_indices` /
+/// `install_indices` shape).
 ///
 /// The schema parallels `check --json`: top-level array, every
 /// failure carries enough structured detail that CI consumers
@@ -911,6 +912,52 @@ mod tests {
         assert_eq!(v[0]["groups"][0][0], 0);
         assert_eq!(v[0]["groups"][1][0], 1);
         assert_eq!(v[0]["groups"][1][1], 2);
+    }
+
+    #[test]
+    fn doctor_conflict_strips_hostile_diagnostic() {
+        // The diagnostic label travels from a user-supplied
+        // [[relation]] in pathlint.toml. A hostile config could
+        // smuggle ANSI escapes or carriage returns hoping to
+        // repaint the doctor terminal. doctor_conflict must run
+        // every user-controlled string through strip_control_chars
+        // before formatting — including the header line that
+        // names the diagnostic and the per-entry path under each
+        // group.
+        let entries = entries(&[
+            "/foo/a\x1b[31m_evil",
+            "/foo/b",
+        ]);
+        let d = Diagnostic {
+            index: 0,
+            entry: entries[0].clone(),
+            severity: Severity::Warn,
+            kind: Kind::Conflict {
+                diagnostic: "evil\x1b[31mlabel\rFAKE".into(),
+                groups: vec![vec![0], vec![1]],
+            },
+        };
+        let out = doctor_line(&d, &entries);
+        assert!(
+            !out.contains('\x1b'),
+            "ANSI escape leaked through: {out:?}"
+        );
+        assert!(
+            !out.contains('\r'),
+            "carriage return leaked through: {out:?}"
+        );
+        // strip_control_chars replaces each control byte with '?'
+        // (it deliberately preserves text length so column-based
+        // formatting stays sane). The label and entry must still
+        // be present, just with the escapes neutered.
+        assert!(
+            out.contains("evil?[31mlabel?FAKE"),
+            "stripped diagnostic must still be visible with replacements: {out:?}"
+        );
+        assert!(
+            out.contains("/foo/a?[31m_evil"),
+            "stripped entry must still be enumerated: {out:?}"
+        );
     }
 
     #[test]

@@ -62,7 +62,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Install cargo-edit (for `cargo set-version`)
-        run: cargo install cargo-edit --locked
+        # Pin the version so a future cargo-edit release cannot
+        # change `set-version` semantics under us. Bump
+        # deliberately when needed.
+        run: cargo install cargo-edit --version 0.13.0 --locked
 
       - name: Bump Cargo.toml
         run: cargo set-version "${{ inputs.version }}"
