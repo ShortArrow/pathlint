@@ -950,7 +950,7 @@ mod tests {
             ),
         ];
         for (outcome, expected_kind) in cases {
-            let out = check_json(&[outcome.clone()]).unwrap();
+            let out = check_json(std::slice::from_ref(&outcome)).unwrap();
             let v: serde_json::Value = serde_json::from_str(&out).unwrap();
             assert!(
                 v[0]["kind"].is_string(),

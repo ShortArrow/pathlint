@@ -4,12 +4,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use pathlint::catalog;
-use pathlint::catalog_view::{self, ListStyle};
 use crate::cli::{
     CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
     InitArgs, SortArgs, TraceArgs,
 };
+use pathlint::catalog;
+use pathlint::catalog_view::{self, ListStyle};
 use pathlint::config::Config;
 use pathlint::doctor::{self, Diagnostic, Filter, Severity};
 use pathlint::format;

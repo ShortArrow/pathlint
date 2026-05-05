@@ -208,8 +208,8 @@ fn colourize_tag(
     use crate::config::Severity as RuleSeverity;
     let is_warn_failure = lint::is_failure(status) && severity == RuleSeverity::Warn;
     let code = match (status, is_warn_failure) {
-        (Status::Ok, _) => "32",        // green
-        (_, true) => "33",              // yellow (warn-severity NG)
+        (Status::Ok, _) => "32", // green
+        (_, true) => "33",       // yellow (warn-severity NG)
         (Status::ConfigError, _) => "31",
         (
             Status::NgWrongSource
