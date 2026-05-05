@@ -363,14 +363,20 @@ pub fn doctor_json(diags: &[&Diagnostic]) -> Result<String, serde_json::Error> {
 
 /// Render `check` outcomes as a pretty-printed JSON array — the
 /// machine-readable counterpart of `--explain`. Each element
-/// carries the per-expectation status, resolved path (when known),
-/// the matched / prefer / avoid sets, and a tagged `diagnosis`
-/// object derived from `lint::diagnose`.
+/// carries the per-expectation outcome kind, resolved path (when
+/// known), the matched / prefer / avoid sets, and a tagged
+/// `diagnosis` object derived from `lint::diagnose`.
 ///
-/// Schema is stable through `0.0.x`. The `diagnosis` field uses a
-/// `kind` discriminator (`"wrong_source"` / `"unknown_source"` /
-/// `"not_found"` / `"not_executable"` / `"config"`) so consumers
-/// can pattern-match instead of string-searching.
+/// Schema (0.0.15+): the top-level discriminator is `kind` —
+/// `"ok"` / `"ng_wrong_source"` / `"ng_not_found"` /
+/// `"ng_not_executable"` / `"skip"`. This matches the `kind`
+/// discriminator already used by doctor / trace / sort / catalog
+/// relations JSON. The pre-0.0.15 `status` field name is gone.
+///
+/// The `diagnosis` field uses its own `kind` discriminator
+/// (`"wrong_source"` / `"unknown_source"` / `"not_found"` /
+/// `"not_executable"` / `"config"`) so consumers can
+/// pattern-match instead of string-searching.
 ///
 /// Pure: callers do the printing and exit-code mapping.
 pub fn check_json(outcomes: &[Outcome]) -> Result<String, serde_json::Error> {
@@ -381,7 +387,11 @@ pub fn check_json(outcomes: &[Outcome]) -> Result<String, serde_json::Error> {
 #[derive(serde::Serialize)]
 struct OutcomeView<'a> {
     command: &'a str,
-    status: &'a Status,
+    /// Outcome kind discriminator. 0.0.15 renamed this field from
+    /// `status` to `kind` so every JSON-emitting subcommand
+    /// (check / doctor / trace / sort / catalog relations) uses the
+    /// same `kind` key shape.
+    kind: &'a Status,
     /// Per-rule severity copied from the Outcome. Always emitted
     /// (even for `error`, the default) so a downstream consumer
     /// gating on severity does not need a fallback for the absent
@@ -402,7 +412,7 @@ impl<'a> From<&'a Outcome> for OutcomeView<'a> {
     fn from(o: &'a Outcome) -> Self {
         OutcomeView {
             command: &o.command,
-            status: &o.status,
+            kind: &o.status,
             severity: o.severity,
             resolved: o.resolved.as_ref().map(|p| p.display().to_string()),
             matched_sources: &o.matched_sources,
@@ -963,17 +973,23 @@ mod tests {
     }
 
     #[test]
-    fn check_json_emits_array_with_status_resolved_and_diagnosis() {
+    fn check_json_emits_array_with_kind_resolved_and_diagnosis() {
+        // 0.0.15: top-level discriminator is `kind`, not `status`.
+        // The pre-0.0.15 `status` field name is gone.
         let out = check_json(&[check_outcome_ok(), check_outcome_wrong_source()]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v[0]["command"], "rg");
-        assert_eq!(v[0]["status"], "ok");
+        assert_eq!(v[0]["kind"], "ok");
+        assert!(
+            v[0].get("status").is_none(),
+            "stale `status` field leaked: {out}"
+        );
         assert_eq!(v[0]["resolved"], "/home/u/.cargo/bin/rg");
         assert!(
             v[0].get("diagnosis").is_none(),
             "ok must not carry diagnosis"
         );
-        assert_eq!(v[1]["status"], "ng_wrong_source");
+        assert_eq!(v[1]["kind"], "ng_wrong_source");
         assert_eq!(v[1]["diagnosis"]["kind"], "wrong_source");
         assert_eq!(v[1]["diagnosis"]["matched"][0], "scoop");
         assert_eq!(v[1]["diagnosis"]["prefer_missed"][0], "cargo");
@@ -1019,7 +1035,7 @@ mod tests {
         };
         let out = check_json(&[skip]).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v[0]["status"], "skip");
+        assert_eq!(v[0]["kind"], "skip");
         assert!(v[0].get("diagnosis").is_none());
     }
 

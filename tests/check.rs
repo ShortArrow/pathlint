@@ -551,7 +551,7 @@ prefer  = ["good"]
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     assert!(v.is_array(), "stdout: {stdout}");
     assert_eq!(v[0]["command"], "tooly");
-    assert_eq!(v[0]["status"], "ng_wrong_source");
+    assert_eq!(v[0]["kind"], "ng_wrong_source");
     assert_eq!(v[0]["diagnosis"]["kind"], "wrong_source");
     assert_eq!(v[0]["diagnosis"]["matched"][0], "bad");
 }
@@ -623,7 +623,7 @@ severity = "warn"
     );
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     assert_eq!(v[0]["severity"], "warn");
-    assert_eq!(v[0]["status"], "ng_wrong_source");
+    assert_eq!(v[0]["kind"], "ng_wrong_source");
 }
 
 #[test]
