@@ -8,7 +8,7 @@
 # changes. Users who pin `require_catalog = N` in their
 # `pathlint.toml` get a config error if the running binary's
 # version is below N. See docs/PRD.md §9.
-catalog_version = 3
+catalog_version = 4
 
 plugins = [
     "user-binaries",
@@ -23,7 +23,7 @@ plugins = [
     "winget",
     "choco",
     "scoop",
-    "windows-apps",
+    "windows_apps",
     "perl",
     "mingw",
     "brew",
@@ -34,5 +34,5 @@ plugins = [
     "flatpak",
     "snap",
     "termux",
-    "system",
+    "os_baseline",
 ]

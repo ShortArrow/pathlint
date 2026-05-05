@@ -13,9 +13,12 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 #[schemars(title = "pathlint.toml")]
 pub struct Config {
-    /// Catalog version embedded in the running binary. Set only by
-    /// the embedded `embedded_catalog.toml`; user `pathlint.toml`
-    /// files leave this `None` and use `require_catalog` instead.
+    /// Reserved for the embedded catalog. The build script sets
+    /// this in `embedded_catalog.toml`; user `pathlint.toml` files
+    /// must NOT declare it. As of 0.0.14, parsing a user config
+    /// that contains `catalog_version` is a configuration error
+    /// (exit 2) — use `require_catalog = N` instead to pin the
+    /// minimum catalog version your rules require.
     #[serde(default)]
     pub catalog_version: Option<u32>,
 
@@ -239,7 +242,13 @@ impl Config {
 
     pub fn from_path(path: &Path) -> Result<Self, ConfigError> {
         let text = load_rules_text(path)?;
-        Self::parse_toml(&text)
+        let cfg = Self::parse_toml(&text)?;
+        if cfg.catalog_version.is_some() {
+            return Err(ConfigError::CatalogVersionInUserConfig(
+                path.display().to_string(),
+            ));
+        }
+        Ok(cfg)
     }
 }
 
@@ -353,6 +362,11 @@ pub enum ConfigError {
     RulesNotRegularFile(String),
     #[error("{0} is too large ({1} bytes); rules files are capped at 16 MiB")]
     RulesTooLarge(String, u64),
+    #[error(
+        "{0} declares `catalog_version`; that field is reserved for the embedded catalog. \
+         Use `require_catalog = N` instead to pin a minimum catalog version your rules require."
+    )]
+    CatalogVersionInUserConfig(String),
 }
 
 #[cfg(test)]
@@ -427,7 +441,12 @@ unknown_field = true
     }
 
     #[test]
-    fn catalog_version_and_require_catalog_are_parsed() {
+    fn parse_toml_accepts_catalog_version_for_embedded_catalog_use() {
+        // parse_toml is the entry point used by the build script for
+        // embedded_catalog.toml; it must accept catalog_version. The
+        // user-facing reject lives in from_path (see
+        // from_path_rejects_user_catalog_version below) so production
+        // hostile pathlint.toml files cannot smuggle a fake version.
         let cfg = Config::parse_toml(
             r#"
 catalog_version = 7
@@ -437,6 +456,33 @@ require_catalog = 5
         .unwrap();
         assert_eq!(cfg.catalog_version, Some(7));
         assert_eq!(cfg.require_catalog, Some(5));
+    }
+
+    #[test]
+    fn from_path_rejects_user_catalog_version() {
+        // 0.0.14: declaring catalog_version in pathlint.toml is a
+        // config error. The field is reserved for embedded catalog
+        // use; users must use require_catalog instead.
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("pathlint.toml");
+        std::fs::write(&p, "catalog_version = 5\n").unwrap();
+        let err = Config::from_path(&p).unwrap_err();
+        match err {
+            ConfigError::CatalogVersionInUserConfig(_) => {}
+            other => panic!("expected CatalogVersionInUserConfig, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_path_accepts_user_require_catalog() {
+        // require_catalog stays valid in user files even after the
+        // 0.0.14 catalog_version reject lands.
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("pathlint.toml");
+        std::fs::write(&p, "require_catalog = 1\n").unwrap();
+        let cfg = Config::from_path(&p).unwrap();
+        assert_eq!(cfg.catalog_version, None);
+        assert_eq!(cfg.require_catalog, Some(1));
     }
 
     #[test]
@@ -648,14 +694,14 @@ installer_token = "pipx"
 [[relation]]
 kind = "prefer_order_over"
 earlier = "cargo"
-later = "system_linux"
+later = "os_baseline_linux"
 "#,
         )
         .unwrap();
         match &cfg.relations[0] {
             Relation::PreferOrderOver { earlier, later } => {
                 assert_eq!(earlier, "cargo");
-                assert_eq!(later, "system_linux");
+                assert_eq!(later, "os_baseline_linux");
             }
             other => panic!("expected PreferOrderOver, got {other:?}"),
         }

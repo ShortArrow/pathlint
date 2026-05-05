@@ -1,0 +1,10 @@
+# Microsoft Store stub layer.
+#
+# Renamed from `WindowsApps` to `windows_apps` in 0.0.14 to match
+# the snake_case convention every other built-in source uses. Old
+# CamelCase name is not aliased — pathlint.toml files referencing
+# `WindowsApps` must be updated.
+
+[source.windows_apps]
+description = "Microsoft Store stub layer"
+windows = "Microsoft/WindowsApps"

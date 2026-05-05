@@ -925,6 +925,53 @@ mod tests {
     }
 
     #[test]
+    fn conflict_with_fragment_needle_source() {
+        // Fragment needles like `Microsoft/WindowsApps` are an
+        // intentional built-in shape (see source_match::find): a
+        // source can target a path *fragment* rather than a full
+        // anchored prefix. The relation walker must treat such a
+        // source the same as any other when assembling
+        // `ConflictsWhenBothInPath` groups, otherwise a hostile
+        // PATH that intersperses the Microsoft Store stub with a
+        // peer source would slip past the doctor.
+        let e = entries(&[
+            "C:/Users/u/AppData/Local/Microsoft/WindowsApps",
+            "C:/peer/dir",
+            "C:/Windows/System32",
+        ]);
+        let mut sources = BTreeMap::new();
+        sources.insert(
+            "windows_apps".into(),
+            SourceDef {
+                windows: Some("Microsoft/WindowsApps".into()),
+                ..Default::default()
+            },
+        );
+        sources.insert(
+            "peer".into(),
+            SourceDef {
+                windows: Some("C:/peer/dir".into()),
+                ..Default::default()
+            },
+        );
+        let relations = vec![Relation::ConflictsWhenBothInPath {
+            sources: vec!["windows_apps".into(), "peer".into()],
+            diagnostic: "store_vs_peer".into(),
+        }];
+        let diags = analyze(&e, &sources, &relations, Os::Windows, fs_yes, env_none);
+        let groups = diags
+            .iter()
+            .find_map(|d| match &d.kind {
+                Kind::Conflict { diagnostic, groups } if diagnostic == "store_vs_peer" => {
+                    Some(groups.clone())
+                }
+                _ => None,
+            })
+            .expect("store_vs_peer must fire for fragment-needle source");
+        assert_eq!(groups, vec![vec![0], vec![1]]);
+    }
+
+    #[test]
     fn user_defined_three_way_conflict_fires() {
         // Verifies the relation-driven generality: a user-supplied
         // ConflictsWhenBothInPath with three sources detects all

@@ -8,7 +8,7 @@ use crate::catalog;
 use crate::catalog_view::{self, ListStyle};
 use crate::cli::{
     CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
-    InitArgs, SortArgs, WhereArgs,
+    InitArgs, SortArgs, TraceArgs,
 };
 use crate::config::Config;
 use crate::doctor::{self, Diagnostic, Filter, Severity};
@@ -65,6 +65,26 @@ fn enforce_source_validation(
     anyhow::bail!("{} unsafe source definition(s); aborting", warnings.len());
 }
 
+/// Enforce that the merged relation graph is acyclic before any
+/// relation consumer (sort / doctor / trace / catalog relations)
+/// reads it. A cycle in `served_by_via` / `depends_on` /
+/// `prefer_order_over` is a configuration error (exit 2). Without
+/// this gate, `sort`'s `apply_prefer_order_over` would silently
+/// stop after its bubble-pass guard expires, leaving the user
+/// with a partial reorder and no diagnostic. `catalog relations`
+/// already performed this check; 0.0.14 extends it to every
+/// relation consumer for symmetry.
+///
+/// Pure: takes the merged relation slice; emits its effect through
+/// stderr and the returned Result.
+fn enforce_relation_acyclic(relations: &[crate::config::Relation]) -> Result<()> {
+    if let Err(msg) = catalog::check_acyclic(relations) {
+        eprintln!("pathlint: {msg}");
+        anyhow::bail!("relation graph has a cycle; aborting");
+    }
+    Ok(())
+}
+
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
@@ -72,17 +92,17 @@ pub fn execute(cli: Cli) -> Result<u8> {
         Some(Command::Init(args)) => return execute_init(&args),
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
-        }) => return execute_catalog_list(&args, cli.global.rules.as_deref()),
+        }) => return execute_catalog_list(&args, cli.global.config.as_deref()),
         Some(Command::Catalog {
             action: CatalogCommand::Relations(args),
-        }) => return execute_catalog_relations(&args, cli.global.rules.as_deref()),
+        }) => return execute_catalog_relations(&args, cli.global.config.as_deref()),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
-        Some(Command::Where(args)) => return execute_where(&args, &cli.global),
+        Some(Command::Trace(args)) => return execute_trace(&args, &cli.global),
         Some(Command::Sort(args)) => return execute_sort(&args, &cli.global),
         Some(Command::Check(args)) => args,
         None => CheckArgs::default(),
     };
-    let rules_path = locate_rules(cli.global.rules.as_deref())?;
+    let rules_path = locate_rules(cli.global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -144,7 +164,7 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     // catalog (e.g. `mise_activate_both` uses source paths). A
     // hostile rules override could weaponise the catalog if we
     // didn't enforce safe needles before continuing.
-    let rules_path = locate_rules(global.rules.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -152,6 +172,7 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     let merged = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&merged, Os::current())?;
     let relations = catalog::merge_with_user_relations(&cfg.relations);
+    enforce_relation_acyclic(&relations)?;
 
     // Validate the filter against built-in kind names plus any
     // user-declared conflict diagnostics from the merged relation
@@ -218,11 +239,10 @@ fn execute_catalog_relations(
     let relations = catalog::merge_with_user_relations(&cfg.relations);
 
     // DAG check: catch a circular `served_by_via` / `depends_on`
-    // before showing the user a list they cannot reason about.
-    if let Err(msg) = catalog::check_acyclic(&relations) {
-        eprintln!("pathlint: {msg}");
-        return Ok(2);
-    }
+    // / `prefer_order_over` before showing the user a list they
+    // cannot reason about. The same gate is applied by every
+    // other relation consumer (doctor / trace / sort) since 0.0.14.
+    enforce_relation_acyclic(&relations)?;
 
     if args.json {
         let json = format::relations_json(&relations)?;
@@ -233,11 +253,11 @@ fn execute_catalog_relations(
     Ok(0)
 }
 
-fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
     // R4 reads the same merged catalog `check` does so user
     // overrides apply; the rules file's `[[expect]]` block is
     // ignored — `where` is per-command, not rule-driven.
-    let rules_path = locate_rules(global.rules.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -245,6 +265,7 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
     let merged = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&merged, Os::current())?;
     let relations = catalog::merge_with_user_relations(&cfg.relations);
+    enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
     let outcome = where_cmd::locate(&args.command, &merged, &relations, Os::current(), |cmd| {
@@ -273,20 +294,32 @@ fn execute_where(args: &WhereArgs, global: &crate::cli::GlobalOpts) -> Result<u8
 }
 
 fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+    // 0.0.14: --dry-run is opt-in. Running `pathlint sort` without
+    // a mode flag is a configuration error so callers always
+    // declare intent (and so that adding `--apply` post-1.0 is
+    // non-breaking — the new flag will simply switch the path).
+    if !args.dry_run {
+        anyhow::bail!(
+            "pathlint sort requires --dry-run (the only mode currently shipped). \
+             A future --apply mode is reserved for post-1.0; pass --dry-run \
+             explicitly to acknowledge that pathlint never mutates PATH today."
+        );
+    }
     // sort reads the same merged catalog and rules as `check`, so
     // its proposal aligns with the rules the user is already
     // running against. The rules-file `[[expect]]` block is the
     // input — `prefer` rules drive the reordering.
-    let rules_path = locate_rules(global.rules.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => crate::config::Config::from_path(p)?,
         None => crate::config::Config::default(),
     };
     let catalog = catalog::merge_with_user(&cfg.source);
     enforce_source_validation(&catalog, Os::current())?;
+    let relations = catalog::merge_with_user_relations(&cfg.relations);
+    enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
-    let relations = catalog::merge_with_user_relations(&cfg.relations);
     let plan = crate::sort::sort_path(
         &path_entries,
         &cfg.expectations,

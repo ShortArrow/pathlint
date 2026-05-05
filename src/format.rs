@@ -117,7 +117,7 @@ pub fn where_human(found: &Found) -> String {
             .collect();
         buf.push_str(&format!("  sources:  {}\n", cleaned.join(", ")));
     }
-    if let Some(Provenance::MiseInstallerPlugin {
+    if let Some(Provenance::WrapperInstaller {
         installer,
         plugin_segment,
     }) = &found.provenance
@@ -273,8 +273,9 @@ pub fn sort_json(plan: &SortPlan) -> Result<String, serde_json::Error> {
 /// Each element carries `index`, `entry`, `severity`, the
 /// discriminator `kind`, and any per-variant payload fields
 /// (e.g. `suggestion` for shortenable, `canonical` for
-/// case_variant, `shim_indices` / `install_indices` for
-/// mise_activate_both).
+/// case_variant, `diagnostic` + `groups` for conflict — the
+/// 0.0.11 generalisation that retired the old `shim_indices` /
+/// `install_indices` shape).
 ///
 /// The schema parallels `check --json`: top-level array, every
 /// failure carries enough structured detail that CI consumers
@@ -417,32 +418,27 @@ impl<'a> From<&'a Outcome> for OutcomeView<'a> {
 /// `pathlint where --json`.
 ///
 /// `command` is needed because `WhereOutcome::NotFound` carries no
-/// data — the JSON shape `{"command":"...", "found":false}` keeps
-/// the discriminator field consistent with the Found variant.
+/// data. As of 0.0.14 the JSON shape uses a top-level `kind`
+/// discriminator (`"found"` or `"not_found"`) so future variants
+/// (e.g. an "ambiguous" outcome covering wrapper layers) can land
+/// without breaking consumers that pattern-matched on
+/// `found: true|false`. The previous `found: bool` field is gone.
 pub fn where_json(command: &str, outcome: &WhereOutcome) -> Result<String, serde_json::Error> {
     #[derive(serde::Serialize)]
-    #[serde(untagged)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
     enum Out<'a> {
         NotFound {
             command: &'a str,
-            found: bool,
         },
         Found {
-            found: bool,
             #[serde(flatten)]
             inner: &'a Found,
         },
     }
 
     let payload = match outcome {
-        WhereOutcome::NotFound => Out::NotFound {
-            command,
-            found: false,
-        },
-        WhereOutcome::Found(f) => Out::Found {
-            found: true,
-            inner: f,
-        },
+        WhereOutcome::NotFound => Out::NotFound { command },
+        WhereOutcome::Found(f) => Out::Found { inner: f },
     };
     serde_json::to_string_pretty(&payload)
 }
@@ -625,7 +621,7 @@ mod tests {
     fn where_human_includes_provenance_line_when_set() {
         let mut f = found_minimal();
         f.matched_sources = vec!["mise_installs".into(), "mise".into()];
-        f.provenance = Some(Provenance::MiseInstallerPlugin {
+        f.provenance = Some(Provenance::WrapperInstaller {
             installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
@@ -696,7 +692,8 @@ mod tests {
     fn where_json_found_carries_kind_discriminators() {
         let out = where_json("rustc", &WhereOutcome::Found(found_minimal())).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["found"], true);
+        // 0.0.14: top-level kind discriminator instead of found:bool.
+        assert_eq!(v["kind"], "found");
         assert_eq!(v["command"], "rustc");
         assert_eq!(v["uninstall"]["kind"], "command");
         assert_eq!(v["uninstall"]["command"], "cargo uninstall rustc");
@@ -707,7 +704,8 @@ mod tests {
     fn where_json_not_found_is_compact() {
         let out = where_json("ghost", &WhereOutcome::NotFound).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["found"], false);
+        // 0.0.14: top-level kind = "not_found" replaces found:false.
+        assert_eq!(v["kind"], "not_found");
         assert_eq!(v["command"], "ghost");
         assert!(v.get("resolved").is_none());
     }
@@ -715,13 +713,15 @@ mod tests {
     #[test]
     fn where_json_provenance_emits_kind_and_segment() {
         let mut f = found_minimal();
-        f.provenance = Some(Provenance::MiseInstallerPlugin {
+        f.provenance = Some(Provenance::WrapperInstaller {
             installer: "cargo".to_string(),
             plugin_segment: "cargo-foo".into(),
         });
         let out = where_json("foo", &WhereOutcome::Found(f)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["provenance"]["kind"], "mise_installer_plugin");
+        // 0.0.14: variant renamed from MiseInstallerPlugin →
+        // WrapperInstaller; serde tag = "wrapper_installer".
+        assert_eq!(v["provenance"]["kind"], "wrapper_installer");
         assert_eq!(v["provenance"]["installer"], "cargo");
         assert_eq!(v["provenance"]["plugin_segment"], "cargo-foo");
     }
@@ -912,6 +912,46 @@ mod tests {
         assert_eq!(v[0]["groups"][0][0], 0);
         assert_eq!(v[0]["groups"][1][0], 1);
         assert_eq!(v[0]["groups"][1][1], 2);
+    }
+
+    #[test]
+    fn doctor_conflict_strips_hostile_diagnostic() {
+        // The diagnostic label travels from a user-supplied
+        // [[relation]] in pathlint.toml. A hostile config could
+        // smuggle ANSI escapes or carriage returns hoping to
+        // repaint the doctor terminal. doctor_conflict must run
+        // every user-controlled string through strip_control_chars
+        // before formatting — including the header line that
+        // names the diagnostic and the per-entry path under each
+        // group.
+        let entries = entries(&["/foo/a\x1b[31m_evil", "/foo/b"]);
+        let d = Diagnostic {
+            index: 0,
+            entry: entries[0].clone(),
+            severity: Severity::Warn,
+            kind: Kind::Conflict {
+                diagnostic: "evil\x1b[31mlabel\rFAKE".into(),
+                groups: vec![vec![0], vec![1]],
+            },
+        };
+        let out = doctor_line(&d, &entries);
+        assert!(!out.contains('\x1b'), "ANSI escape leaked through: {out:?}");
+        assert!(
+            !out.contains('\r'),
+            "carriage return leaked through: {out:?}"
+        );
+        // strip_control_chars replaces each control byte with '?'
+        // (it deliberately preserves text length so column-based
+        // formatting stays sane). The label and entry must still
+        // be present, just with the escapes neutered.
+        assert!(
+            out.contains("evil?[31mlabel?FAKE"),
+            "stripped diagnostic must still be visible with replacements: {out:?}"
+        );
+        assert!(
+            out.contains("/foo/a?[31m_evil"),
+            "stripped entry must still be enumerated: {out:?}"
+        );
     }
 
     #[test]

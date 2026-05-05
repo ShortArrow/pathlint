@@ -259,7 +259,7 @@ fn catalog_relations_prefer_order_over_user_relation_renders() {
 [[relation]]
 kind = "prefer_order_over"
 earlier = "cargo"
-later = "system_linux"
+later = "os_baseline_linux"
 "#,
     )
     .unwrap();
@@ -275,7 +275,7 @@ later = "system_linux"
     let last = arr.last().unwrap();
     assert_eq!(last["kind"], "prefer_order_over");
     assert_eq!(last["earlier"], "cargo");
-    assert_eq!(last["later"], "system_linux");
+    assert_eq!(last["later"], "os_baseline_linux");
 }
 
 #[test]

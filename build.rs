@@ -73,10 +73,12 @@ fn main() {
         plugins.push((name.clone(), parsed, body));
     }
 
-    if let Err(msg) = check_referential_integrity(&plugins) {
+    if let Err(violations) = check_referential_integrity(&plugins) {
         panic!(
-            "plugin catalog failed referential integrity: {msg}\n\
-             every relation must point at a source defined by some plugin file"
+            "plugin catalog failed referential integrity ({} violations):\n  - {}\n\n\
+             every relation must point at a source defined by some plugin file",
+            violations.len(),
+            violations.join("\n  - ")
         );
     }
 
@@ -183,8 +185,13 @@ enum PluginRelation {
 /// `s`) gets caught here instead of failing silently at runtime.
 ///
 /// Pure: `plugins` is the deserialized catalog; the only output
-/// is a `Result<(), String>` describing the first violation found.
-fn check_referential_integrity(plugins: &[(String, PluginFile, String)]) -> Result<(), String> {
+/// is a `Result<(), Vec<String>>` listing every violation found.
+/// Aggregating the list (rather than bailing on the first) lets a
+/// plugin author see all dangling references in a single
+/// `cargo build` cycle instead of fix-rebuild-fix-rebuild.
+fn check_referential_integrity(
+    plugins: &[(String, PluginFile, String)],
+) -> Result<(), Vec<String>> {
     let mut all_sources: BTreeSet<&str> = BTreeSet::new();
     for (_name, plugin, _body) in plugins {
         for src_name in plugin.sources.keys() {
@@ -192,12 +199,13 @@ fn check_referential_integrity(plugins: &[(String, PluginFile, String)]) -> Resu
         }
     }
 
+    let mut violations: Vec<String> = Vec::new();
     for (plugin_name, plugin, _body) in plugins {
         for rel in &plugin.relations {
             let referenced = relation_source_refs(rel);
             for r in referenced {
                 if !all_sources.contains(r) {
-                    return Err(format!(
+                    violations.push(format!(
                         "{plugin_name}.toml: relation references undefined source `{r}`"
                     ));
                 }
@@ -205,7 +213,11 @@ fn check_referential_integrity(plugins: &[(String, PluginFile, String)]) -> Resu
         }
     }
 
-    Ok(())
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(violations)
+    }
 }
 
 /// Every source name that a relation references. Pure helper for
@@ -328,11 +340,41 @@ guest_provider = "missing_guest"
         )
         .unwrap();
         let plugins = vec![("p".to_string(), plugin, String::new())];
-        let err = check_referential_integrity(&plugins).unwrap_err();
+        let violations = check_referential_integrity(&plugins).unwrap_err();
         assert!(
-            err.contains("missing_guest"),
-            "expected the dangling source name in the error: {err}"
+            violations.iter().any(|v| v.contains("missing_guest")),
+            "expected the dangling source name in the violations: {violations:?}"
         );
+    }
+
+    #[test]
+    fn referential_integrity_lists_every_violation() {
+        // 0.0.14: aggregate, don't bail at first. A plugin that
+        // declares two dangling references should produce two
+        // violation strings so the author can fix both at once.
+        let plugin = parse_plugin(
+            r#"
+[source.host]
+unix = "/h"
+
+[[relation]]
+kind = "served_by_via"
+host = "host"
+guest_pattern = "x-*"
+guest_provider = "missing_one"
+
+[[relation]]
+kind = "depends_on"
+source = "host"
+target = "missing_two"
+"#,
+        )
+        .unwrap();
+        let plugins = vec![("p".to_string(), plugin, String::new())];
+        let violations = check_referential_integrity(&plugins).unwrap_err();
+        assert_eq!(violations.len(), 2);
+        assert!(violations.iter().any(|v| v.contains("missing_one")));
+        assert!(violations.iter().any(|v| v.contains("missing_two")));
     }
 
     #[test]

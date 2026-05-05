@@ -21,7 +21,7 @@
 - このマシンで `cargo install runex` したのに、走るのは `winget` の
   古いほう。同名・別ファイル。
 - `python` は `mise` 由来であってほしい、Microsoft Store の
-  `WindowsApps` スタブからではなく。
+  `windows_apps` スタブからではなく。
 - `node` は `volta` 由来がいい、システムの `apt` インストールでは
   なく。
 - macOS の `gcc` は Homebrew 由来であってほしい、`/usr/bin/gcc` から
@@ -45,7 +45,7 @@ TOML の 2 つの概念：
    （「`cargo` は `~/.cargo/bin` にいる」）。pathlint が `cargo`、
    `mise`、`volta`、`aqua`、`winget`、`choco`、`scoop`、`brew_arm`、
    `brew_intel`、`apt`、`pacman`、`dnf`、`pkg`、`flatpak`、`snap`、
-   `WindowsApps` などの組み込みデフォルトを持つ。ユーザーは標準と違う
+   `windows_apps` などの組み込みデフォルトを持つ。ユーザーは標準と違う
    レイアウトのときだけ上書きする。
 
 各 `[[expect]]` について、pathlint はコマンドを実 PATH から resolve
@@ -121,8 +121,8 @@ pathlint catalog relations --json # 0.0.9+: 同上、機械可読
 pathlint doctor
 
 # コマンドがどこから来たか + uninstall コマンドのヒント
-pathlint where lazygit
-pathlint where lazygit --json     # 0.0.6+: 機械可読出力
+pathlint trace lazygit
+pathlint trace lazygit --json     # 0.0.6+: 機械可読出力
 
 # CI 用に doctor の診断を絞る
 pathlint doctor --exclude shortenable,missing
@@ -145,7 +145,7 @@ avoid   = ["winget"]
 [[expect]]
 command = "python"
 prefer  = ["mise"]
-avoid   = ["WindowsApps", "choco"]
+avoid   = ["windows_apps", "choco"]
 
 [[expect]]
 command = "node"
@@ -230,14 +230,14 @@ command = "node"
 prefer  = ["mise"]
 ```
 
-`pathlint where <command>` は plugin-aware：解決済みパスが
+`pathlint trace <command>` は plugin-aware：解決済みパスが
 `mise/installs/<segment>/...` の下にあり、`<segment>` が
 `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-` で始まるとき、
 出力に `provenance:` 行と `mise uninstall ...` ヒントが追加される
 （どのプラグインで入れたか思い出さなくて済む）：
 
 ```
-$ pathlint where lazygit
+$ pathlint trace lazygit
 lazygit
   resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
   sources:  mise_installs, mise

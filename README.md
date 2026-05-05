@@ -21,7 +21,7 @@ executable resolves first.** Examples:
 - I `cargo install runex` on this machine, but the binary that runs
   is the older one from `winget` — same name, different file.
 - `python` should come from `mise`, not from the Microsoft Store
-  `WindowsApps` stub.
+  `windows_apps` stub.
 - `node` should come from `volta`, not from the system `apt` install.
 - macOS `gcc` should come from Homebrew, not from `/usr/bin/gcc`.
 
@@ -43,7 +43,7 @@ Two TOML concepts:
    ("`cargo` lives at `~/.cargo/bin`"). pathlint ships built-in
    defaults for `cargo`, `mise`, `volta`, `aqua`, `winget`, `choco`,
    `scoop`, `brew_arm`, `brew_intel`, `apt`, `pacman`, `dnf`, `pkg`,
-   `flatpak`, `snap`, `WindowsApps`, and more — users only override
+   `flatpak`, `snap`, `windows_apps`, and more — users only override
    when their layout is non-standard.
 
 For each `[[expect]]`, pathlint resolves the command against the real
@@ -73,9 +73,15 @@ should know about:
   pathlint can't tell that case apart from a real misordering.
 - **Symlinked system dirs.** On Arch / openSUSE TW / Solus,
   `/usr/sbin → /usr/bin`. `which ls` reports `/usr/sbin/ls`, so the
-  built-in `apt` / `pacman` / `dnf` source (`/usr/bin`) doesn't match.
-  Add `[source.usr_sbin] linux = "/usr/sbin"` to your `pathlint.toml`
-  if you hit this.
+  built-in `apt` / `pacman` / `dnf` source (`/usr/bin`) doesn't match
+  alone. Reference the built-in `os_baseline_linux_sbin` source
+  alongside the package manager:
+
+  ```toml
+  [[expect]]
+  command = "ls"
+  prefer = ["pacman", "os_baseline_linux_sbin"]
+  ```
 - **Which package owns this binary.** `pathlint` does not call
   `dpkg -S` / `rpm -qf` / `pacman -Qo` / `brew which-formula`. That's
   intentional in 0.0.x for speed and offline correctness; revisiting
@@ -116,8 +122,8 @@ pathlint catalog relations        # 0.0.9+: declared source relations
 pathlint catalog relations --json # 0.0.9+: same, machine-readable
 
 # Find a command's provenance and uninstall hint
-pathlint where lazygit            # who installed this binary?
-pathlint where lazygit --json     # 0.0.6+: machine-readable output
+pathlint trace lazygit            # who installed this binary?
+pathlint trace lazygit --json     # 0.0.6+: machine-readable output
 
 # Filter doctor diagnostics for CI
 pathlint doctor --exclude shortenable,missing
@@ -140,7 +146,7 @@ avoid   = ["winget"]
 [[expect]]
 command = "python"
 prefer  = ["mise"]
-avoid   = ["WindowsApps", "choco"]
+avoid   = ["windows_apps", "choco"]
 
 [[expect]]
 command = "node"
@@ -227,14 +233,14 @@ command = "node"
 prefer  = ["mise"]
 ```
 
-`pathlint where <command>` is plugin-aware: when the resolved
+`pathlint trace <command>` is plugin-aware: when the resolved
 binary lives under `mise/installs/<segment>/...` and `<segment>`
 starts with `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`, the
 output adds a `provenance:` line and a `mise uninstall ...` hint
 so you don't have to remember which plugin you used:
 
 ```
-$ pathlint where lazygit
+$ pathlint trace lazygit
 lazygit
   resolved: ~/.local/share/mise/installs/cargo-jesseduffield-lazygit/0.61/bin/lazygit
   sources:  mise_installs, mise

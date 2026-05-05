@@ -70,7 +70,7 @@ pub enum Provenance {
     /// `guest_provider` if absent); `plugin_segment` is the raw
     /// path segment so the user can verify with the installer's
     /// own tooling.
-    MiseInstallerPlugin {
+    WrapperInstaller {
         installer: String,
         plugin_segment: String,
     },
@@ -230,7 +230,7 @@ fn infer_provenance_from_relations(
             let installer = installer_token
                 .clone()
                 .unwrap_or_else(|| guest_provider.clone());
-            return Some(Provenance::MiseInstallerPlugin {
+            return Some(Provenance::WrapperInstaller {
                 installer,
                 plugin_segment: segment.to_string(),
             });
@@ -258,7 +258,7 @@ fn match_glob_prefix<'a>(pattern: &str, segment: &'a str) -> Option<&'a str> {
 
 fn uninstall_for_provenance(prov: &Provenance, os: Os) -> UninstallHint {
     match prov {
-        Provenance::MiseInstallerPlugin {
+        Provenance::WrapperInstaller {
             installer,
             plugin_segment,
         } => {
@@ -420,10 +420,10 @@ mod tests {
                     other => panic!("expected Command, got {other:?}"),
                 }
                 match &f.provenance {
-                    Some(Provenance::MiseInstallerPlugin { installer, .. }) => {
+                    Some(Provenance::WrapperInstaller { installer, .. }) => {
                         assert_eq!(installer, "cargo");
                     }
-                    other => panic!("expected MiseInstallerPlugin, got {other:?}"),
+                    other => panic!("expected WrapperInstaller, got {other:?}"),
                 }
             }
             other => panic!("expected Found, got {other:?}"),
@@ -519,14 +519,14 @@ mod tests {
         match out {
             WhereOutcome::Found(f) => {
                 match &f.provenance {
-                    Some(Provenance::MiseInstallerPlugin {
+                    Some(Provenance::WrapperInstaller {
                         installer,
                         plugin_segment,
                     }) => {
                         assert_eq!(installer, "npm");
                         assert_eq!(plugin_segment, "npm-google-gemini-cli");
                     }
-                    other => panic!("expected MiseInstallerPlugin, got {other:?}"),
+                    other => panic!("expected WrapperInstaller, got {other:?}"),
                 }
                 match &f.uninstall {
                     UninstallHint::Command { command } => {
@@ -583,7 +583,7 @@ mod tests {
         );
         match out {
             WhereOutcome::Found(f) => match &f.provenance {
-                Some(Provenance::MiseInstallerPlugin {
+                Some(Provenance::WrapperInstaller {
                     installer,
                     plugin_segment,
                 }) => {
@@ -593,7 +593,7 @@ mod tests {
                     );
                     assert_eq!(plugin_segment, "pipx-black");
                 }
-                other => panic!("expected MiseInstallerPlugin, got {other:?}"),
+                other => panic!("expected WrapperInstaller, got {other:?}"),
             },
             other => panic!("expected Found, got {other:?}"),
         }
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn provenance_only_fires_for_mise_installs_paths() {
         // A plain cargo install (no mise involved) must not falsely
-        // pick up MiseInstallerPlugin provenance even though the
+        // pick up WrapperInstaller provenance even though the
         // binary stem starts with `cargo-`. The trigger is the
         // mise_installs path match, not the bin name.
         let sources = cat(&[(

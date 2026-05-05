@@ -236,7 +236,8 @@ uninstall_command = "cargo uninstall {{bin}}"
     assert_eq!(code, 0, "stdout: {stdout}");
 
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
-    assert_eq!(v["found"], true);
+    // 0.0.14: top-level kind discriminator replaces found:bool.
+    assert_eq!(v["kind"], "found");
     assert_eq!(v["command"], "lazygit");
     assert!(v["resolved"].is_string());
     assert_eq!(v["matched_sources"][0], "cargo");
@@ -261,7 +262,8 @@ fn where_json_not_found_emits_compact_object_with_exit_1() {
     );
     assert_eq!(code, 1, "stdout: {stdout}");
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
-    assert_eq!(v["found"], false);
+    // 0.0.14: top-level kind = "not_found" replaces found:false.
+    assert_eq!(v["kind"], "not_found");
     assert_eq!(v["command"], "ghost_definitely_no_such_xyz");
     assert!(v.get("resolved").is_none());
 }
@@ -287,4 +289,41 @@ fn where_json_uninstall_no_template_uses_kind_field() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
     assert_eq!(v["uninstall"]["kind"], "no_template");
     assert_eq!(v["uninstall"]["source"], "aqua_local");
+}
+
+#[test]
+fn trace_subcommand_works_as_renamed_canonical() {
+    // 0.0.14: `where` is renamed to `trace`. The old `where`
+    // remains as a clap visible alias throughout the 0.0.x line
+    // (see other tests in this file). This test pins the canonical
+    // name so renaming back would fail loudly.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("home_cargo_bin");
+    stub(&dir, "lazygit");
+
+    let key = key_for_current_os();
+    let body = format!(
+        r#"
+[source.cargo]
+{key} = "{path}"
+uninstall_command = "cargo uninstall {{bin}}"
+"#,
+        path = dir.display().to_string().replace('\\', "/"),
+    );
+    let rules = write_rules(tmp.path(), &body);
+
+    let out = Command::new(BIN)
+        .arg("--rules")
+        .arg(&rules)
+        .arg("trace")
+        .arg("lazygit")
+        .env("PATH", join_path(&[&dir]))
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("failed to run pathlint binary");
+    let code = out.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(code, 0, "stdout: {stdout}");
+    assert!(stdout.contains("lazygit"), "stdout: {stdout}");
+    assert!(stdout.contains("cargo uninstall"), "stdout: {stdout}");
 }
