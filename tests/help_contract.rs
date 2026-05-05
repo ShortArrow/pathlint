@@ -57,3 +57,22 @@ fn help_surfaces_where_alias_for_trace() {
         "trace alias `where` must surface in --help: {stdout}"
     );
 }
+
+#[test]
+fn help_surfaces_rules_alias_for_config() {
+    // 0.0.16: parallel discoverability gate for the --config /
+    // --rules alias. visible_alias on GlobalOpts.config publishes
+    // `rules` in the help output. Without this test, the alias
+    // could be silently dropped from --help (e.g. by a clap
+    // upgrade that changed visible_alias rendering) and only
+    // detected at the next break window.
+    let out = Command::new(BIN)
+        .arg("--help")
+        .output()
+        .expect("failed to run pathlint");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("rules"),
+        "--config alias `--rules` must surface in --help: {stdout}"
+    );
+}
