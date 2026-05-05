@@ -69,6 +69,7 @@ pub(crate) mod init;
 pub(crate) mod path_source;
 pub(crate) mod report;
 pub(crate) mod resolve;
+pub(crate) mod shell_quote;
 
 #[doc(hidden)]
 pub mod cli;
