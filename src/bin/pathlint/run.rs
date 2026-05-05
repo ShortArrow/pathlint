@@ -142,11 +142,13 @@ pub fn execute(cli: Cli) -> Result<u8> {
         let json = format::check_json(&outcomes)?;
         println!("{json}");
     } else {
+        use std::io::IsTerminal;
         let style = report::Style {
             no_glyphs: cli.global.no_glyphs,
             verbose: cli.global.verbose,
             quiet: cli.global.quiet,
             explain: check_args.explain,
+            color: cli.global.color.resolve(std::io::stdout().is_terminal()),
         };
         print!("{}", report::render(&outcomes, style));
     }
