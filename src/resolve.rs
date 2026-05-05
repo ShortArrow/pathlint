@@ -9,11 +9,6 @@
 
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone)]
-pub struct Resolution {
-    pub full_path: PathBuf,
-}
-
 /// Split a `PATH` string on the platform's separator.
 pub fn split_path(path_value: &str) -> Vec<String> {
     let sep = if cfg!(windows) { ';' } else { ':' };
@@ -26,7 +21,12 @@ pub fn split_path(path_value: &str) -> Vec<String> {
 
 /// Resolve `command` against the given PATH entries. Returns the
 /// first matching full path, or `None`.
-pub fn resolve(command: &str, path_entries: &[String]) -> Option<Resolution> {
+///
+/// 0.0.16: dropped the `Resolution { full_path }` wrapper —
+/// `PathBuf` carries the same information and lets the public
+/// surface (`lint::evaluate`, `trace::locate`) accept resolver
+/// closures expressed in standard-library types alone.
+pub fn resolve(command: &str, path_entries: &[String]) -> Option<PathBuf> {
     let exts = pathext_list();
     for entry in path_entries {
         let dir = Path::new(entry);
@@ -34,7 +34,7 @@ pub fn resolve(command: &str, path_entries: &[String]) -> Option<Resolution> {
             continue;
         }
         if let Some(found) = probe(dir, command, &exts) {
-            return Some(Resolution { full_path: found });
+            return Some(found);
         }
     }
     None

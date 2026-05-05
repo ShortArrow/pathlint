@@ -15,7 +15,6 @@ use serde::Serialize;
 use crate::config::{Relation, SourceDef};
 use crate::expand::{expand_and_normalize, normalize};
 use crate::os_detect::Os;
-use crate::resolve::Resolution;
 use crate::source_match;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -87,13 +86,13 @@ pub fn locate<R>(
     mut resolver: R,
 ) -> TraceOutcome
 where
-    R: FnMut(&str) -> Option<Resolution>,
+    R: FnMut(&str) -> Option<PathBuf>,
 {
-    let Some(resolution) = resolver(command) else {
+    let Some(resolved_path) = resolver(command) else {
         return TraceOutcome::NotFound;
     };
 
-    let haystack = normalize(&resolution.full_path.to_string_lossy());
+    let haystack = normalize(&resolved_path.to_string_lossy());
     let matched = source_match::names_only(&haystack, sources, os);
 
     // Provenance comes from `[[relation]] kind = "served_by_via"`:
@@ -103,7 +102,7 @@ where
 
     let uninstall = match &provenance {
         Some(prov) => uninstall_for_provenance(prov, os),
-        None => derive_uninstall(&resolution.full_path, &matched, sources, os),
+        None => derive_uninstall(&resolved_path, &matched, sources, os),
     };
 
     // Push every alias_of parent to the end when a child is also
@@ -112,7 +111,7 @@ where
 
     TraceOutcome::Found(Found {
         command: command.to_string(),
-        resolved: resolution.full_path,
+        resolved: resolved_path,
         matched_sources: matched,
         uninstall,
         provenance,
@@ -318,10 +317,8 @@ mod tests {
             .collect()
     }
 
-    fn resolution(p: &str) -> Resolution {
-        Resolution {
-            full_path: PathBuf::from(p),
-        }
+    fn resolution(p: &str) -> PathBuf {
+        PathBuf::from(p)
     }
 
     /// Built-in mise relations re-stated for unit tests so each
