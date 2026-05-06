@@ -394,12 +394,7 @@ fn add_duplicate_but_shadowed_diagnostics<L, V>(
     V: Fn(&str) -> Option<String>,
 {
     let pathext_lower: Vec<String> = if os == Os::Windows {
-        env_lookup("PATHEXT")
-            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC".to_string())
-            .split(';')
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_ascii_lowercase())
-            .collect()
+        expand::pathext_lower(|v| env_lookup(v))
     } else {
         Vec::new()
     };

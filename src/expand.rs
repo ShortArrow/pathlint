@@ -41,6 +41,30 @@ pub fn expand_and_normalize(input: &str) -> String {
     normalize(&expand_env(input))
 }
 
+/// Read PATHEXT and split into the literal extension tokens
+/// (`.EXE`, `.BAT`, …). Defaults to the standard Windows list when
+/// PATHEXT is unset. Caller passes its own env lookup so tests
+/// can stub it; pass `|v| std::env::var(v).ok()` for production.
+/// Use `pathext_lower` instead when case-insensitive comparison
+/// is needed (the doctor `duplicate_but_shadowed` detector).
+pub(crate) fn pathext_raw(env_lookup: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    env_lookup("PATHEXT")
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC".to_string())
+        .split(';')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// PATHEXT entries lowercase. Convenience for case-insensitive
+/// suffix matching on Windows.
+pub(crate) fn pathext_lower(env_lookup: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    pathext_raw(env_lookup)
+        .into_iter()
+        .map(|s| s.to_ascii_lowercase())
+        .collect()
+}
+
 fn expand_tilde(s: &str) -> String {
     if let Some(rest) = s.strip_prefix('~') {
         if let Some(home) = env::var_os("HOME") {
@@ -218,5 +242,36 @@ mod tests {
                 "c:/users/u/.cargo/bin",
             );
         });
+    }
+
+    #[test]
+    fn pathext_raw_uses_user_value_when_set() {
+        let raw = pathext_raw(|v| {
+            if v == "PATHEXT" {
+                Some(".EXE;.BAT".to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(raw, vec![".EXE".to_string(), ".BAT".to_string()]);
+    }
+
+    #[test]
+    fn pathext_raw_falls_back_to_default_when_unset() {
+        let raw = pathext_raw(|_| None);
+        assert!(raw.contains(&".EXE".to_string()));
+        assert!(raw.contains(&".CMD".to_string()));
+    }
+
+    #[test]
+    fn pathext_lower_normalizes_case() {
+        let lower = pathext_lower(|v| {
+            if v == "PATHEXT" {
+                Some(".EXE;.Bat".to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(lower, vec![".exe".to_string(), ".bat".to_string()]);
     }
 }
