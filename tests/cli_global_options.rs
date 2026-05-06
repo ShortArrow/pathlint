@@ -45,6 +45,58 @@ fn color_never_emits_no_ansi_escape() {
     );
 }
 
+/// Helper to drive a non-check subcommand.
+fn run_subcommand(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(BIN)
+        .args(args)
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("failed to run pathlint");
+    let code = out.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    (code, stdout, stderr)
+}
+
+fn assert_ascii_only(stdout: &str, where_: &str) {
+    for c in stdout.chars() {
+        assert!(
+            c.is_ascii(),
+            "non-ASCII char `{c}` (U+{u:04X}) leaked under --no-glyphs in {where_}: {stdout}",
+            u = c as u32
+        );
+    }
+}
+
+#[test]
+fn no_glyphs_strips_unicode_in_doctor_output() {
+    // 0.0.18: --no-glyphs must apply to doctor's human renderer.
+    // Pre-0.0.18 the flag only routed through src/report.rs (check
+    // only); doctor/trace/sort emitted `—` and `→` regardless.
+    let (_, stdout, _) = run_subcommand(&["--no-glyphs", "doctor"]);
+    assert_ascii_only(&stdout, "doctor output");
+}
+
+#[test]
+fn no_glyphs_strips_unicode_in_trace_output() {
+    // trace falls back to `not found on PATH` for an unknown command,
+    // and the dash there must be ASCII under --no-glyphs.
+    let (_, stdout, _) = run_subcommand(&[
+        "--no-glyphs",
+        "trace",
+        "pathlint_definitely_no_such_command",
+    ]);
+    assert_ascii_only(&stdout, "trace output");
+}
+
+#[test]
+fn no_glyphs_strips_unicode_in_sort_output() {
+    // sort emits an em-dash inside the `unsatisfiable_prefer` note
+    // and the catalog relations stanza. --no-glyphs must swap them.
+    let (_, stdout, _) = run_subcommand(&["--no-glyphs", "sort", "--dry-run"]);
+    assert_ascii_only(&stdout, "sort output");
+}
+
 #[test]
 fn color_always_emits_ansi_escape_when_output_has_tags() {
     // `--color always` forces colourisation regardless of TTY

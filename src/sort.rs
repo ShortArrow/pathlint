@@ -205,14 +205,10 @@ fn apply_prefer_order_over(
     entry_sources: &[Vec<String>],
     relations: &[Relation],
 ) {
-    let order_pairs: Vec<(&str, &str)> = relations
-        .iter()
-        .filter_map(|r| match r {
-            Relation::PreferOrderOver { earlier, later } => {
-                Some((earlier.as_str(), later.as_str()))
-            }
-            _ => None,
-        })
+    // 0.0.18: read prefer_order_over edges via RelationIndex so
+    // sort no longer touches the Relation sum type directly.
+    let order_pairs: Vec<(&str, &str)> = crate::catalog::RelationIndex::from_slice(relations)
+        .iter_prefer_orders()
         .collect();
     if order_pairs.is_empty() {
         return;

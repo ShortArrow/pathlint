@@ -93,6 +93,17 @@ pub enum Kind {
         diagnostic: String,
         groups: Vec<Vec<usize>>,
     },
+    /// A `[source.<name>]` declared in the merged catalog points
+    /// at a per-OS path that does not exist on the filesystem.
+    /// Common when a user's `pathlint.toml` declares a source for
+    /// a tool they don't actually have installed (e.g.
+    /// `[source.cargo] unix = "$HOME/.cargo/bin"` on a host
+    /// without rust). 0.0.18+. `entry` is the expanded path that
+    /// was checked; `Diagnostic.index` is fixed at `usize::MAX`
+    /// because the diagnostic is per-source, not per-PATH-entry.
+    PerSourceMissingRequired {
+        source: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -123,6 +134,7 @@ pub fn kind_name(kind: &Kind) -> &str {
         Kind::ShortName => "short_name",
         Kind::Malformed { .. } => "malformed",
         Kind::Conflict { diagnostic, .. } => diagnostic.as_str(),
+        Kind::PerSourceMissingRequired { .. } => "per_source_missing_required",
     }
 }
 
@@ -142,6 +154,7 @@ pub fn all_kind_names() -> &'static [&'static str] {
         "short_name",
         "malformed",
         "mise_activate_both",
+        "per_source_missing_required",
     ]
 }
 
@@ -215,12 +228,12 @@ pub fn validate_filter_names(filter: &Filter, extra_known: &[String]) -> Result<
 /// `validate_filter_names` so user-defined conflict names flow
 /// through `--include` / `--exclude` correctly. Pure.
 pub fn user_diagnostic_names(relations: &[Relation]) -> Vec<String> {
-    relations
-        .iter()
-        .filter_map(|r| match r {
-            Relation::ConflictsWhenBothInPath { diagnostic, .. } => Some(diagnostic.clone()),
-            _ => None,
-        })
+    // 0.0.18: read conflict diagnostics via RelationIndex so this
+    // call site no longer pattern-matches on the Relation sum type
+    // directly.
+    crate::catalog::RelationIndex::from_slice(relations)
+        .iter_conflicts()
+        .map(|(_sources, diagnostic)| diagnostic.to_string())
         .collect()
 }
 
@@ -287,7 +300,124 @@ where
     add_duplicate_diagnostics(&normalized, entries, &mut out);
     add_case_variant_diagnostics(entries, &mut out);
     add_relation_conflict_diagnostics(&normalized, entries, sources, relations, os, &mut out);
+    add_per_source_missing_required_diagnostics(sources, os, &fs_exists, &env_lookup, &mut out);
     out
+}
+
+/// Detect declared `[source.<name>]` entries whose per-OS path
+/// does not exist on the filesystem. 0.0.18+. The path is expanded
+/// (`expand_env`) before checking so `$HOME` / `~` work the same
+/// way the rest of the doctor pipeline does. Sources that are not
+/// applicable to the current OS (no path defined for `os`) are
+/// skipped — that is a config-time decision, not a hygiene one.
+///
+/// Built-in sources are also skipped: every host is missing most
+/// of the catalog (you don't have winget on Linux, you don't have
+/// brew on Termux), so flagging them would drown the user in
+/// known-irrelevant warnings. Only sources the user supplied via
+/// their own `pathlint.toml` are checked.
+///
+/// Pure: every fs hit goes through the injected `fs_exists`
+/// closure, every env lookup through `env_lookup`. Tests stub both.
+fn add_per_source_missing_required_diagnostics<F, V>(
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    fs_exists: &F,
+    env_lookup: &V,
+    out: &mut Vec<Diagnostic>,
+) where
+    F: Fn(&str) -> bool,
+    V: Fn(&str) -> Option<String>,
+{
+    // Skip built-in catalog sources — most are deliberately missing
+    // on any given host (no winget on Linux, no brew on Termux).
+    // Only user-supplied sources should fire this detector.
+    let builtin = crate::catalog::builtin();
+    for (name, def) in sources {
+        if builtin.contains_key(name) {
+            // Treat as user override iff the def differs from the
+            // built-in. Conservative: if any per-OS field changed,
+            // assume the user opted in to checking this source.
+            if let Some(builtin_def) = builtin.get(name) {
+                if builtin_def == def {
+                    continue;
+                }
+            }
+        }
+        let Some(raw) = def.path_for(os) else {
+            continue;
+        };
+        // Apply the same env-var expansion as the rest of the
+        // doctor pipeline so `$HOME` / `~` resolve consistently.
+        // Reuse `expand::expand_env` directly; the entry-level
+        // `check_missing` does the same dance for PATH entries.
+        let expanded = expand_with_env(raw, env_lookup);
+        if expanded.is_empty() {
+            continue;
+        }
+        if fs_exists(&expanded) {
+            continue;
+        }
+        out.push(Diagnostic {
+            // Per-source diagnostics are not anchored to a PATH
+            // index. usize::MAX is the sentinel — formatters render
+            // it as "(catalog)" instead of an entry number.
+            index: usize::MAX,
+            entry: expanded,
+            severity: Severity::Warn,
+            kind: Kind::PerSourceMissingRequired {
+                source: name.clone(),
+            },
+        });
+    }
+}
+
+/// Tiny shim that runs `expand::expand_env` first, then resolves
+/// any `$VAR` / `~` / `%VAR%` against the injected env_lookup so
+/// tests can stub the environment without touching the process.
+/// Used only by per-source missing detection so far; the existing
+/// shortenable / check_missing call sites have their own paths.
+fn expand_with_env<V>(raw: &str, env_lookup: &V) -> String
+where
+    V: Fn(&str) -> Option<String>,
+{
+    // Best-effort: replace literal $VAR and ~/ via env_lookup so
+    // tests retain control. If `env_lookup` doesn't know a name,
+    // leave the literal in place — fs_exists will reject it.
+    let mut buf = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '~' && (chars.peek() == Some(&'/') || chars.peek().is_none()) {
+            if let Some(home) = env_lookup("HOME").or_else(|| env_lookup("USERPROFILE")) {
+                buf.push_str(&home);
+                continue;
+            }
+        }
+        if c == '$' {
+            let mut name = String::new();
+            while let Some(&nc) = chars.peek() {
+                if nc.is_ascii_alphanumeric() || nc == '_' {
+                    name.push(nc);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if !name.is_empty() {
+                if let Some(val) = env_lookup(&name) {
+                    buf.push_str(&val);
+                    continue;
+                }
+                buf.push('$');
+                buf.push_str(&name);
+                continue;
+            }
+            buf.push('$');
+            continue;
+        }
+        buf.push(c);
+    }
+    buf
 }
 
 fn check_malformed(index: usize, entry: &str) -> Option<Diagnostic> {
@@ -504,14 +634,10 @@ fn add_relation_conflict_diagnostics(
     os: Os,
     out: &mut Vec<Diagnostic>,
 ) {
-    for rel in relations {
-        let Relation::ConflictsWhenBothInPath {
-            sources: src_names,
-            diagnostic,
-        } = rel
-        else {
-            continue;
-        };
+    // 0.0.18: walk conflicts via RelationIndex so this call site
+    // does not destructure the Relation enum.
+    let index = crate::catalog::RelationIndex::from_slice(relations);
+    for (src_names, diagnostic) in index.iter_conflicts() {
         let groups: Vec<Vec<usize>> = src_names
             .iter()
             .map(|name| matched_entries_for_source(name, normalized, sources, os))
@@ -529,7 +655,7 @@ fn add_relation_conflict_diagnostics(
             entry: raw[anchor].clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
-                diagnostic: diagnostic.clone(),
+                diagnostic: diagnostic.to_string(),
                 groups,
             },
         });
@@ -996,6 +1122,75 @@ mod tests {
             })
             .expect("abc_overlap must fire");
         assert_eq!(groups, vec![vec![0], vec![1], vec![2]]);
+    }
+
+    // ---- per-source missing required (0.0.18+) -------------------
+
+    fn cat_local(entries: &[(&str, SourceDef)]) -> BTreeMap<String, SourceDef> {
+        entries
+            .iter()
+            .map(|(n, d)| ((*n).to_string(), d.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn per_source_missing_required_fires_when_declared_dir_does_not_exist() {
+        // [source.cargo] unix = "/totally/missing/dir" → fs_no
+        // forces fs_exists to return false, the new detector fires.
+        let sources = cat_local(&[("cargo", unix_source("/totally/missing/dir"))]);
+        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env_none);
+        let hit = diags
+            .iter()
+            .find(|d| matches!(d.kind, Kind::PerSourceMissingRequired { .. }))
+            .expect("PerSourceMissingRequired must fire");
+        match &hit.kind {
+            Kind::PerSourceMissingRequired { source } => assert_eq!(source, "cargo"),
+            other => panic!("expected PerSourceMissingRequired, got {other:?}"),
+        }
+        assert_eq!(hit.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn per_source_missing_required_does_not_fire_when_path_exists() {
+        // fs_yes claims every path exists → no hit.
+        let sources = cat_local(&[("cargo", unix_source("/home/u/.cargo/bin"))]);
+        let diags = analyze(&[], &sources, &[], Os::Linux, fs_yes, env_none);
+        assert!(
+            diags
+                .iter()
+                .all(|d| !matches!(d.kind, Kind::PerSourceMissingRequired { .. }))
+        );
+    }
+
+    #[test]
+    fn per_source_missing_required_skips_sources_without_path_for_current_os() {
+        // Source defined only for windows → on Linux it has no
+        // applicable path and must be silently skipped.
+        let sources = cat_local(&[(
+            "winget",
+            SourceDef {
+                windows: Some("C:/Users/u/AppData/Local/Microsoft/WinGet/Links".into()),
+                ..Default::default()
+            },
+        )]);
+        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env_none);
+        assert!(
+            diags
+                .iter()
+                .all(|d| !matches!(d.kind, Kind::PerSourceMissingRequired { .. }))
+        );
+    }
+
+    #[test]
+    fn per_source_missing_required_expands_env_via_injected_lookup() {
+        // $HOME is provided via env_map; resolve to /tmp/no_such_path
+        // and force fs_exists=false → fire.
+        let sources = cat_local(&[("cargo", unix_source("$HOME/.cargo/bin"))]);
+        let env = env_map(&[("HOME", "/tmp/no_such_path")]);
+        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env);
+        assert!(diags.iter().any(
+            |d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo")
+        ));
     }
 
     // ---- Filter / validate / has_error ---------------------------

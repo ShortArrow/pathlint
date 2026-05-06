@@ -156,18 +156,16 @@ where
 /// previous mise-only special case becomes one application of this
 /// generic rule.
 fn rank_aliases_last(matched: Vec<String>, relations: &[Relation]) -> Vec<String> {
-    let parents: Vec<&str> = relations
-        .iter()
-        .filter_map(|r| match r {
-            Relation::AliasOf { parent, children } => {
-                let any_child_matched = children.iter().any(|c| matched.contains(c));
-                if any_child_matched {
-                    Some(parent.as_str())
-                } else {
-                    None
-                }
+    // 0.0.18: walk alias_of via RelationIndex.
+    let parents: Vec<&str> = crate::catalog::RelationIndex::from_slice(relations)
+        .iter_aliases()
+        .filter_map(|(parent, children)| {
+            let any_child_matched = children.iter().any(|c| matched.contains(c));
+            if any_child_matched {
+                Some(parent)
+            } else {
+                None
             }
-            _ => None,
         })
         .collect();
     if parents.is_empty() {
@@ -230,17 +228,10 @@ fn infer_provenance_from_relations(
     relations: &[Relation],
     os: Os,
 ) -> Option<Provenance> {
-    for rel in relations {
-        let Relation::ServedByVia {
-            host,
-            guest_pattern,
-            guest_provider,
-            installer_token,
-        } = rel
-        else {
-            continue;
-        };
-        let Some(host_def) = sources.get(host) else {
+    // 0.0.18: walk served_by_via via RelationIndex.
+    let index = crate::catalog::RelationIndex::from_slice(relations);
+    for prov in index.iter_provenances() {
+        let Some(host_def) = sources.get(prov.host) else {
             continue;
         };
         let Some(host_raw) = host_def.path_for(os) else {
@@ -257,10 +248,11 @@ fn infer_provenance_from_relations(
         let Some(segment) = after.split('/').next() else {
             continue;
         };
-        if let Some(_rest) = match_glob_prefix(guest_pattern, segment) {
-            let installer = installer_token
-                .clone()
-                .unwrap_or_else(|| guest_provider.clone());
+        if let Some(_rest) = match_glob_prefix(prov.guest_pattern, segment) {
+            let installer = prov
+                .installer_token
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| prov.guest_provider.to_string());
             return Some(Provenance::WrapperInstaller {
                 installer,
                 plugin_segment: segment.to_string(),

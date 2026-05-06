@@ -1032,6 +1032,29 @@ MAJOR-equivalent). Each break is announced in the release notes;
 this section keeps the cumulative list with sample migrations.
 Whether and when 0.0.x graduates to 0.1.0 is undecided.
 
+### 0.0.18
+
+No breaking changes. Cumulative additions:
+
+- **`pathlint doctor` learned the `per_source_missing_required`
+  detector.** Fires when a `[source.<name>]` entry from the user's
+  `pathlint.toml` points at a per-OS path that does not exist on
+  the host. Built-in catalog sources are deliberately skipped (most
+  hosts are missing 80% of the catalog by design).
+- **`--no-glyphs` now applies to `doctor` / `trace` / `sort`
+  output.** Pre-0.0.18 the flag only routed through `report.rs`
+  (check OK/NG tags). Em-dash and rightwards-arrow now fall back to
+  `-` and `->` across every human renderer.
+- **`pathlint::catalog::RelationIndex` typed accessor view.**
+  Internal-only refactor; no change to the `[[relation]] kind=...`
+  TOML shape. consumers (sort / doctor / trace / cycle check) read
+  through `iter_aliases()` / `iter_conflicts()` /
+  `iter_provenances()` / `iter_depends_on()` /
+  `iter_prefer_orders()` instead of open `match Relation { ... }`.
+- **`scripts/bench.sh` startup-time baseline.** hyperfine wrapper;
+  paste the table into release notes to verify the PRD §12
+  `<50 ms` claim on the host.
+
 ### 0.0.17
 
 - **`Status` enum is unit-only; `Outcome` gains `reason`.**

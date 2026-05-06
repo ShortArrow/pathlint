@@ -11,10 +11,34 @@ use crate::lint::Outcome;
 use crate::sort::{SortNote, SortPlan};
 use crate::trace::{Found, Provenance, TraceOutcome, UninstallHint};
 
+/// Presentation-layer toggles common to every human renderer.
+/// 0.0.18 introduced this so `--no-glyphs` finally takes effect on
+/// `doctor` / `trace` / `sort` outputs (pre-0.0.18 the flag only
+/// toggled the `[OK]` / `[NG]` glyphs in `report.rs::status_tag`,
+/// while everything else in `format.rs` kept emitting `—` and `→`
+/// unconditionally).
+///
+/// Callers pass `Style::default()` for the legacy "show glyphs"
+/// shape (also what every existing unit test uses) and
+/// `Style { no_glyphs: true }` to get an ASCII-only rendering.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Style {
+    pub no_glyphs: bool,
+}
+
+/// Substitute a unicode glyph for an ASCII fallback when the
+/// caller asked for `--no-glyphs`. 0.0.18 introduced this so every
+/// renderer in `format.rs` can route attacker-safe substitutions
+/// through one place.
+fn glyph(style: Style, unicode: &'static str, ascii: &'static str) -> &'static str {
+    if style.no_glyphs { ascii } else { unicode }
+}
+
 /// Render a single doctor diagnostic into a multi-line block
 /// (header line + indented detail). The trailing newline is
 /// omitted; the caller decides whether to add one.
-pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
+pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
+    let _ = style; // doctor's body uses no glyphs of its own — kept for signature symmetry.
     if let Kind::Conflict { diagnostic, groups } = &d.kind {
         return doctor_conflict(entries, diagnostic, groups);
     }
@@ -48,10 +72,20 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String]) -> String {
         Kind::ShortName => "Windows 8.3 short name in PATH; long-name form is more portable".into(),
         Kind::Malformed { reason } => format!("malformed entry: {}", strip_control_chars(reason)),
         Kind::Conflict { .. } => unreachable!("handled by early return above"),
+        Kind::PerSourceMissingRequired { source } => format!(
+            "declared `[source.{}]` path does not exist on this host",
+            strip_control_chars(source)
+        ),
+    };
+    // Per-source diagnostics use usize::MAX as the "no PATH index"
+    // sentinel; render that as "(catalog)" instead of a number.
+    let idx_render = if d.index == usize::MAX {
+        "(catalog)".to_string()
+    } else {
+        format!("#{idx:>3}", idx = d.index)
     };
     format!(
-        "{tag} #{idx:>3} {entry}\n      {detail}",
-        idx = d.index,
+        "{tag} {idx_render} {entry}\n      {detail}",
         entry = strip_control_chars(&d.entry)
     )
 }
@@ -98,7 +132,8 @@ fn doctor_conflict(entries: &[String], diagnostic: &str, groups: &[Vec<usize>]) 
 /// the terminal with ANSI escapes. The uninstall hint comes from
 /// `derive_uninstall` already shell-quoted, so it does not need
 /// stripping again.
-pub fn where_human(found: &Found) -> String {
+pub fn where_human(found: &Found, style: Style) -> String {
+    let dash = glyph(style, "—", "-");
     let mut buf = String::new();
     buf.push_str(&strip_control_chars(&found.command));
     buf.push('\n');
@@ -138,7 +173,9 @@ pub fn where_human(found: &Found) -> String {
             ));
         }
         UninstallHint::NoSource => {
-            buf.push_str("  hint:     (no source matched — pathlint cannot guess)");
+            buf.push_str(&format!(
+                "  hint:     (no source matched {dash} pathlint cannot guess)"
+            ));
         }
     }
     buf
@@ -147,8 +184,9 @@ pub fn where_human(found: &Found) -> String {
 /// Render a NotFound `where` outcome — single line, no trailing
 /// newline. The command name is stripped of control characters so
 /// a hostile CLI argument cannot inject ANSI escapes here either.
-pub fn where_not_found(command: &str) -> String {
-    format!("{} — not found on PATH", strip_control_chars(command))
+pub fn where_not_found(command: &str, style: Style) -> String {
+    let dash = glyph(style, "—", "-");
+    format!("{} {dash} not found on PATH", strip_control_chars(command))
 }
 
 /// Render a `SortPlan` as a multi-line human-readable block. The
@@ -158,12 +196,12 @@ pub fn where_not_found(command: &str) -> String {
 /// (e.g. unsatisfiable `prefer`) follow as fyi lines.
 ///
 /// No trailing newline; callers add their own. Pure.
-pub fn sort_human(plan: &SortPlan) -> String {
+pub fn sort_human(plan: &SortPlan, style: Style) -> String {
     let mut buf = String::new();
     if plan.is_noop() {
         buf.push_str("pathlint sort: PATH is already in a satisfying order.\n");
         for note in &plan.notes {
-            push_sort_note(&mut buf, note);
+            push_sort_note(&mut buf, note, style);
         }
         // strip trailing newline so behaviour matches the other
         // human formatters.
@@ -224,7 +262,7 @@ pub fn sort_human(plan: &SortPlan) -> String {
     }
 
     for note in &plan.notes {
-        push_sort_note(&mut buf, note);
+        push_sort_note(&mut buf, note, style);
     }
 
     if buf.ends_with('\n') {
@@ -233,11 +271,12 @@ pub fn sort_human(plan: &SortPlan) -> String {
     buf
 }
 
-fn push_sort_note(buf: &mut String, note: &SortNote) {
+fn push_sort_note(buf: &mut String, note: &SortNote, style: Style) {
+    let dash = glyph(style, "—", "-");
     match note {
         SortNote::UnsatisfiablePrefer { command, prefer } => {
             buf.push_str(&format!(
-                "\nnote: `{command}` cannot be satisfied by reordering — no PATH entry matches `prefer = [{}]`. Install via one of those sources, or relax the rule.\n",
+                "\nnote: `{command}` cannot be satisfied by reordering {dash} no PATH entry matches `prefer = [{}]`. Install via one of those sources, or relax the rule.\n",
                 prefer.join(", "),
             ));
         }
@@ -266,7 +305,8 @@ pub fn sort_json(plan: &SortPlan) -> Result<String, serde_json::Error> {
 /// Render the relation list as a human-readable block. One relation
 /// per stanza, grouped only by declaration order. No trailing
 /// newline.
-pub fn relations_human(relations: &[Relation]) -> String {
+pub fn relations_human(relations: &[Relation], style: Style) -> String {
+    let arrow = glyph(style, "→", "->");
     if relations.is_empty() {
         return "no relations declared".to_string();
     }
@@ -284,7 +324,7 @@ pub fn relations_human(relations: &[Relation]) -> String {
             Relation::AliasOf { parent, children } => {
                 let kids: Vec<String> = children.iter().map(|c| s(c)).collect();
                 buf.push_str(&format!(
-                    "alias_of: `{}` → [{}]",
+                    "alias_of: `{}` {arrow} [{}]",
                     s(parent),
                     kids.join(", ")
                 ));
@@ -320,7 +360,11 @@ pub fn relations_human(relations: &[Relation]) -> String {
                 ));
             }
             Relation::DependsOn { source, target } => {
-                buf.push_str(&format!("depends_on: `{}` → `{}`", s(source), s(target),));
+                buf.push_str(&format!(
+                    "depends_on: `{}` {arrow} `{}`",
+                    s(source),
+                    s(target),
+                ));
             }
             Relation::PreferOrderOver { earlier, later } => {
                 buf.push_str(&format!(
@@ -444,7 +488,7 @@ mod tests {
             severity: Severity::Warn,
             kind: Kind::Missing,
         };
-        let out = doctor_line(&d, &entries(&[]));
+        let out = doctor_line(&d, &entries(&[]), Style::default());
         assert!(out.starts_with("[warn]"));
         assert!(out.contains("#  3 /usr/bin"));
         assert!(out.contains("      directory does not exist"));
@@ -460,7 +504,7 @@ mod tests {
                 reason: "illegal character '|' in path".into(),
             },
         };
-        let out = doctor_line(&d, &entries(&[]));
+        let out = doctor_line(&d, &entries(&[]), Style::default());
         assert!(out.starts_with("[ERR]"));
         assert!(out.contains("malformed entry: illegal character"));
     }
@@ -474,7 +518,7 @@ mod tests {
             severity: Severity::Warn,
             kind: Kind::Duplicate { first_index: 0 },
         };
-        let out = doctor_line(&d, &entries);
+        let out = doctor_line(&d, &entries, Style::default());
         assert!(
             out.contains("duplicate of entry #0 (/usr/bin)"),
             "out: {out}"
@@ -491,13 +535,13 @@ mod tests {
                 suggestion: "%UserProfile%\\.cargo\\bin".into(),
             },
         };
-        let out = doctor_line(&d, &entries(&[]));
+        let out = doctor_line(&d, &entries(&[]), Style::default());
         assert!(out.contains("could be written as %UserProfile%\\.cargo\\bin"));
     }
 
     #[test]
     fn where_human_minimal_has_command_resolved_sources_hint_in_order() {
-        let out = where_human(&found_minimal());
+        let out = where_human(&found_minimal(), Style::default());
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "rustc");
         assert!(lines[1].starts_with("  resolved: "));
@@ -518,7 +562,7 @@ mod tests {
         f.uninstall = UninstallHint::Command {
             command: "mise uninstall cargo:foo".into(),
         };
-        let out = where_human(&f);
+        let out = where_human(&f, Style::default());
         assert!(out.contains("provenance: cargo (via mise plugin `cargo-foo`)"));
     }
 
@@ -528,7 +572,7 @@ mod tests {
         f.uninstall = UninstallHint::NoTemplate {
             source: "aqua".into(),
         };
-        let out = where_human(&f);
+        let out = where_human(&f, Style::default());
         assert!(
             out.contains("(no uninstall template for source `aqua`)"),
             "out: {out}"
@@ -540,7 +584,7 @@ mod tests {
         let mut f = found_minimal();
         f.matched_sources = Vec::new();
         f.uninstall = UninstallHint::NoSource;
-        let out = where_human(&f);
+        let out = where_human(&f, Style::default());
         assert!(out.contains("sources:  (no source matched)"), "out: {out}");
         assert!(
             out.contains("(no source matched — pathlint cannot guess)"),
@@ -550,7 +594,7 @@ mod tests {
 
     #[test]
     fn where_not_found_is_single_line_with_em_dash() {
-        let out = where_not_found("ghost");
+        let out = where_not_found("ghost", Style::default());
         assert_eq!(out, "ghost — not found on PATH");
         assert!(!out.ends_with('\n'));
     }
@@ -559,7 +603,7 @@ mod tests {
     fn where_not_found_strips_control_chars_from_command() {
         // 0.0.13: a hostile command argument such as `rg\x1b[31m`
         // must not leak the raw escape into stdout.
-        let out = where_not_found("rg\x1b[31m");
+        let out = where_not_found("rg\x1b[31m", Style::default());
         assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
         assert!(out.contains("rg?[31m"), "expected stripped form: {out:?}");
     }
@@ -573,7 +617,7 @@ mod tests {
         f.uninstall = UninstallHint::NoTemplate {
             source: "aqua\x1b[31m".into(),
         };
-        let out = where_human(&f);
+        let out = where_human(&f, Style::default());
         assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
         assert!(out.contains("aqua?[31m"), "expected stripped form: {out:?}");
     }
@@ -675,14 +719,14 @@ mod tests {
 
     #[test]
     fn sort_human_noop_says_already_sorted() {
-        let out = sort_human(&sort_plan_noop());
+        let out = sort_human(&sort_plan_noop(), Style::default());
         assert!(out.contains("already in a satisfying order"), "out: {out}");
         assert!(!out.ends_with('\n'), "no trailing newline");
     }
 
     #[test]
     fn sort_human_swap_renders_both_columns_and_moved_section() {
-        let out = sort_human(&sort_plan_swap());
+        let out = sort_human(&sort_plan_swap(), Style::default());
         assert!(out.contains("before"), "out: {out}");
         assert!(out.contains("after"), "out: {out}");
         assert!(out.contains("--dry-run"), "must mention dry-run: {out}");
@@ -697,7 +741,7 @@ mod tests {
             command: "rg".into(),
             prefer: vec!["cargo".into()],
         });
-        let out = sort_human(&plan);
+        let out = sort_human(&plan, Style::default());
         assert!(out.contains("`rg` cannot be satisfied"));
         assert!(out.contains("`prefer = [cargo]`"));
     }
@@ -826,7 +870,7 @@ mod tests {
                 groups: vec![vec![0], vec![1]],
             },
         };
-        let out = doctor_line(&d, &entries);
+        let out = doctor_line(&d, &entries, Style::default());
         assert!(!out.contains('\x1b'), "ANSI escape leaked through: {out:?}");
         assert!(
             !out.contains('\r'),
@@ -995,7 +1039,7 @@ mod tests {
                 groups: vec![vec![0], vec![1, 2]],
             },
         };
-        let out = doctor_line(&d, &entries);
+        let out = doctor_line(&d, &entries, Style::default());
         assert!(out.starts_with(
             "[warn] mise activate exposes both shim and install layers (PATH order matters)"
         ));
@@ -1016,7 +1060,7 @@ mod tests {
             severity: Severity::Warn,
             kind: Kind::Missing,
         };
-        let out = doctor_line(&d, &[]);
+        let out = doctor_line(&d, &[], Style::default());
         assert!(!out.contains('\x1b'), "raw escape: {out:?}");
         assert!(out.contains("/foo?[31m/bar"));
     }
@@ -1027,7 +1071,7 @@ mod tests {
             sources: vec!["a".into(), "b".into()],
             diagnostic: "evil\x1b[31m".into(),
         }];
-        let out = relations_human(&rels);
+        let out = relations_human(&rels, Style::default());
         assert!(!out.contains('\x1b'));
         assert!(out.contains("evil?[31m"));
     }
@@ -1046,7 +1090,7 @@ mod tests {
                 groups: vec![vec![0], vec![1]],
             },
         };
-        let out = doctor_line(&d, &entries);
+        let out = doctor_line(&d, &entries, Style::default());
         assert!(
             out.starts_with("[warn] foo_overlap: multiple conflicting"),
             "out: {out}"
@@ -1089,14 +1133,14 @@ mod tests {
 
     #[test]
     fn relations_human_empty_says_no_relations() {
-        let out = relations_human(&[]);
+        let out = relations_human(&[], Style::default());
         assert_eq!(out, "no relations declared");
     }
 
     #[test]
     fn relations_human_renders_alias_of_with_arrow_and_children() {
         let rels = vec![alias_of("mise", &["mise_shims", "mise_installs"])];
-        let out = relations_human(&rels);
+        let out = relations_human(&rels, Style::default());
         assert!(out.starts_with("alias_of:"), "out: {out}");
         assert!(out.contains("`mise`"), "out: {out}");
         assert!(out.contains("mise_shims, mise_installs"), "out: {out}");
@@ -1108,7 +1152,7 @@ mod tests {
             &["mise_shims", "mise_installs"],
             "mise_activate_both",
         )];
-        let out = relations_human(&rels);
+        let out = relations_human(&rels, Style::default());
         assert!(out.starts_with("conflicts_when_both_in_path:"));
         assert!(out.contains("mise_shims, mise_installs"));
         assert!(out.contains("`mise_activate_both`"));
@@ -1117,7 +1161,7 @@ mod tests {
     #[test]
     fn relations_human_renders_served_by_via_with_pattern_and_provider() {
         let rels = vec![served("mise_installs", "cargo-*", "cargo")];
-        let out = relations_human(&rels);
+        let out = relations_human(&rels, Style::default());
         assert!(out.starts_with("served_by_via:"));
         assert!(out.contains("`mise_installs`"));
         assert!(out.contains("`cargo-*`"));
@@ -1127,7 +1171,7 @@ mod tests {
     #[test]
     fn relations_human_renders_depends_on_with_source_and_target() {
         let rels = vec![depends("paru", "pacman")];
-        let out = relations_human(&rels);
+        let out = relations_human(&rels, Style::default());
         assert!(out.starts_with("depends_on:"));
         assert!(out.contains("`paru`"));
         assert!(out.contains("`pacman`"));
@@ -1138,7 +1182,7 @@ mod tests {
         // Each relation occupies one line; the joiner is a single
         // newline. No trailing newline (caller adds it).
         let rels = vec![alias_of("mise", &["mise_shims"]), depends("paru", "pacman")];
-        let out = relations_human(&rels);
+        let out = relations_human(&rels, Style::default());
         assert_eq!(out.lines().count(), 2, "out:\n{out}");
         assert!(!out.ends_with('\n'));
     }
@@ -1225,7 +1269,7 @@ mod tests {
             },
             provenance: None,
         };
-        let out = where_human(&f);
+        let out = where_human(&f, Style::default());
         assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
         assert!(out.contains("rg?[31m"));
     }

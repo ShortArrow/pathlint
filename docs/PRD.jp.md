@@ -955,6 +955,29 @@ post-1.0 議題。
 累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどうか、上がるなら
 いつかは未定。
 
+### 0.0.18
+
+破壊的変更なし。累積的な追加:
+
+- **`pathlint doctor` に `per_source_missing_required` 検出器を追加。**
+  user の `pathlint.toml` で declared された `[source.<name>]` の
+  per-OS path が host 上に存在しないとき発火。built-in catalog
+  source は意図的に skip (ほとんどの host は catalog の 80% を
+  欠いている設計のため)。
+- **`--no-glyphs` が `doctor` / `trace` / `sort` の出力にも効く
+  ように。** pre-0.0.18 は `report.rs` (check の OK/NG tag) だけに
+  routed されていた。em-dash と rightwards-arrow が全ての human
+  renderer で `-` / `->` に fallback する。
+- **`pathlint::catalog::RelationIndex` typed accessor view。**
+  内部 only の refactor、`[[relation]] kind=...` の TOML shape は
+  不変。consumer (sort / doctor / trace / cycle check) が
+  `iter_aliases()` / `iter_conflicts()` / `iter_provenances()` /
+  `iter_depends_on()` / `iter_prefer_orders()` 経由で読むように
+  なり、open match `Relation { ... }` が消えた。
+- **`scripts/bench.sh` startup-time baseline。** hyperfine wrapper、
+  release notes に table を貼って PRD §12 の `<50 ms` claim を
+  host 上で verify する。
+
 ### 0.0.17
 
 - **`Status` enum を unit-only 化、`Outcome` に `reason` 追加。**
