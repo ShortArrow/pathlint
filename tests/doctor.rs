@@ -83,25 +83,12 @@ fn doctor_reports_duplicate_but_shadowed_across_path_dirs() {
     let dir_a = strip_unc_prefix(&dir_a);
     let dir_b = strip_unc_prefix(&dir_b);
     let path = join_path(&[&dir_a, &dir_b]);
-
-    // Sanity: confirm the tempdirs really do contain executables
-    // before we ask pathlint to look. Useful diagnostics if the
-    // filesystem-level read_dir / chmod side of the test breaks.
-    let listed_a: Vec<_> = fs::read_dir(&dir_a)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name())
-        .collect();
-    let listed_b: Vec<_> = fs::read_dir(&dir_b)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name())
-        .collect();
-
     let (code, stdout, stderr) = run_doctor(&path);
-    let context = format!(
-        "code={code}\npath={path}\ndir_a={dir_a:?} listing={listed_a:?}\ndir_b={dir_b:?} listing={listed_b:?}\nstdout={stdout:?}\nstderr={stderr:?}"
-    );
+    // Quote the binary's stdout/stderr in panic messages so an OS
+    // that silently fails to detect the shadow (e.g. case-sensitive
+    // filesystem mismatch in 0.0.19 pre-fix) is diagnosable from the
+    // CI log without a re-push for instrumentation.
+    let context = format!("code={code} stdout={stdout:?} stderr={stderr:?}");
     assert_eq!(code, 0, "warn-only must not fail the run; {context}");
     assert!(stdout.contains("dummy_cmd"), "{context}");
     assert!(stdout.contains("shadows"), "{context}");
