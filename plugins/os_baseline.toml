@@ -10,12 +10,15 @@
 # must be updated.
 
 [source.os_baseline_windows]
+description = "Windows system binaries (System32)"
 windows = "$SystemRoot/System32"
 
 [source.os_baseline_macos]
+description = "macOS baseline /usr/bin binaries"
 macos = "/usr/bin"
 
 [source.os_baseline_linux]
+description = "Linux distro baseline /usr/bin binaries"
 linux = "/usr/bin"
 
 # /usr/sbin is a separate source on Linux because Arch / openSUSE
@@ -30,4 +33,5 @@ linux = "/usr/bin"
 #   command = "ls"
 #   prefer = ["pacman", "os_baseline_linux_sbin"]
 [source.os_baseline_linux_sbin]
+description = "Linux baseline /usr/sbin (split on traditional distros, symlinked on Arch/openSUSE)"
 linux = "/usr/sbin"

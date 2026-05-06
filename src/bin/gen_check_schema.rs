@@ -15,7 +15,12 @@
 //!     cargo run --bin gen_check_schema > schemas/check.schema.json
 
 fn main() {
-    let schema = schemars::schema_for!(pathlint::lint::CheckOutcomeView);
+    let mut schema = schemars::schema_for!(pathlint::lint::CheckOutcomeView);
+    let metadata = schema.schema.metadata.get_or_insert_with(Default::default);
+    metadata.id = Some(
+        "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/check.schema.json"
+            .to_string(),
+    );
     let json =
         serde_json::to_string_pretty(&schema).expect("schemars output must serialize to JSON");
     println!("{json}");

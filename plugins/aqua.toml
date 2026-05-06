@@ -1,4 +1,5 @@
 [source.aqua]
+description = "aqua-managed tool binaries (aquaproj/aqua)"
 windows = "$LocalAppData/aquaproj-aqua"
 unix    = "$HOME/.local/share/aquaproj-aqua"
 # aqua manages tools via aqua.yaml, no per-binary uninstall.

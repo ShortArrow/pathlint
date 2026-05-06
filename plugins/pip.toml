@@ -1,4 +1,5 @@
 [source.pip_user]
+description = "user-installed Python package scripts (`pip install --user`)"
 windows = "$AppData/Python"
 unix    = "$HOME/.local/bin"
 uninstall_command = "pip uninstall {bin}"

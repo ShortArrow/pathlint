@@ -1,3 +1,4 @@
 [source.choco]
+description = "Chocolatey package binaries on Windows"
 windows = "$ProgramData/chocolatey"
 uninstall_command = "choco uninstall {bin}"

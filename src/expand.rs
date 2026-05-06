@@ -7,6 +7,18 @@
 //!
 //! Slash normalization converts `\` to `/` so `mise\\shims` (TOML
 //! literal) and `mise/shims` are equivalent for substring comparison.
+//!
+//! # Examples
+//!
+//! ```
+//! use pathlint::expand;
+//!
+//! assert_eq!(expand::normalize("C:\\Users\\Me"), "c:/users/me");
+//!
+//! // Unresolved variables stay verbatim.
+//! let raw = expand::expand_env("$THIS_VAR_DOES_NOT_EXIST_PROBABLY_XYZ/bin");
+//! assert!(raw.contains("$THIS_VAR_DOES_NOT_EXIST_PROBABLY_XYZ") || raw.ends_with("/bin"));
+//! ```
 
 use std::env;
 

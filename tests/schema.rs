@@ -15,7 +15,15 @@ use std::fs;
 
 #[test]
 fn checked_in_schema_matches_generator() {
-    let actual_schema = schemars::schema_for!(pathlint::config::Config);
+    let mut actual_schema = schemars::schema_for!(pathlint::config::Config);
+    let metadata = actual_schema
+        .schema
+        .metadata
+        .get_or_insert_with(Default::default);
+    metadata.id = Some(
+        "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json"
+            .to_string(),
+    );
     let actual =
         serde_json::to_string_pretty(&actual_schema).expect("schemars must serialize to JSON");
     let on_disk = fs::read_to_string("schemas/pathlint.schema.json")

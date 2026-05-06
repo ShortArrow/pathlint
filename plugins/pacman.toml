@@ -1,3 +1,4 @@
 [source.pacman]
+description = "Arch Linux `pacman` package binaries"
 linux = "/usr/bin"
 uninstall_command = "sudo pacman -Rns {bin}"

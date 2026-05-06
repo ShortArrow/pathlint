@@ -1,3 +1,4 @@
 [source.apt]
+description = "Debian/Ubuntu `apt` package binaries"
 linux = "/usr/bin"
 uninstall_command = "sudo apt remove {bin}"

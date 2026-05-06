@@ -13,25 +13,158 @@
 
 ---
 
-## Why
+## What it is
 
 Most "PATH problems" come from one place: **the wrong copy of an
-executable resolves first.** Examples:
-
-- I `cargo install runex` on this machine, but the binary that runs
-  is the older one from `winget` — same name, different file.
-- `python` should come from `mise`, not from the Microsoft Store
-  `windows_apps` stub.
-- `node` should come from `volta`, not from the system `apt` install.
-- macOS `gcc` should come from Homebrew, not from `/usr/bin/gcc`.
-
-`which python` will tell you what wins, but won't tell you whether
-that's what *should* win in a form you can commit to a dotfiles repo
-and check on every machine.
+executable resolves first.** `which python` tells you what wins,
+but not whether that's what *should* win in a form you can commit
+to a dotfiles repo and check on every machine.
 
 `pathlint` makes that intent explicit: write down "**`runex` should
-come from `cargo`, not from `winget`**" once, and the tool checks it
-on every machine you own.
+come from `cargo`, not from `winget`**" once in a `pathlint.toml`,
+and the tool checks it on every machine you own.
+
+## Install
+
+```sh
+# From crates.io
+cargo install pathlint
+
+# From source (latest main)
+cargo install --git https://github.com/ShortArrow/pathlint
+
+# Pre-built binaries
+# https://github.com/ShortArrow/pathlint/releases
+# Linux x86_64 / Windows x86_64 / macOS x86_64 / macOS aarch64
+```
+
+## 60-second try
+
+```sh
+# Drop a starter pathlint.toml in the current directory
+pathlint init
+
+# Edit pathlint.toml: add one [[expect]] for a tool you actually
+# care about. e.g. "rg should come from cargo, not from winget":
+#
+#   [[expect]]
+#   command = "rg"
+#   prefer  = ["cargo"]
+#   avoid   = ["winget"]
+
+# Run the check
+pathlint                          # = pathlint check
+
+# If something fails, ask why
+pathlint check --explain
+```
+
+That's the loop. `[[expect]]` is the user-facing concept;
+everything else is convenience around it.
+
+## `pathlint.toml` (minimal example)
+
+```toml
+[[expect]]
+command = "runex"
+prefer  = ["cargo"]
+avoid   = ["winget"]
+
+[[expect]]
+command = "python"
+prefer  = ["mise"]
+avoid   = ["windows_apps", "choco"]
+
+[[expect]]
+command = "node"
+prefer  = ["mise", "volta"]
+
+[[expect]]
+command = "gcc"
+prefer  = ["mingw", "msys"]
+avoid   = ["strawberry"]
+os      = ["windows"]
+```
+
+No `[source.*]` section is needed for any of the names above —
+they're all in the built-in catalog (`cargo`, `mise`, `volta`,
+`aqua`, `winget`, `choco`, `scoop`, `brew_arm`, `brew_intel`,
+`apt`, `pacman`, `dnf`, `pkg`, `flatpak`, `snap`, `windows_apps`,
+and more). The whole file is the user's intent.
+
+To override a built-in (mise installed in a non-standard location):
+
+```toml
+[source.mise]
+windows = "D:/tools/mise"
+```
+
+To add a new source:
+
+```toml
+[source.my_dotfiles_bin]
+unix = "$HOME/dotfiles/bin"
+```
+
+`os = [...]` accepts `windows | macos | linux | termux | unix`.
+Match is substring + case-insensitive, after env-var expansion (both
+`%VAR%` and `$VAR` work everywhere) and slash normalization.
+
+Add `severity = "warn"` to a rule to keep its NG visible without
+blocking CI (exit stays 0; the line is tagged `[warn]` instead of
+`[NG]`):
+
+```toml
+[[expect]]
+command  = "rg"
+prefer   = ["cargo"]
+severity = "warn"   # 0.0.7+ — nudge, not a hard fail
+```
+
+Add `kind = "executable"` to also verify the resolved path is an
+actual executable file — catches the case where a directory of the
+same name shadows the binary, or where the file the symlink points
+at has gone missing:
+
+```toml
+[[expect]]
+command = "rustc"
+prefer  = ["cargo"]
+kind    = "executable"
+```
+
+## Where next
+
+- `pathlint check --explain` — multi-line diagnosis when an
+  expectation fails (resolved / matched / prefer / avoid /
+  diagnosis / hint).
+- `pathlint check --json` — machine-readable output for CI
+  pipelines.
+- `pathlint doctor` — lint PATH itself (duplicates, missing dirs,
+  8.3 short names, env-var-shortenable entries, malformed entries).
+  Independent of `[[expect]]`.
+- `pathlint trace <command>` — show where a command resolves from,
+  which sources match it, and the most plausible uninstall command.
+  Plugin-aware for mise (see [Working with mise](#working-with-mise)).
+- `pathlint sort --dry-run` — propose a PATH order that satisfies
+  every applicable `[[expect]]` rule. Read-only by design; PRD §4
+  forbids PATH mutation.
+- `pathlint catalog list` — every known source with its per-OS
+  path. `--names-only` for a compact listing; `--all` to see every
+  per-OS field even when only one is active on the current host.
+- `pathlint catalog relations` — declared relations between
+  sources (alias / conflict / served-by-via / depends-on /
+  prefer-order-over).
+- `pathlint --target user` / `--target machine` — Windows-only;
+  read PATH from the per-user or per-machine registry instead of
+  the inherited process env. The other subcommands accept the same
+  flag.
+- `pathlint check --json | jq '.[] | select(.kind != "ok")'` and
+  similar machine pipelines — every JSON-emitting subcommand has a
+  stable `kind` discriminator (since 0.0.15).
+
+Full design and rationale: [docs/PRD.md](docs/PRD.md) (English),
+[docs/PRD.jp.md](docs/PRD.jp.md) (日本語).
 
 ## How it works
 
@@ -41,32 +174,12 @@ Two TOML concepts:
    resolved from source S." This is what users actually write.
 2. **`[source.<name>]`** — how to recognize an installer on disk
    ("`cargo` lives at `~/.cargo/bin`"). pathlint ships built-in
-   defaults for `cargo`, `mise`, `volta`, `aqua`, `winget`, `choco`,
-   `scoop`, `brew_arm`, `brew_intel`, `apt`, `pacman`, `dnf`, `pkg`,
-   `flatpak`, `snap`, `windows_apps`, and more — users only override
-   when their layout is non-standard.
+   defaults for every popular installer; users only override when
+   their layout is non-standard.
 
 For each `[[expect]]`, pathlint resolves the command against the real
 PATH, looks at where the winning binary lives, and matches that
 location to the source labels.
-
-## Status
-
-The 0.0.x line ships six subcommands: `check` (default), `doctor`,
-`trace`, `sort`, `init`, and `catalog` (with `list` and
-`relations`). `pathlint where` is kept as a visible alias of
-`pathlint trace`, and `--rules` is kept as a visible alias of
-`--config`. Both aliases are slated for removal in a future
-release; the exact timing is undecided and will be announced
-ahead of the breaking version. The TOML schema and CLI surface
-are still moving, but the resolve / match / report pipeline is
-in place and covered by tests. See [docs/PRD.md](docs/PRD.md)
-for the full design.
-
-`pathlint --version` typically runs in well under 50 ms on a
-modern host. Verify on your hardware with `scripts/bench.sh`,
-which wraps `hyperfine` around `--version`, `--help`, and
-`catalog list --names-only`.
 
 ## What pathlint *won't* tell you
 
@@ -99,120 +212,6 @@ should know about:
 
 The full set of known limitations and future trade-offs lives in
 [docs/PRD.md §14, §16](docs/PRD.md).
-
-## Usage
-
-```sh
-# Check the current process PATH against ./pathlint.toml
-pathlint                          # = pathlint check
-
-# Check the User-only or Machine-only PATH (Windows registry)
-pathlint --target user
-pathlint --target machine
-
-# Verbose: also show n/a expectations and the resolved PATH
-pathlint --verbose
-
-# Explain why each NG fired (resolved / matched / prefer / avoid /
-# diagnosis / hint), 0.0.7+
-pathlint check --explain
-
-# Same data, machine-readable (CI), 0.0.7+
-pathlint check --json
-
-# Drop a starter pathlint.toml in the current directory
-pathlint init
-pathlint init --emit-defaults     # also embeds the full source catalog
-
-# Inspect every known source (built-in + user-defined)
-pathlint catalog list             # paths for the running OS
-pathlint catalog list --all       # every per-OS field
-pathlint catalog list --names-only
-pathlint catalog relations        # 0.0.9+: declared source relations
-pathlint catalog relations --json # 0.0.9+: same, machine-readable
-
-# Find a command's provenance and uninstall hint
-pathlint trace lazygit            # who installed this binary?
-pathlint trace lazygit --json     # 0.0.6+: machine-readable output
-
-# Filter doctor diagnostics for CI
-pathlint doctor --exclude shortenable,missing
-pathlint doctor --include duplicate,malformed
-pathlint doctor --json            # 0.0.7+: machine-readable output
-
-# Propose a PATH order satisfying every [[expect]] rule (read-only)
-pathlint sort                     # 0.0.8+: before/after diff
-pathlint sort --json              # 0.0.8+: SortPlan JSON
-```
-
-## `pathlint.toml` (minimal example)
-
-```toml
-[[expect]]
-command = "runex"
-prefer  = ["cargo"]
-avoid   = ["winget"]
-
-[[expect]]
-command = "python"
-prefer  = ["mise"]
-avoid   = ["windows_apps", "choco"]
-
-[[expect]]
-command = "node"
-prefer  = ["mise", "volta"]
-
-[[expect]]
-command = "gcc"
-prefer  = ["mingw", "msys"]
-avoid   = ["strawberry"]
-os      = ["windows"]
-```
-
-Add `severity = "warn"` to a rule to keep its NG visible without
-blocking CI (exit stays 0; the line is tagged `[warn]` instead of
-`[NG]`):
-
-```toml
-[[expect]]
-command  = "rg"
-prefer   = ["cargo"]
-severity = "warn"   # 0.0.7+ — nudge, not a hard fail
-```
-
-Add `kind = "executable"` to also verify the resolved path is an
-actual executable file — catches the case where a directory of the
-same name shadows the binary, or where the file the symlink points
-at has gone missing:
-
-```toml
-[[expect]]
-command = "rustc"
-prefer  = ["cargo"]
-kind    = "executable"
-```
-
-No `[source.*]` section is needed for any of the names above —
-they're all in the built-in catalog. The whole file is the user's
-intent.
-
-To override a built-in (mise installed in a non-standard location):
-
-```toml
-[source.mise]
-windows = "D:/tools/mise"
-```
-
-To add a new source:
-
-```toml
-[source.my_dotfiles_bin]
-unix = "$HOME/dotfiles/bin"
-```
-
-`os = [...]` accepts `windows | macos | linux | termux | unix`.
-Match is substring + case-insensitive, after env-var expansion (both
-`%VAR%` and `$VAR` work everywhere) and slash normalization.
 
 ## Working with mise
 
@@ -260,7 +259,7 @@ lazygit
 
 The provenance is a path heuristic — it never causes
 `prefer = ["cargo"]` to match a mise-served binary. Source
-labels stay catalog-driven; provenance is purely a `where`
+labels stay catalog-driven; provenance is purely a `trace`
 display.
 
 If you set `MISE_DATA_DIR` or `XDG_DATA_HOME` to a non-standard
@@ -277,7 +276,24 @@ unix = "/data/tools/mise/shims"
 unix = "/data/tools/mise/installs"
 ```
 
-## Editor support (JSON Schema)
+## Operational details
+
+The 0.0.x line ships six subcommands: `check` (default), `doctor`,
+`trace`, `sort`, `init`, and `catalog` (with `list` and
+`relations`). `pathlint where` is kept as a visible alias of
+`pathlint trace`, and `--rules` is kept as a visible alias of
+`--config`. Both aliases are slated for removal in a future
+release; the exact timing is undecided and will be announced
+ahead of the breaking version. The TOML schema and CLI surface
+are still moving, but the resolve / match / report pipeline is
+in place and covered by tests.
+
+`pathlint --version` typically runs in well under 50 ms on a
+modern host. Verify on your hardware with `scripts/bench.sh`,
+which wraps `hyperfine` around `--version`, `--help`, and
+`catalog list --names-only`.
+
+### Editor support (JSON Schema)
 
 `pathlint.toml` ships with a JSON Schema generated from the live
 Rust types. Add this single line at the top of your config to get
@@ -303,7 +319,7 @@ also ships `check.schema.json`, which describes the JSON shape of
 [Taplo]: https://taplo.tamasfe.dev/
 [ebt]: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml
 
-## Pinning the catalog version
+### Pinning the catalog version
 
 The built-in source catalog evolves: a new pathlint version may
 change a source's per-OS path (because `winget` reshuffled its
@@ -324,26 +340,14 @@ catalog is always fine. Bumping `catalog_version` is reserved for
 real path or semantics changes; adding a new source does not bump
 it, so old rules don't break.
 
-## Installation
-
-```sh
-# From crates.io
-cargo install pathlint
-
-# From source (latest main)
-cargo install --git https://github.com/ShortArrow/pathlint
-
-# Pre-built binaries
-# https://github.com/ShortArrow/pathlint/releases
-# Linux x86_64 / Windows x86_64 / macOS x86_64 / macOS aarch64
-```
-
 ## Documentation
 
 - [日本語 README](docs/README.jp.md)
 - [PRD (English)](docs/PRD.md) — the full design, including the
   built-in source catalog
 - [PRD (日本語)](docs/PRD.jp.md)
+- [Architecture](docs/ARCHITECTURE.md) — 5-minute repo map for
+  new contributors
 - [Release process](docs/RELEASE.md) — how to cut a new version
 - [リリース手順 (日本語)](docs/RELEASE.jp.md)
 - [Releases](https://github.com/ShortArrow/pathlint/releases) — version history with auto-generated notes

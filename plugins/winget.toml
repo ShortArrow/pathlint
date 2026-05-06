@@ -1,3 +1,4 @@
 [source.winget]
+description = "winget-installed Windows package binaries"
 windows = "$LocalAppData/Microsoft/WinGet"
 uninstall_command = "winget uninstall {bin}"

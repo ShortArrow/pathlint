@@ -1,3 +1,4 @@
 [source.snap]
+description = "Snap package binaries on Linux"
 linux = "/snap/bin"
 uninstall_command = "sudo snap remove {bin}"

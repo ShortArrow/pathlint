@@ -1,3 +1,4 @@
 [source.dnf]
+description = "Fedora/RHEL `dnf` package binaries"
 linux = "/usr/bin"
 uninstall_command = "sudo dnf remove {bin}"

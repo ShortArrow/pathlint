@@ -1,3 +1,4 @@
 [source.flatpak]
+description = "Flatpak system-wide app binaries"
 linux = "/var/lib/flatpak/exports/bin"
 uninstall_command = "flatpak uninstall {bin}"

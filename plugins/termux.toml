@@ -7,4 +7,5 @@ termux = "$PREFIX/bin"
 uninstall_command = "pkg uninstall {bin}"
 
 [source.termux_user_bin]
+description = "Termux user `~/bin` directory"
 termux = "$PREFIX/../home/bin"

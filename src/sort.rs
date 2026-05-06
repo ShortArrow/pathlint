@@ -28,6 +28,22 @@
 //! Stability matters: pathlint must not rearrange entries it has no
 //! opinion on, so sysadmins reading the diff see only the changes
 //! they need to think about.
+//!
+//! # Examples
+//!
+//! ```
+//! use pathlint::config::Config;
+//! use pathlint::os_detect::Os;
+//! use pathlint::sort;
+//!
+//! let cfg = Config::default();
+//! let sources = pathlint::catalog::merge_with_user(&cfg.source);
+//! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
+//! let entries = vec!["/usr/local/bin".to_string(), "/usr/bin".to_string()];
+//! let plan = sort::sort_path(&entries, &cfg.expectations, &sources, &relations, Os::Linux);
+//! // No expectations → no moves proposed.
+//! assert!(plan.moves.is_empty());
+//! ```
 
 use std::collections::BTreeMap;
 

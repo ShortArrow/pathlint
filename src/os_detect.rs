@@ -1,5 +1,18 @@
 //! Runtime OS classification used by `[[expect]] os = [...]` filters and
 //! `[source.<name>]` per-OS keys.
+//!
+//! # Examples
+//!
+//! ```
+//! use pathlint::os_detect::{Os, os_filter_applies};
+//!
+//! assert!(Os::Linux.matches_tag("linux"));
+//! assert!(Os::Linux.matches_tag("unix"));
+//! assert!(!Os::Linux.matches_tag("windows"));
+//!
+//! // No `os` filter → applies to every OS.
+//! assert!(os_filter_applies(&None, Os::Linux));
+//! ```
 
 use std::env;
 
