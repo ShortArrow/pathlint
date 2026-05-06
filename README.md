@@ -346,6 +346,8 @@ it, so old rules don't break.
 - [PRD (English)](docs/PRD.md) — the full design, including the
   built-in source catalog
 - [PRD (日本語)](docs/PRD.jp.md)
+- [Architecture](docs/ARCHITECTURE.md) — 5-minute repo map for
+  new contributors
 - [Release process](docs/RELEASE.md) — how to cut a new version
 - [リリース手順 (日本語)](docs/RELEASE.jp.md)
 - [Releases](https://github.com/ShortArrow/pathlint/releases) — version history with auto-generated notes
