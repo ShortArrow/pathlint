@@ -26,14 +26,10 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-/// Top-level `pathlint.toml` document.
-///
-/// `catalog_version` is intentionally absent from this struct. It
-/// belongs to the embedded catalog file (see
-/// `pathlint::catalog::EmbeddedCatalogFile`); declaring it in a
-/// user `pathlint.toml` is a structural error caught by serde's
-/// `deny_unknown_fields`. Use `require_catalog = N` instead to
-/// pin a minimum embedded catalog version.
+/// Top-level `pathlint.toml` document. Use `require_catalog = N` to
+/// pin a minimum embedded-catalog version. (`catalog_version` itself
+/// belongs to the embedded catalog file and is rejected here by
+/// `deny_unknown_fields`. See PRD §9 / §17.)
 #[derive(Debug, Default, Deserialize, Clone, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "pathlint.toml")]
