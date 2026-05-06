@@ -1025,16 +1025,25 @@ Tagged with the role(s) each touches.
   0.0.14 — built-in `os_baseline_linux_sbin` source. Add it to
   `prefer` instead of writing your own `[source.usr_sbin]`.)*
 
-## 17. 0.0.x BREAKING CHANGES (cumulative)
+## 17. 0.0.x change log (cumulative)
 
 The 0.0.x line allows breaks (Cargo treats `0.0.x → 0.0.(x+1)` as
-MAJOR-equivalent). Each break is announced in the release notes;
+MAJOR-equivalent). Each release entry is announced in release notes;
 this section keeps the cumulative list with sample migrations.
 Whether and when 0.0.x graduates to 0.1.0 is undecided.
 
-### 0.0.18
+The change log is split into two:
 
-No breaking changes. Cumulative additions:
+- **§17.1 — Cumulative breaking changes.** Releases that broke an
+  existing TOML shape, JSON wire form, lib API, or CLI flag.
+  Migration steps live here.
+- **§17.2 — Cumulative additions (no breaking).** Releases that
+  added behaviour without breaking existing inputs. Read on for
+  what's new; nothing here requires a migration.
+
+### 17.2 Cumulative additions (no breaking)
+
+#### 0.0.18
 
 - **`pathlint doctor` learned the `per_source_missing_required`
   detector.** Fires when a `[source.<name>]` entry from the user's
@@ -1055,7 +1064,9 @@ No breaking changes. Cumulative additions:
   paste the table into release notes to verify the PRD §12
   `<50 ms` claim on the host.
 
-### 0.0.17
+### 17.1 Cumulative breaking changes
+
+#### 0.0.17
 
 - **`Status` enum is unit-only; `Outcome` gains `reason`.**
   `Status::NgNotExecutable(String)` and `Status::ConfigError(String)`
@@ -1099,7 +1110,7 @@ No breaking changes. Cumulative additions:
   may now contain ANSI escapes when the captured stream is
   also pathlint's stdout and `--color always` is set.
 
-### 0.0.16
+#### 0.0.16
 
 - **Lib resolver signature simplified.** `pathlint::lint::evaluate`
   and `pathlint::trace::locate` now take a resolver closure
@@ -1113,7 +1124,7 @@ No breaking changes. Cumulative additions:
   embedders accessing pathlint via `git` dependencies might
   notice.
 
-### 0.0.15
+#### 0.0.15
 
 - **`pathlint check --json` discriminator renamed.** Each outcome
   array element now uses `kind` (matches doctor / trace / sort /
@@ -1132,7 +1143,7 @@ No breaking changes. Cumulative additions:
   structural parse error (deny_unknown_fields) instead of the
   post-parse error 0.0.14 introduced.
 
-### 0.0.14
+#### 0.0.14
 
 - **`pathlint where` → `pathlint trace`.** `where` remains as a
   clap visible alias for the rest of 0.0.x.

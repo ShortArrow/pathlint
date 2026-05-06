@@ -948,16 +948,23 @@ post-1.0 議題。
   *(0.0.14 で解決 — built-in `os_baseline_linux_sbin` source を追加。
   自前で `[source.usr_sbin]` を書く代わりに `prefer` に入れる。)*
 
-## 17. 0.0.x BREAKING CHANGES（累積）
+## 17. 0.0.x 変更履歴（累積）
 
 0.0.x 線は破壊を許容する（Cargo は `0.0.x → 0.0.(x+1)` を MAJOR 相当
-として扱う）。各破壊は対応リリースの notes で告知する。本 section は
-累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどうか、上がるなら
-いつかは未定。
+として扱う）。各リリースは対応する release notes で告知する。本
+section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどうか、
+上がるならいつかは未定。
 
-### 0.0.18
+変更履歴は以下の 2 つに分かれる:
 
-破壊的変更なし。累積的な追加:
+- **§17.1 — 累積的な破壊的変更。** 既存の TOML shape / JSON wire 形 /
+  lib API / CLI flag を破ったリリース。移行手順はここ。
+- **§17.2 — 累積的な追加（破壊なし）。** 既存入力を破らずに振る舞いを
+  追加したリリース。何が増えたかの記録のみで、移行は不要。
+
+### 17.2 累積的な追加（破壊なし）
+
+#### 0.0.18
 
 - **`pathlint doctor` に `per_source_missing_required` 検出器を追加。**
   user の `pathlint.toml` で declared された `[source.<name>]` の
@@ -978,7 +985,9 @@ post-1.0 議題。
   release notes に table を貼って PRD §12 の `<50 ms` claim を
   host 上で verify する。
 
-### 0.0.17
+### 17.1 累積的な破壊的変更
+
+#### 0.0.17
 
 - **`Status` enum を unit-only 化、`Outcome` に `reason` 追加。**
   `Status::NgNotExecutable(String)` / `Status::ConfigError(String)`
@@ -1011,7 +1020,7 @@ post-1.0 議題。
   check` の stdout を pipe で取っている script は `--color
   never` を明示するか tty 判定の自動 disable に頼ること。
 
-### 0.0.16
+#### 0.0.16
 
 - **lib resolver シグネチャ簡素化。** `pathlint::lint::evaluate` と
   `pathlint::trace::locate` の resolver closure が
@@ -1024,7 +1033,7 @@ post-1.0 議題。
   影響範囲は内部のみだが、`git` 依存で取り込んでいた consumer は
   注意。
 
-### 0.0.15
+#### 0.0.15
 
 - **`pathlint check --json` の discriminator 名変更。** 各 outcome
   の top-level discriminator が `kind` (doctor / trace / sort /
@@ -1041,7 +1050,7 @@ post-1.0 議題。
   post-parse error、0.0.15 からは structural parse error
   (deny_unknown_fields)。
 
-### 0.0.14
+#### 0.0.14
 
 - **`pathlint where` → `pathlint trace`。** `where` は 0.0.x 線では
   clap visible alias として残る。
