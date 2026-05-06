@@ -1,3 +1,4 @@
 [source.macports]
+description = "MacPorts package binaries"
 macos = "/opt/local"
 uninstall_command = "sudo port uninstall {bin}"

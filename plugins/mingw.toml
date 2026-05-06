@@ -2,7 +2,9 @@
 # C:\mingw* and C:\msys* install layouts.
 
 [source.mingw]
+description = "MinGW GCC toolchain on Windows"
 windows = "mingw"
 
 [source.msys]
+description = "MSYS2 environment on Windows"
 windows = "msys"

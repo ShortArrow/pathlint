@@ -3,8 +3,10 @@
 # manually built binaries.
 
 [source.user_bin]
+description = "user `~/bin` directory for personal scripts"
 windows = "$UserProfile/bin"
 unix    = "$HOME/bin"
 
 [source.user_local_bin]
+description = "user `~/.local/bin` (XDG-style user-local binaries)"
 unix    = "$HOME/.local/bin"

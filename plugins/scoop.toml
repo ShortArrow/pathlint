@@ -1,3 +1,4 @@
 [source.scoop]
+description = "Scoop user-scope package binaries on Windows"
 windows = "$UserProfile/scoop"
 uninstall_command = "scoop uninstall {bin}"

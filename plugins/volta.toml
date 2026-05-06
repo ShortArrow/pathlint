@@ -1,4 +1,5 @@
 [source.volta]
+description = "Volta-managed Node.js / Yarn / npm tool shims"
 windows = "$LocalAppData/Volta"
 unix    = "$HOME/.volta/bin"
 uninstall_command = "volta uninstall {bin}"
