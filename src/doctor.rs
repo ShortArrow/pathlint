@@ -780,6 +780,20 @@ mod tests {
                 .map(|(_, v)| (*v).to_string())
         }
     }
+    fn fs_list_empty(_: &str) -> Vec<String> {
+        Vec::new()
+    }
+    fn fs_list_map<'a>(
+        pairs: &'a [(&'a str, &'a [&'a str])],
+    ) -> impl Fn(&str) -> Vec<String> + 'a {
+        move |path| {
+            pairs
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, files)| files.iter().map(|s| (*s).to_string()).collect())
+                .unwrap_or_default()
+        }
+    }
 
     fn empty_sources() -> BTreeMap<String, SourceDef> {
         BTreeMap::new()
@@ -1377,5 +1391,156 @@ mod tests {
         };
         let kept = f.apply(&diags);
         assert!(!has_error(&kept), "excluded malformed must not escalate");
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_basic_unix() {
+        let e = entries(&["/a", "/b"]);
+        let fs_list = fs_list_map(&[("/a", &["git"][..]), ("/b", &["git"][..])]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(dbs.len(), 1, "exactly one shadow diagnostic expected");
+        assert_eq!(dbs[0].index, 0, "winning entry is the earliest dir");
+        assert_eq!(dbs[0].severity, Severity::Warn);
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed {
+                command,
+                shadowed_indexes,
+            } => {
+                assert_eq!(command, "git");
+                assert_eq!(shadowed_indexes, &vec![1]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_three_dirs_lists_all_shadowed() {
+        let e = entries(&["/a", "/b", "/c"]);
+        let fs_list = fs_list_map(&[
+            ("/a", &["node"][..]),
+            ("/b", &["node"][..]),
+            ("/c", &["node"][..]),
+        ]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(dbs.len(), 1);
+        assert_eq!(dbs[0].index, 0);
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed {
+                shadowed_indexes, ..
+            } => {
+                assert_eq!(shadowed_indexes, &vec![1, 2]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_case_insensitive_on_windows() {
+        let e = entries(&["C:/a", "C:/b"]);
+        let fs_list = fs_list_map(&[
+            ("c:/a", &["Git.exe"][..]),
+            ("c:/b", &["git.exe"][..]),
+        ]);
+        let env = env_map(&[("PATHEXT", ".EXE;.BAT;.CMD")]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(dbs.len(), 1);
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed {
+                command,
+                shadowed_indexes,
+            } => {
+                assert_eq!(command, "git", "Git.exe and git.exe collapse to `git`");
+                assert_eq!(shadowed_indexes, &vec![1]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_pathext_strips_extension() {
+        let e = entries(&["C:/a", "C:/b"]);
+        let fs_list = fs_list_map(&[
+            ("c:/a", &["python.exe"][..]),
+            ("c:/b", &["python.bat"][..]),
+        ]);
+        let env = env_map(&[("PATHEXT", ".EXE;.BAT")]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(
+            dbs.len(),
+            1,
+            "python.exe and python.bat both strip to `python` and collide"
+        );
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed { command, .. } => assert_eq!(command, "python"),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_no_fire_when_only_one_dir_has_command() {
+        let e = entries(&["/a", "/b"]);
+        let fs_list = fs_list_map(&[("/a", &["rg"][..]), ("/b", &["fd"][..])]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert!(dbs.is_empty(), "no shadow when no command repeats");
     }
 }
