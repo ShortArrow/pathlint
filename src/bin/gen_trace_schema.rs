@@ -12,7 +12,12 @@
 //!     cargo run --bin gen_trace_schema > schemas/trace.schema.json
 
 fn main() {
-    let schema = schemars::schema_for!(pathlint::trace::TraceJsonOutput);
+    let mut schema = schemars::schema_for!(pathlint::trace::TraceJsonOutput);
+    let metadata = schema.schema.metadata.get_or_insert_with(Default::default);
+    metadata.id = Some(
+        "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/trace.schema.json"
+            .to_string(),
+    );
     let json =
         serde_json::to_string_pretty(&schema).expect("schemars output must serialize to JSON");
     println!("{json}");
