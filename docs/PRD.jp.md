@@ -885,6 +885,18 @@ post-1.0 議題。
   install 両 group を列挙する。
   expect ルール側でどちらを選ぶかはユーザーが決める、pathlint は
   自動判別しない。)*
+- **[R3] DuplicateButShadowed。** 同じ command basename が PATH の
+  異なる dir に実体として 2 つ以上存在し、後ろの dir が shadow
+  される状況。常に報告する — 重複は事実であって noise ではない。
+  host 個別に抑制したい場合は `--exclude duplicate_but_shadowed`。
+
+  既存の relation 駆動 `mise_activate_both` Conflict detector と
+  役割分担: あちらは *named* source (`mise_shims` と
+  `mise_installs`) が両方 PATH に出ているときに発火 (同 command が
+  両方にあるかは問わない)。 こちらは *同 command* が 2 dir 以上に
+  存在するときに発火 (dir が named source か否かは問わない)。
+  named-source-pair の角度と unnamed command-name の角度を
+  両方カバーする 2 段構え。 *(0.0.19+。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
   する PATH は `process` と違うことがある。MVP 外、0.0.x 線でも
   扱わず 0.1.x 候補として整理。実装方針は 3 案：
@@ -964,6 +976,28 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
 
 ### 17.2 累積的な追加（破壊なし）
 
+#### 0.0.19
+
+- **`pathlint doctor` に `duplicate_but_shadowed` 検出器追加。**
+  同じ command basename が PATH の異なる dir に実体として 2 つ
+  以上存在するときに発火。winning PATH index、shadowed indices、
+  command 名を報告する。Windows では PATHEXT 拡張子を剥いだ後で
+  case-insensitive に比較するので `python.exe` と `python.bat` は
+  同じ command 扱い。`--exclude duplicate_but_shadowed` で抑制可。
+
+  Design choice — alias フィルタは入れない。 mise activate の
+  典型的な shims+installs レイアウトを「予期した noise」として
+  見逃すべきではない: mise の標準的な使い方では shims か installs
+  どちらか一方しか PATH に出ない (`mise activate` は shims、
+  `mise hook-env` は installs を露出する)。 両方が PATH にあるのは
+  それ自体が設定ミスで、 既存の `mise_activate_both` Conflict
+  detector が relation の角度から既に警告している。 同じ状況を
+  別 detector で隠すと、 同じミスを別角度から見逃すことになる。
+  host 側で本当に noise が問題な場合は `--exclude` で個別抑制。
+
+- **`pathlint::doctor::fs_list_dir_real`** を新 closure 引数の
+  production wrapper として公開。
+
 #### 0.0.18
 
 - **`pathlint doctor` に `per_source_missing_required` 検出器を追加。**
@@ -986,6 +1020,15 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   host 上で verify する。
 
 ### 17.1 累積的な破壊的変更
+
+#### 0.0.19
+
+- **`doctor::analyze` に `fs_list_dir` closure 引数を追加。**
+  新 `DuplicateButShadowed` 検出器のために 7 番目の引数
+  `Fn(&str) -> Vec<String>` が増えた。 自前で resolver loop を
+  組んでいる embedder は closure を追加する必要がある (production
+  wiring の参考は `pathlint::doctor::fs_list_dir_real`)。
+  `analyze_real` は CLI のみの caller には透過。
 
 #### 0.0.17
 
