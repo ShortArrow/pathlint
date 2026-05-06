@@ -18,6 +18,15 @@ Before kicking off the workflow:
   description (CPU model, OS) so the numbers stay interpretable
   later. PRD §12 claims `<50 ms startup` — the bench script is the
   receipt.
+- **English / Japanese parity check.** For each of the three pairs
+  below, diff the change set since the last release and confirm
+  both files were updated together:
+    - `README.md` ↔ `docs/README.jp.md`
+    - `docs/RELEASE.md` ↔ `docs/RELEASE.jp.md`
+    - `docs/PRD.md` ↔ `docs/PRD.jp.md`
+  Drift like `os_baseline_linux_sbin` documented only in EN
+  (the 0.0.14 case the 0.0.19 docs sweep finally caught) is the
+  kind of bug this checklist is here to prevent.
 
 Then:
 

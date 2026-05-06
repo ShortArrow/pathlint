@@ -7,6 +7,30 @@ opt-in。
 
 ## 手順
 
+ワークフロー起動前のチェックリスト：
+
+- `README.md` の schema-pin 例を更新する。`<TAG>` の placeholder
+  例が **直前のリリース版** を指すようにする (copy-paste した user
+  が known-good URL を得るため、未公開バージョンを指さないため)。
+  `README.md` 内で
+  `https://github.com/ShortArrow/pathlint/releases/download/` を
+  検索。
+- (任意、推奨) `scripts/bench.sh` を走らせて hyperfine の表を
+  release notes 草案に貼る。host の情報 (CPU モデル、OS) も書いて
+  おくと後から数字を比較しやすい。PRD §12 の `<50 ms startup`
+  claim の検証手段。
+- **英日 parity check。** 以下 3 ペアそれぞれについて、前回
+  リリース以降の差分を diff し、両ファイルが同時に更新されたか
+  確認する：
+    - `README.md` ↔ `docs/README.jp.md`
+    - `docs/RELEASE.md` ↔ `docs/RELEASE.jp.md`
+    - `docs/PRD.md` ↔ `docs/PRD.jp.md`
+  例えば 0.0.14 で導入された `os_baseline_linux_sbin` が JP
+  README には反映されないまま 0.0.18 まで残っていた、ような
+  drift をこの checklist で防ぐ。
+
+それから：
+
 1. GitHub のリポジトリで **Actions** → **release** → **Run
    workflow** を開く。
 2. 新しいバージョン番号を入力する（例：`0.0.10`）。`v` は付け
