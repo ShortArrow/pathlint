@@ -1,4 +1,16 @@
 //! Built-in source catalog and merge with user-defined sources.
+//!
+//! # Examples
+//!
+//! ```
+//! use pathlint::catalog;
+//! use pathlint::config::Config;
+//!
+//! let cfg = Config::default();
+//! let merged = catalog::merge_with_user(&cfg.source);
+//! // The built-in catalog ships at least one source.
+//! assert!(!merged.is_empty());
+//! ```
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;

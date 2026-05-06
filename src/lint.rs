@@ -3,6 +3,21 @@
 //! Pure: takes the merged catalog, the OS, the PATH entries, and a
 //! resolver function, then returns one `Outcome` per expectation.
 //! Tests can swap the resolver for a deterministic stub.
+//!
+//! # Examples
+//!
+//! See the crate-level `# Quick example` for a runnable resolver-stub
+//! pattern. The signature in one line:
+//!
+//! ```ignore
+//! lint::evaluate(
+//!     &expectations,
+//!     &sources,
+//!     Os::current(),
+//!     |cmd| resolver_for(cmd),
+//!     lint::check_shape_filesystem,
+//! );
+//! ```
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

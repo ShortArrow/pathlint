@@ -6,6 +6,22 @@
 //!
 //! Pure where possible; the resolver is injected so tests don't need
 //! to touch the real PATH.
+//!
+//! # Examples
+//!
+//! ```
+//! use pathlint::config::Config;
+//! use pathlint::os_detect::Os;
+//! use pathlint::trace;
+//! use std::path::PathBuf;
+//!
+//! let resolver = |_cmd: &str| -> Option<PathBuf> { None };
+//! let cfg = Config::default();
+//! let sources = pathlint::catalog::merge_with_user(&cfg.source);
+//! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
+//! let outcome = trace::locate("nonexistent", &sources, &relations, Os::current(), resolver);
+//! assert_eq!(outcome, trace::TraceOutcome::NotFound);
+//! ```
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

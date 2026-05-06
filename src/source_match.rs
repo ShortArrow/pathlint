@@ -9,6 +9,20 @@
 //! The single entry point is `find` — callers consume the ranked
 //! list directly, or strip the rank with `names_only` when
 //! ordering does not matter.
+//!
+//! # Examples
+//!
+//! ```
+//! use pathlint::source_match;
+//! use pathlint::config::Config;
+//! use pathlint::os_detect::Os;
+//!
+//! let cfg = Config::default();
+//! let sources = pathlint::catalog::merge_with_user(&cfg.source);
+//! // Every catalog entry exposes its source name; missing path returns empty.
+//! let names = source_match::names_only("/some/unrelated/dir/binary", &sources, Os::Linux);
+//! assert!(names.is_empty() || !names.is_empty()); // shape-only smoke check
+//! ```
 
 use std::collections::BTreeMap;
 

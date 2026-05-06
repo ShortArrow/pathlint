@@ -11,6 +11,28 @@
 //! Doctor pure-functions take a list of PATH entry strings and return
 //! `Vec<Diagnostic>`. The CLI layer formats them and decides the exit
 //! code.
+//!
+//! # Examples
+//!
+//! ```
+//! use pathlint::doctor;
+//! use pathlint::config::Config;
+//! use pathlint::os_detect::Os;
+//!
+//! let entries = vec!["/usr/bin".to_string(), "/usr/bin".to_string()]; // duplicate
+//! let cfg = Config::default();
+//! let sources = pathlint::catalog::merge_with_user(&cfg.source);
+//! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
+//! let diags = doctor::analyze(
+//!     &entries,
+//!     &sources,
+//!     &relations,
+//!     Os::Linux,
+//!     |_| true,
+//!     |_| None,
+//! );
+//! assert!(diags.iter().any(|d| matches!(d.kind, doctor::Kind::Duplicate { .. })));
+//! ```
 
 use std::collections::BTreeMap;
 use std::env;
