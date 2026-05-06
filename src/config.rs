@@ -186,7 +186,7 @@ pub struct SourceDef {
     /// the resolved binary's stem (filename without extension).
     /// Used by `pathlint trace`. Leave unset for sources where
     /// uninstall is not a meaningful single command (e.g. shim
-    /// layers, system_*).
+    /// layers, os_baseline_*).
     #[serde(default)]
     pub uninstall_command: Option<String>,
 }

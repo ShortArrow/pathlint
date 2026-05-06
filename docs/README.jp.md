@@ -133,9 +133,13 @@ pathlint doctor --include duplicate,malformed
 pathlint doctor --json            # 0.0.7+: 機械可読出力
 
 # 全 [[expect]] を満たす PATH 順を提案する（読み取り専用）
-pathlint sort                     # 0.0.8+: before/after の差分
-pathlint sort --json              # 0.0.8+: SortPlan JSON
+pathlint sort --dry-run           # 0.0.8+: before/after の差分
+pathlint sort --dry-run --json    # 0.0.8+: SortPlan JSON
 ```
+
+`pathlint sort` は 0.0.14 以降 `--dry-run` 指定が必須。PATH を
+書き換えないこと (R5 — repair、書き込みなし) を明示するための
+opt-in。`--apply` モードは post-1.0 用に予約。
 
 ## `pathlint.toml`（最小例）
 

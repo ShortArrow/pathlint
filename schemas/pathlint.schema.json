@@ -304,7 +304,7 @@
           ]
         },
         "uninstall_command": {
-          "description": "R4 — shell command template that uninstalls a binary served by this source. The substring `{bin}` is substituted with the resolved binary's stem (filename without extension). Used by `pathlint trace`. Leave unset for sources where uninstall is not a meaningful single command (e.g. shim layers, system_*).",
+          "description": "R4 — shell command template that uninstalls a binary served by this source. The substring `{bin}` is substituted with the resolved binary's stem (filename without extension). Used by `pathlint trace`. Leave unset for sources where uninstall is not a meaningful single command (e.g. shim layers, os_baseline_*).",
           "default": null,
           "type": [
             "string",

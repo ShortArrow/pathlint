@@ -66,7 +66,9 @@ pub fn find(haystack: &str, sources: &BTreeMap<String, SourceDef>, os: Os) -> Ve
 ///
 /// This rules out the `/cargo/bin` vs `/cargo/binx/rg` collision
 /// while still accepting fragment-style needles like
-/// `Microsoft/WindowsApps` that some built-ins use intentionally.
+/// `Microsoft/WindowsApps` (the path fragment used by the
+/// `windows_apps` built-in source) that some built-ins use
+/// intentionally.
 fn needle_aligned_to_boundary(haystack: &str, needle: &str) -> bool {
     if needle.ends_with('/') {
         return haystack.contains(needle);
@@ -93,7 +95,7 @@ pub struct SourceWarning {
 /// without breaking existing match arms.
 ///
 /// Note: relative needles like `Microsoft/WindowsApps` are allowed
-/// — several built-in sources (e.g. `WindowsApps`) intentionally
+/// — several built-in sources (e.g. `windows_apps`) intentionally
 /// match by path fragment to flag the Microsoft Store stub layer
 /// no matter where it appears in PATH. The boundary check in
 /// `find` keeps fragments from over-matching.

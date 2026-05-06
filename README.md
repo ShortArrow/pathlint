@@ -141,9 +141,13 @@ pathlint doctor --include duplicate,malformed
 pathlint doctor --json            # 0.0.7+: machine-readable output
 
 # Propose a PATH order satisfying every [[expect]] rule (read-only)
-pathlint sort                     # 0.0.8+: before/after diff
-pathlint sort --json              # 0.0.8+: SortPlan JSON
+pathlint sort --dry-run           # 0.0.8+: before/after diff
+pathlint sort --dry-run --json    # 0.0.8+: SortPlan JSON
 ```
+
+`pathlint sort` requires `--dry-run` since 0.0.14. The flag is opt-in
+to make it explicit that pathlint never mutates PATH (R5 — repair, no
+write). A future `--apply` mode is reserved for post-1.0.
 
 ## `pathlint.toml` (minimal example)
 

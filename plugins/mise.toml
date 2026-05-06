@@ -37,7 +37,7 @@ sources = ["mise_shims", "mise_installs"]
 diagnostic = "mise_activate_both"
 
 # Plugins under mise/installs/<installer>-... actually came from
-# the upstream installer. Used by `pathlint where` to attribute
+# the upstream installer. Used by `pathlint trace` to attribute
 # provenance through the mise wrapper.
 [[relation]]
 kind = "served_by_via"
