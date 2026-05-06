@@ -402,7 +402,10 @@ fn add_duplicate_but_shadowed_diagnostics<L, V>(
     // command basename -> sorted unique PATH indices
     let mut by_command: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     for (i, entry) in entries.iter().enumerate() {
-        let expanded = expand::expand_and_normalize(entry);
+        // Expand env vars but keep the original case + slash style;
+        // case-sensitive filesystems (Linux) need the path verbatim
+        // so `read_dir` can find the directory.
+        let expanded = expand::expand_env(entry);
         if expanded.is_empty() {
             continue;
         }
@@ -1665,7 +1668,7 @@ mod tests {
     #[test]
     fn duplicate_but_shadowed_case_insensitive_on_windows() {
         let e = entries(&["C:/a", "C:/b"]);
-        let listing: [(&str, &[&str]); 2] = [("c:/a", &["Git.exe"]), ("c:/b", &["git.exe"])];
+        let listing: [(&str, &[&str]); 2] = [("C:/a", &["Git.exe"]), ("C:/b", &["git.exe"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT;.CMD")]);
         let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
@@ -1689,7 +1692,7 @@ mod tests {
     #[test]
     fn duplicate_but_shadowed_pathext_strips_extension() {
         let e = entries(&["C:/a", "C:/b"]);
-        let listing: [(&str, &[&str]); 2] = [("c:/a", &["python.exe"]), ("c:/b", &["python.bat"])];
+        let listing: [(&str, &[&str]); 2] = [("C:/a", &["python.exe"]), ("C:/b", &["python.bat"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT")]);
         let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
