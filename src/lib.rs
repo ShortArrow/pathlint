@@ -41,6 +41,59 @@
 //! best-effort; intentional breaks land at `0.0.x → 0.0.(x+1)`
 //! boundaries (Cargo's MAJOR-equivalent for `0.0.y`) and are
 //! flagged in release notes.
+//!
+//! # Quick example
+//!
+//! Evaluate one expectation against an in-process PATH without
+//! reading a `pathlint.toml` from disk:
+//!
+//! ```
+//! use pathlint::config::{Config, Expectation, Severity};
+//! use pathlint::lint;
+//! use pathlint::os_detect::Os;
+//! use std::path::PathBuf;
+//!
+//! // Caller-supplied resolver. Production wiring would use a
+//! // `which`-style PATH walk; this stub pretends `rg` lives in
+//! // `~/.cargo/bin`. The closure boundary intentionally takes
+//! // and returns standard-library types only — pathlint never
+//! // exposes its own internal resolver type to embedders.
+//! let resolver = |cmd: &str| -> Option<PathBuf> {
+//!     match cmd {
+//!         "rg" => Some(PathBuf::from("/home/me/.cargo/bin/rg")),
+//!         _ => None,
+//!     }
+//! };
+//!
+//! let cfg = Config::default();
+//! let expectations = vec![Expectation {
+//!     command: "rg".into(),
+//!     prefer: vec!["cargo".into()],
+//!     avoid: vec![],
+//!     os: None,
+//!     optional: false,
+//!     kind: None,
+//!     severity: Severity::Error,
+//! }];
+//!
+//! let sources = pathlint::catalog::merge_with_user(&cfg.source);
+//! let outcomes = lint::evaluate(
+//!     &expectations,
+//!     &sources,
+//!     Os::current(),
+//!     resolver,
+//!     lint::check_shape_filesystem, // R2 shape check; unused here
+//! );
+//!
+//! // outcomes[0].status is Status::Ok because the resolver picked
+//! // a path under cargo's built-in source.
+//! assert_eq!(outcomes.len(), 1);
+//! ```
+//!
+//! For the full pipeline (read `pathlint.toml`, walk `$PATH`,
+//! print to stdout, set the exit code) see the binary at
+//! `src/bin/pathlint/run.rs` — the library is shaped so the binary
+//! is a thin orchestration on top of the same primitives.
 
 pub mod catalog;
 pub mod config;

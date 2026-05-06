@@ -1,6 +1,24 @@
 //! TOML schema for `pathlint.toml`.
 //!
 //! See `docs/PRD.md` §8.
+//!
+//! # Examples
+//!
+//! Parse a `pathlint.toml` literal and inspect one expectation:
+//!
+//! ```
+//! use pathlint::config::Config;
+//!
+//! let cfg = Config::parse_toml(r#"
+//!     [[expect]]
+//!     command = "rg"
+//!     prefer  = ["cargo"]
+//! "#).unwrap();
+//!
+//! assert_eq!(cfg.expectations.len(), 1);
+//! assert_eq!(cfg.expectations[0].command, "rg");
+//! assert_eq!(cfg.expectations[0].prefer, vec!["cargo"]);
+//! ```
 
 use std::collections::BTreeMap;
 use std::fs;
