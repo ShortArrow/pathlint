@@ -53,6 +53,43 @@ fn doctor_warns_on_missing_directory() {
 }
 
 #[test]
+fn doctor_reports_duplicate_but_shadowed_across_path_dirs() {
+    // Two PATH dirs each containing an executable with the same
+    // basename. The earlier dir wins; the later one is shadowed.
+    let tmp = tempfile::tempdir().unwrap();
+    let dir_a = tmp.path().join("a");
+    let dir_b = tmp.path().join("b");
+    fs::create_dir_all(&dir_a).unwrap();
+    fs::create_dir_all(&dir_b).unwrap();
+    let exe_name = if cfg!(windows) {
+        "dummy_cmd.exe"
+    } else {
+        "dummy_cmd"
+    };
+    for dir in [&dir_a, &dir_b] {
+        let p = dir.join(exe_name);
+        fs::write(&p, b"").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    // Canonicalize so Windows 8.3 short-name PATH entries don't
+    // create their own ShortName diagnostic alongside the one we
+    // care about.
+    let dir_a = fs::canonicalize(&dir_a).unwrap();
+    let dir_b = fs::canonicalize(&dir_b).unwrap();
+    let dir_a = strip_unc_prefix(&dir_a);
+    let dir_b = strip_unc_prefix(&dir_b);
+    let path = join_path(&[&dir_a, &dir_b]);
+    let (code, stdout, _) = run_doctor(&path);
+    assert_eq!(code, 0, "warn-only must not fail the run");
+    assert!(stdout.contains("dummy_cmd"), "stdout: {stdout}");
+    assert!(stdout.contains("shadows"), "stdout: {stdout}");
+}
+
+#[test]
 fn doctor_clean_path_emits_nothing() {
     // The temp dir on Windows lives under %LocalAppData%, which would
     // trigger the "shortenable" warning even on an otherwise clean
