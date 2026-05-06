@@ -170,6 +170,34 @@
           "type": "string"
         }
       }
+    },
+    {
+      "description": "Same command basename exists as a real executable in two or more PATH dirs. The earlier dir wins (`Diagnostic.index`); later dirs are shadowed (`shadowed_indexes`). Reported regardless of whether the dirs are named sources — duplicates are facts. Pairs with the relation-driven `Conflict` detector (e.g. `mise_activate_both`): that one covers the named-source-pair angle, this one covers the unnamed command-name angle. Windows compares case-insensitively after stripping PATHEXT extensions, so `python.exe` and `python.bat` count as the same command. 0.0.19+.",
+      "type": "object",
+      "required": [
+        "command",
+        "kind",
+        "shadowed_indexes"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "duplicate_but_shadowed"
+          ]
+        },
+        "shadowed_indexes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        }
+      }
     }
   ],
   "required": [
