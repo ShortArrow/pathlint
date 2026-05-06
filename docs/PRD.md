@@ -958,6 +958,20 @@ Tagged with the role(s) each touches.
   "mise_activate_both" }` diagnostic listing every shim group
   alongside every install group. Users still pick a mode for
   `[[expect]]` rules; pathlint does not auto-detect.)*
+- **[R3] DuplicateButShadowed.** Same command basename exists as
+  a real executable in two or more PATH dirs. The earlier dir
+  wins; later dirs are shadowed. Always reported — duplicates
+  are facts, not noise. Suppress per host with
+  `--exclude duplicate_but_shadowed`.
+
+  Complements the relation-driven `mise_activate_both` Conflict
+  detector: that one fires when *named* sources (`mise_shims`
+  and `mise_installs`) are both in PATH, regardless of whether
+  the same command exists in both. DuplicateButShadowed fires
+  when the *same command* exists in two PATH dirs, regardless of
+  whether the dirs are named in any relation. Together they
+  cover the two angles (named-source-pair conflicts vs unnamed
+  command-name shadows). *(0.0.19+.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP and out of
   the 0.0.x line — flagged here as a 0.1.x candidate. Three
@@ -1043,6 +1057,31 @@ The change log is split into two:
 
 ### 17.2 Cumulative additions (no breaking)
 
+#### 0.0.19
+
+- **`pathlint doctor` learned the `duplicate_but_shadowed`
+  detector.** Fires when the same command basename exists as a
+  real executable in two or more PATH dirs. Reports the winning
+  PATH index, the shadowed indices, and the command name.
+  Windows compares case-insensitively after stripping PATHEXT
+  extensions (so `python.exe` and `python.bat` count as the same
+  command). Suppress with `--exclude duplicate_but_shadowed`.
+
+  Design choice — no alias filter. mise activate's typical
+  shims+installs layout is not "expected noise" the detector
+  should ignore: in mise's standard usage, only one of the two
+  dirs is on PATH at a time (`mise activate` exposes shims;
+  `mise hook-env` exposes installs). Both being on PATH at once
+  is itself a misconfiguration, already warned about from the
+  relation angle by the existing `mise_activate_both` Conflict
+  detector. Filtering out the same situation in a second
+  detector would hide the same mistake from a different angle.
+  When the host's noise is genuinely unwanted, suppress per host
+  with `--exclude`.
+
+- **`pathlint::doctor::fs_list_dir_real`** added as the
+  production wrapper for the new closure parameter.
+
 #### 0.0.18
 
 - **`pathlint doctor` learned the `per_source_missing_required`
@@ -1065,6 +1104,16 @@ The change log is split into two:
   `<50 ms` claim on the host.
 
 ### 17.1 Cumulative breaking changes
+
+#### 0.0.19
+
+- **`doctor::analyze` gains `fs_list_dir` closure parameter.**
+  The function now takes a 7th `Fn(&str) -> Vec<String>`
+  argument used by the new `DuplicateButShadowed` detector to
+  enumerate executables in each PATH dir. Embedders that built
+  their own resolver loop must add the closure (production
+  wiring in `pathlint::doctor::fs_list_dir_real` is the
+  reference). `analyze_real` is unchanged for CLI-only callers.
 
 #### 0.0.17
 

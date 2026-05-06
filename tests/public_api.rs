@@ -19,8 +19,8 @@ use pathlint::catalog::{
 use pathlint::config::{Config, Expectation, Kind, Relation, Severity, SourceDef};
 use pathlint::doctor::{
     Diagnostic, Filter, Kind as DoctorKind, Severity as DoctorSeverity, all_kind_names, analyze,
-    analyze_real, env_lookup_real, fs_exists_real, has_error, kind_name, user_diagnostic_names,
-    validate_filter_names,
+    analyze_real, env_lookup_real, fs_exists_real, fs_list_dir_real, has_error, kind_name,
+    user_diagnostic_names, validate_filter_names,
 };
 use pathlint::expand::{expand_and_normalize, expand_env, normalize};
 use pathlint::lint::{
@@ -75,4 +75,27 @@ fn locate_callable_with_pathbuf_resolver() {
         |_cmd: &str| -> Option<std::path::PathBuf> { None },
     );
     assert!(matches!(outcome, TraceOutcome::NotFound));
+}
+
+#[test]
+fn analyze_callable_with_fs_list_dir_closure() {
+    // 0.0.19 BREAKING: doctor::analyze gains a 7th closure parameter
+    // for the duplicate_but_shadowed detector. Pin the signature so
+    // the public surface stays usable from external crates without
+    // pulling in pathlint internals.
+    use std::collections::BTreeMap;
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let relations: Vec<Relation> = Vec::new();
+    let diags = analyze(
+        &[],
+        &sources,
+        &relations,
+        Os::Linux,
+        |_path: &str| -> bool { false },
+        |_var: &str| -> Option<String> { None },
+        |_path: &str| -> Vec<String> { Vec::new() },
+    );
+    assert!(diags.is_empty());
+    // Real wrapper is also part of the surface.
+    let _real: Vec<String> = fs_list_dir_real("/this/path/does/not/exist");
 }

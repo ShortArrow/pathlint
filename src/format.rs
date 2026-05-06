@@ -76,6 +76,21 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
             "declared `[source.{}]` path does not exist on this host",
             strip_control_chars(source)
         ),
+        Kind::DuplicateButShadowed {
+            command,
+            shadowed_indexes,
+        } => {
+            let list = shadowed_indexes
+                .iter()
+                .map(|i| format!("#{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "`{}` shadows {}; this dir wins",
+                strip_control_chars(command),
+                list,
+            )
+        }
     };
     // Per-source diagnostics use usize::MAX as the "no PATH index"
     // sentinel; render that as "(catalog)" instead of a number.

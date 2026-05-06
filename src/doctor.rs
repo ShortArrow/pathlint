@@ -30,11 +30,12 @@
 //!     Os::Linux,
 //!     |_| true,
 //!     |_| None,
+//!     |_| Vec::new(),
 //! );
 //! assert!(diags.iter().any(|d| matches!(d.kind, doctor::Kind::Duplicate { .. })));
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::Path;
 
@@ -70,7 +71,36 @@ pub fn analyze_real(
         os,
         fs_exists_real,
         env_lookup_real,
+        fs_list_dir_real,
     )
+}
+
+/// Real-world `fs_list_dir` for `analyze`: enumerates basenames of
+/// regular executable files in `path`. Unix requires `chmod +x`
+/// (any of the user/group/other exec bits). Windows accepts any
+/// regular file — extension-based filtering happens in the
+/// detector via PATHEXT. Permission-denied / non-existent dirs
+/// return an empty `Vec`.
+pub fn fs_list_dir_real(path: &str) -> Vec<String> {
+    let Ok(read) = std::fs::read_dir(path) else {
+        return Vec::new();
+    };
+    read.filter_map(|entry| {
+        let entry = entry.ok()?;
+        let meta = entry.metadata().ok()?;
+        if !meta.is_file() {
+            return None;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if meta.permissions().mode() & 0o111 == 0 {
+                return None;
+            }
+        }
+        entry.file_name().into_string().ok()
+    })
+    .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -126,6 +156,20 @@ pub enum Kind {
     PerSourceMissingRequired {
         source: String,
     },
+    /// Same command basename exists as a real executable in two or
+    /// more PATH dirs. The earlier dir wins (`Diagnostic.index`);
+    /// later dirs are shadowed (`shadowed_indexes`). Reported
+    /// regardless of whether the dirs are named sources — duplicates
+    /// are facts. Pairs with the relation-driven `Conflict` detector
+    /// (e.g. `mise_activate_both`): that one covers the
+    /// named-source-pair angle, this one covers the unnamed
+    /// command-name angle. Windows compares case-insensitively after
+    /// stripping PATHEXT extensions, so `python.exe` and `python.bat`
+    /// count as the same command. 0.0.19+.
+    DuplicateButShadowed {
+        command: String,
+        shadowed_indexes: Vec<usize>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -157,6 +201,7 @@ pub fn kind_name(kind: &Kind) -> &str {
         Kind::Malformed { .. } => "malformed",
         Kind::Conflict { diagnostic, .. } => diagnostic.as_str(),
         Kind::PerSourceMissingRequired { .. } => "per_source_missing_required",
+        Kind::DuplicateButShadowed { .. } => "duplicate_but_shadowed",
     }
 }
 
@@ -177,6 +222,7 @@ pub fn all_kind_names() -> &'static [&'static str] {
         "malformed",
         "mise_activate_both",
         "per_source_missing_required",
+        "duplicate_but_shadowed",
     ]
 }
 
@@ -279,17 +325,19 @@ pub fn has_error(diags: &[&Diagnostic]) -> bool {
 /// `Kind::Conflict` diagnostics: every
 /// `Relation::ConflictsWhenBothInPath` in `relations` fires when
 /// at least two of its declared `sources` match the current PATH.
-pub fn analyze<F, V>(
+pub fn analyze<F, V, L>(
     entries: &[String],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
     fs_exists: F,
     env_lookup: V,
+    fs_list_dir: L,
 ) -> Vec<Diagnostic>
 where
     F: Fn(&str) -> bool,
     V: Fn(&str) -> Option<String>,
+    L: Fn(&str) -> Vec<String>,
 {
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
@@ -323,7 +371,89 @@ where
     add_case_variant_diagnostics(entries, &mut out);
     add_relation_conflict_diagnostics(&normalized, entries, sources, relations, os, &mut out);
     add_per_source_missing_required_diagnostics(sources, os, &fs_exists, &env_lookup, &mut out);
+    add_duplicate_but_shadowed_diagnostics(entries, os, &fs_list_dir, &env_lookup, &mut out);
     out
+}
+
+/// Detect commands whose basename appears as a real executable in
+/// two or more PATH dirs. The earliest dir wins; all later ones
+/// are shadowed. Pairs with the relation-driven `Conflict` detector
+/// (`mise_activate_both` etc.) — that handles the named-source-pair
+/// angle, this handles the unnamed command-name angle. Reported
+/// regardless of named relations: duplicates are facts the user
+/// should know about. Suppress per host with
+/// `--exclude duplicate_but_shadowed`.
+fn add_duplicate_but_shadowed_diagnostics<L, V>(
+    entries: &[String],
+    os: Os,
+    fs_list_dir: &L,
+    env_lookup: &V,
+    out: &mut Vec<Diagnostic>,
+) where
+    L: Fn(&str) -> Vec<String>,
+    V: Fn(&str) -> Option<String>,
+{
+    let pathext_lower: Vec<String> = if os == Os::Windows {
+        expand::pathext_lower(|v| env_lookup(v))
+    } else {
+        Vec::new()
+    };
+
+    // command basename -> sorted unique PATH indices
+    let mut by_command: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    for (i, entry) in entries.iter().enumerate() {
+        // Expand env vars but keep the original case + slash style;
+        // case-sensitive filesystems (Linux) need the path verbatim
+        // so `read_dir` can find the directory.
+        let expanded = expand::expand_env(entry);
+        if expanded.is_empty() {
+            continue;
+        }
+        for file in fs_list_dir(&expanded) {
+            let Some(cmd) = normalize_command(&file, os, &pathext_lower) else {
+                continue;
+            };
+            by_command.entry(cmd).or_default().insert(i);
+        }
+    }
+    for (cmd, indexes) in by_command {
+        if indexes.len() < 2 {
+            continue;
+        }
+        let sorted: Vec<usize> = indexes.into_iter().collect();
+        let winning = sorted[0];
+        let shadowed_indexes = sorted[1..].to_vec();
+        out.push(Diagnostic {
+            index: winning,
+            entry: entries[winning].clone(),
+            severity: Severity::Warn,
+            kind: Kind::DuplicateButShadowed {
+                command: cmd,
+                shadowed_indexes,
+            },
+        });
+    }
+}
+
+/// Map a directory entry name to a normalised command name for
+/// duplicate-but-shadowed comparison. Windows: lowercase, then
+/// strip the trailing PATHEXT extension if present (returns `None`
+/// for files whose extension is not in PATHEXT — those are not
+/// runnable commands as far as the shell is concerned). Unix: pass
+/// through verbatim, since any executable file is a runnable
+/// command regardless of name.
+fn normalize_command(file: &str, os: Os, pathext_lower: &[String]) -> Option<String> {
+    if os == Os::Windows {
+        let lower = file.to_ascii_lowercase();
+        for ext in pathext_lower {
+            if let Some(stripped) = lower.strip_suffix(ext) {
+                return Some(stripped.to_string());
+            }
+        }
+        None
+    } else {
+        Some(file.to_string())
+    }
 }
 
 /// Detect declared `[source.<name>]` entries whose per-OS path
@@ -780,6 +910,18 @@ mod tests {
                 .map(|(_, v)| (*v).to_string())
         }
     }
+    fn fs_list_empty(_: &str) -> Vec<String> {
+        Vec::new()
+    }
+    fn fs_list_map<'a>(pairs: &'a [(&'a str, &'a [&'a str])]) -> impl Fn(&str) -> Vec<String> + 'a {
+        move |path| {
+            pairs
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, files)| files.iter().map(|s| (*s).to_string()).collect())
+                .unwrap_or_default()
+        }
+    }
 
     fn empty_sources() -> BTreeMap<String, SourceDef> {
         BTreeMap::new()
@@ -837,6 +979,7 @@ mod tests {
             Os::Linux,
             fs_yes,
             env_none,
+            fs_list_empty,
         );
         let dups: Vec<_> = diags
             .iter()
@@ -858,6 +1001,7 @@ mod tests {
             Os::Linux,
             fs_no,
             env_none,
+            fs_list_empty,
         );
         assert!(diags.iter().any(|d| matches!(d.kind, Kind::Missing)));
     }
@@ -872,6 +1016,7 @@ mod tests {
             Os::Linux,
             fs_yes,
             env_none,
+            fs_list_empty,
         );
         let trailing: Vec<_> = diags
             .iter()
@@ -891,6 +1036,7 @@ mod tests {
             Os::Linux,
             fs_yes,
             env_none,
+            fs_list_empty,
         );
         assert!(
             diags
@@ -927,6 +1073,7 @@ mod tests {
             Os::Windows,
             fs_yes,
             env_map(&[("UserProfile", "C:\\Users\\Mixed")]),
+            fs_list_empty,
         );
         let s = diags
             .iter()
@@ -950,6 +1097,7 @@ mod tests {
             Os::Linux,
             fs_yes,
             env_map(&[("HOME", "/home/u")]),
+            fs_list_empty,
         );
         assert!(
             !diags
@@ -971,6 +1119,7 @@ mod tests {
             Os::Linux,
             fs_yes,
             env_none,
+            fs_list_empty,
         );
         let case: Vec<_> = diags
             .iter()
@@ -989,6 +1138,7 @@ mod tests {
             Os::Linux,
             fs_yes,
             env_none,
+            fs_list_empty,
         );
         // Empty entries are filtered upstream by `split_path`. If one
         // does sneak in, our checks must not blow up.
@@ -1014,7 +1164,15 @@ mod tests {
             "/usr/bin",
         ]);
         let (sources, relations) = mise_sources_and_relations();
-        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &sources,
+            &relations,
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
         let mab: Vec<_> = diags.iter().filter_map(match_mise_activate_both).collect();
         assert_eq!(mab.len(), 1);
         let (shims, installs) = mab[0];
@@ -1026,7 +1184,15 @@ mod tests {
     fn mise_activate_both_does_not_fire_when_only_shims_present() {
         let e = entries(&["/home/u/.local/share/mise/shims", "/usr/bin"]);
         let (sources, relations) = mise_sources_and_relations();
-        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &sources,
+            &relations,
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
         assert!(
             diags
                 .iter()
@@ -1043,7 +1209,15 @@ mod tests {
             "/usr/bin",
         ]);
         let (sources, relations) = mise_sources_and_relations();
-        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &sources,
+            &relations,
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
         assert!(
             diags
                 .iter()
@@ -1062,7 +1236,15 @@ mod tests {
             "/usr/bin",
         ]);
         let (sources, relations) = mise_sources_and_relations();
-        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &sources,
+            &relations,
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
         let (shims, installs) = diags
             .iter()
             .filter_map(match_mise_activate_both)
@@ -1106,7 +1288,15 @@ mod tests {
             sources: vec!["windows_apps".into(), "peer".into()],
             diagnostic: "store_vs_peer".into(),
         }];
-        let diags = analyze(&e, &sources, &relations, Os::Windows, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &sources,
+            &relations,
+            Os::Windows,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
         let groups = diags
             .iter()
             .find_map(|d| match &d.kind {
@@ -1133,7 +1323,15 @@ mod tests {
             sources: vec!["a".into(), "b".into(), "c".into()],
             diagnostic: "abc_overlap".into(),
         }];
-        let diags = analyze(&e, &sources, &relations, Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &e,
+            &sources,
+            &relations,
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
         let groups = diags
             .iter()
             .find_map(|d| match &d.kind {
@@ -1160,7 +1358,15 @@ mod tests {
         // [source.cargo] unix = "/totally/missing/dir" → fs_no
         // forces fs_exists to return false, the new detector fires.
         let sources = cat_local(&[("cargo", unix_source("/totally/missing/dir"))]);
-        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env_none);
+        let diags = analyze(
+            &[],
+            &sources,
+            &[],
+            Os::Linux,
+            fs_no,
+            env_none,
+            fs_list_empty,
+        );
         let hit = diags
             .iter()
             .find(|d| matches!(d.kind, Kind::PerSourceMissingRequired { .. }))
@@ -1176,7 +1382,15 @@ mod tests {
     fn per_source_missing_required_does_not_fire_when_path_exists() {
         // fs_yes claims every path exists → no hit.
         let sources = cat_local(&[("cargo", unix_source("/home/u/.cargo/bin"))]);
-        let diags = analyze(&[], &sources, &[], Os::Linux, fs_yes, env_none);
+        let diags = analyze(
+            &[],
+            &sources,
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
         assert!(
             diags
                 .iter()
@@ -1195,7 +1409,15 @@ mod tests {
                 ..Default::default()
             },
         )]);
-        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env_none);
+        let diags = analyze(
+            &[],
+            &sources,
+            &[],
+            Os::Linux,
+            fs_no,
+            env_none,
+            fs_list_empty,
+        );
         assert!(
             diags
                 .iter()
@@ -1209,7 +1431,7 @@ mod tests {
         // and force fs_exists=false → fire.
         let sources = cat_local(&[("cargo", unix_source("$HOME/.cargo/bin"))]);
         let env = env_map(&[("HOME", "/tmp/no_such_path")]);
-        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env);
+        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env, fs_list_empty);
         assert!(diags.iter().any(
             |d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo")
         ));
@@ -1377,5 +1599,136 @@ mod tests {
         };
         let kept = f.apply(&diags);
         assert!(!has_error(&kept), "excluded malformed must not escalate");
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_basic_unix() {
+        let e = entries(&["/a", "/b"]);
+        let listing: [(&str, &[&str]); 2] = [("/a", &["git"]), ("/b", &["git"])];
+        let fs_list = fs_list_map(&listing);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(dbs.len(), 1, "exactly one shadow diagnostic expected");
+        assert_eq!(dbs[0].index, 0, "winning entry is the earliest dir");
+        assert_eq!(dbs[0].severity, Severity::Warn);
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed {
+                command,
+                shadowed_indexes,
+            } => {
+                assert_eq!(command, "git");
+                assert_eq!(shadowed_indexes, &vec![1]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_three_dirs_lists_all_shadowed() {
+        let e = entries(&["/a", "/b", "/c"]);
+        let listing: [(&str, &[&str]); 3] =
+            [("/a", &["node"]), ("/b", &["node"]), ("/c", &["node"])];
+        let fs_list = fs_list_map(&listing);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(dbs.len(), 1);
+        assert_eq!(dbs[0].index, 0);
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed {
+                shadowed_indexes, ..
+            } => {
+                assert_eq!(shadowed_indexes, &vec![1, 2]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_case_insensitive_on_windows() {
+        let e = entries(&["C:/a", "C:/b"]);
+        let listing: [(&str, &[&str]); 2] = [("C:/a", &["Git.exe"]), ("C:/b", &["git.exe"])];
+        let fs_list = fs_list_map(&listing);
+        let env = env_map(&[("PATHEXT", ".EXE;.BAT;.CMD")]);
+        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(dbs.len(), 1);
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed {
+                command,
+                shadowed_indexes,
+            } => {
+                assert_eq!(command, "git", "Git.exe and git.exe collapse to `git`");
+                assert_eq!(shadowed_indexes, &vec![1]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_pathext_strips_extension() {
+        let e = entries(&["C:/a", "C:/b"]);
+        let listing: [(&str, &[&str]); 2] = [("C:/a", &["python.exe"]), ("C:/b", &["python.bat"])];
+        let fs_list = fs_list_map(&listing);
+        let env = env_map(&[("PATHEXT", ".EXE;.BAT")]);
+        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert_eq!(
+            dbs.len(),
+            1,
+            "python.exe and python.bat both strip to `python` and collide"
+        );
+        match &dbs[0].kind {
+            Kind::DuplicateButShadowed { command, .. } => assert_eq!(command, "python"),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn duplicate_but_shadowed_no_fire_when_only_one_dir_has_command() {
+        let e = entries(&["/a", "/b"]);
+        let listing: [(&str, &[&str]); 2] = [("/a", &["rg"]), ("/b", &["fd"])];
+        let fs_list = fs_list_map(&listing);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list,
+        );
+        let dbs: Vec<&Diagnostic> = diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
+            .collect();
+        assert!(dbs.is_empty(), "no shadow when no command repeats");
     }
 }
