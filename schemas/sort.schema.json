@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/sort.schema.json",
   "title": "SortPlan",
   "description": "Pure-data result of [`sort_path`]. Always carries both the `original` and the `sorted` vector, so consumers (human view / JSON) can present a self-contained before / after without re-running the algorithm.",
   "type": "object",
