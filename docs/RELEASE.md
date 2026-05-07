@@ -28,6 +28,10 @@ Before kicking off the workflow:
   (the 0.0.14 case the 0.0.19 docs sweep finally caught) is the
   kind of bug this checklist is here to prevent.
 
+  Note: `docs/ARCHITECTURE.md` is intentionally English-only —
+  a JP translation may follow in a future release if user feedback
+  asks for it, but it is not gated by this parity check today.
+
 Then:
 
 1. Open the repo on GitHub. Go to **Actions** → **release** →
