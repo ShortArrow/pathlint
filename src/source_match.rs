@@ -17,11 +17,15 @@
 //! use pathlint::config::Config;
 //! use pathlint::os_detect::Os;
 //!
+//! // Use the built-in catalog (no user-defined sources); on Linux,
+//! // `/usr/bin` is owned by the built-in `os_baseline_linux` source.
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
-//! // Every catalog entry exposes its source name; missing path returns empty.
-//! let names = source_match::names_only("/some/unrelated/dir/binary", &sources, Os::Linux);
-//! assert!(names.is_empty() || !names.is_empty()); // shape-only smoke check
+//! let names = source_match::names_only("/usr/bin/ls", &sources, Os::Linux);
+//! assert!(
+//!     names.iter().any(|n| n == "os_baseline_linux"),
+//!     "/usr/bin should match os_baseline_linux, got: {names:?}",
+//! );
 //! ```
 
 use std::collections::BTreeMap;
