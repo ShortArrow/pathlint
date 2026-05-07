@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/check.schema.json",
   "title": "CheckOutcomeView",
-  "description": "JSON shape emitted by `pathlint check --json`. Each outcome is rendered as one element of a top-level array. The discriminator is the `kind` field. See PRD §17 for the wire-shape history.",
+  "description": "JSON shape of one element in the top-level array emitted by `pathlint check --json`. The discriminator is the `kind` field. See PRD §17 for the wire-shape history.",
   "type": "object",
   "required": [
     "command",

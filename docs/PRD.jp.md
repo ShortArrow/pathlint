@@ -896,7 +896,15 @@ post-1.0 議題。
   両方にあるかは問わない)。 こちらは *同 command* が 2 dir 以上に
   存在するときに発火 (dir が named source か否かは問わない)。
   named-source-pair の角度と unnamed command-name の角度を
-  両方カバーする 2 段構え。 *(0.0.19+。)*
+  両方カバーする 2 段構え。
+
+  常に報告する理由: mise activate の標準的な使い方では shims か
+  installs のどちらか片方しか PATH に出ない (`mise activate` は
+  shims、 `mise hook-env` は installs を露出する)。 両方が PATH に
+  あるのはそれ自体が設定ミスで、 既存の `mise_activate_both`
+  Conflict detector が別角度からカバーする。 同じ状況を別 detector
+  で隠すと同じミスを見逃すことになる。 詳細な設計議論は §17.2
+  0.0.19 entry。 *(0.0.19+。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
   する PATH は `process` と違うことがある。MVP 外、0.0.x 線でも
   扱わず 0.1.x 候補として整理。実装方針は 3 案：
@@ -973,51 +981,6 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   lib API / CLI flag を破ったリリース。移行手順はここ。
 - **§17.2 — 累積的な追加（破壊なし）。** 既存入力を破らずに振る舞いを
   追加したリリース。何が増えたかの記録のみで、移行は不要。
-
-### 17.2 累積的な追加（破壊なし）
-
-#### 0.0.19
-
-- **`pathlint doctor` に `duplicate_but_shadowed` 検出器追加。**
-  同じ command basename が PATH の異なる dir に実体として 2 つ
-  以上存在するときに発火。winning PATH index、shadowed indices、
-  command 名を報告する。Windows では PATHEXT 拡張子を剥いだ後で
-  case-insensitive に比較するので `python.exe` と `python.bat` は
-  同じ command 扱い。`--exclude duplicate_but_shadowed` で抑制可。
-
-  Design choice — alias フィルタは入れない。 mise activate の
-  典型的な shims+installs レイアウトを「予期した noise」として
-  見逃すべきではない: mise の標準的な使い方では shims か installs
-  どちらか一方しか PATH に出ない (`mise activate` は shims、
-  `mise hook-env` は installs を露出する)。 両方が PATH にあるのは
-  それ自体が設定ミスで、 既存の `mise_activate_both` Conflict
-  detector が relation の角度から既に警告している。 同じ状況を
-  別 detector で隠すと、 同じミスを別角度から見逃すことになる。
-  host 側で本当に noise が問題な場合は `--exclude` で個別抑制。
-
-- **`pathlint::doctor::fs_list_dir_real`** を新 closure 引数の
-  production wrapper として公開。
-
-#### 0.0.18
-
-- **`pathlint doctor` に `per_source_missing_required` 検出器を追加。**
-  user の `pathlint.toml` で declared された `[source.<name>]` の
-  per-OS path が host 上に存在しないとき発火。built-in catalog
-  source は意図的に skip (ほとんどの host は catalog の 80% を
-  欠いている設計のため)。
-- **`--no-glyphs` が `doctor` / `trace` / `sort` の出力にも効く
-  ように。** pre-0.0.18 は `report.rs` (check の OK/NG tag) だけに
-  routed されていた。em-dash と rightwards-arrow が全ての human
-  renderer で `-` / `->` に fallback する。
-- **`pathlint::catalog::RelationIndex` typed accessor view。**
-  内部 only の refactor、`[[relation]] kind=...` の TOML shape は
-  不変。consumer (sort / doctor / trace / cycle check) が
-  `iter_aliases()` / `iter_conflicts()` / `iter_provenances()` /
-  `iter_depends_on()` / `iter_prefer_orders()` 経由で読むように
-  なり、open match `Relation { ... }` が消えた。
-- **`scripts/bench.sh` startup-time baseline。** hyperfine wrapper、
-  release notes に table を貼って PRD §12 の `<50 ms` claim を
-  host 上で verify する。
 
 ### 17.1 累積的な破壊的変更
 
@@ -1128,6 +1091,51 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   以前あった「Surfaced by `pathlint where`」記述との矛盾を解消。
 - **`build.rs` の referential-integrity 検査が違反を集約。** 一回の
   CI 失敗で全違反 plugin を確認できる。
+
+### 17.2 累積的な追加（破壊なし）
+
+#### 0.0.19
+
+- **`pathlint doctor` に `duplicate_but_shadowed` 検出器追加。**
+  同じ command basename が PATH の異なる dir に実体として 2 つ
+  以上存在するときに発火。winning PATH index、shadowed indices、
+  command 名を報告する。Windows では PATHEXT 拡張子を剥いだ後で
+  case-insensitive に比較するので `python.exe` と `python.bat` は
+  同じ command 扱い。`--exclude duplicate_but_shadowed` で抑制可。
+
+  Design choice — alias フィルタは入れない。 mise activate の
+  典型的な shims+installs レイアウトを「予期した noise」として
+  見逃すべきではない: mise の標準的な使い方では shims か installs
+  どちらか一方しか PATH に出ない (`mise activate` は shims、
+  `mise hook-env` は installs を露出する)。 両方が PATH にあるのは
+  それ自体が設定ミスで、 既存の `mise_activate_both` Conflict
+  detector が relation の角度から既に警告している。 同じ状況を
+  別 detector で隠すと、 同じミスを別角度から見逃すことになる。
+  host 側で本当に noise が問題な場合は `--exclude` で個別抑制。
+
+- **`pathlint::doctor::fs_list_dir_real`** を新 closure 引数の
+  production wrapper として公開。
+
+#### 0.0.18
+
+- **`pathlint doctor` に `per_source_missing_required` 検出器を追加。**
+  user の `pathlint.toml` で declared された `[source.<name>]` の
+  per-OS path が host 上に存在しないとき発火。built-in catalog
+  source は意図的に skip (ほとんどの host は catalog の 80% を
+  欠いている設計のため)。
+- **`--no-glyphs` が `doctor` / `trace` / `sort` の出力にも効く
+  ように。** pre-0.0.18 は `report.rs` (check の OK/NG tag) だけに
+  routed されていた。em-dash と rightwards-arrow が全ての human
+  renderer で `-` / `->` に fallback する。
+- **`pathlint::catalog::RelationIndex` typed accessor view。**
+  内部 only の refactor、`[[relation]] kind=...` の TOML shape は
+  不変。consumer (sort / doctor / trace / cycle check) が
+  `iter_aliases()` / `iter_conflicts()` / `iter_provenances()` /
+  `iter_depends_on()` / `iter_prefer_orders()` 経由で読むように
+  なり、open match `Relation { ... }` が消えた。
+- **`scripts/bench.sh` startup-time baseline。** hyperfine wrapper、
+  release notes に table を貼って PRD §12 の `<50 ms` claim を
+  host 上で verify する。
 
 ## 18. 他ツールとの関係
 

@@ -83,9 +83,9 @@ impl Default for Outcome {
     }
 }
 
-/// JSON shape emitted by `pathlint check --json`. Each outcome is
-/// rendered as one element of a top-level array. The discriminator
-/// is the `kind` field. See PRD §17 for the wire-shape history.
+/// JSON shape of one element in the top-level array emitted by
+/// `pathlint check --json`. The discriminator is the `kind` field.
+/// See PRD §17 for the wire-shape history.
 #[derive(serde::Serialize, schemars::JsonSchema)]
 pub struct CheckOutcomeView {
     pub command: String,

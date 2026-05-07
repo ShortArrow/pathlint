@@ -971,7 +971,16 @@ Tagged with the role(s) each touches.
   when the *same command* exists in two PATH dirs, regardless of
   whether the dirs are named in any relation. Together they
   cover the two angles (named-source-pair conflicts vs unnamed
-  command-name shadows). *(0.0.19+.)*
+  command-name shadows).
+
+  Why always reported: in mise activate's standard usage only one
+  of `mise_shims` / `mise_installs` is on PATH at a time
+  (`mise activate` exposes shims; `mise hook-env` exposes
+  installs); both being on PATH is itself a misconfiguration the
+  existing `mise_activate_both` Conflict detector covers from a
+  different angle. Filtering out the same situation in a second
+  detector would hide the same mistake. See §17.2 0.0.19 entry
+  for the full design discussion. *(0.0.19+.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP and out of
   the 0.0.x line — flagged here as a 0.1.x candidate. Three
@@ -1054,54 +1063,6 @@ The change log is split into two:
 - **§17.2 — Cumulative additions (no breaking).** Releases that
   added behaviour without breaking existing inputs. Read on for
   what's new; nothing here requires a migration.
-
-### 17.2 Cumulative additions (no breaking)
-
-#### 0.0.19
-
-- **`pathlint doctor` learned the `duplicate_but_shadowed`
-  detector.** Fires when the same command basename exists as a
-  real executable in two or more PATH dirs. Reports the winning
-  PATH index, the shadowed indices, and the command name.
-  Windows compares case-insensitively after stripping PATHEXT
-  extensions (so `python.exe` and `python.bat` count as the same
-  command). Suppress with `--exclude duplicate_but_shadowed`.
-
-  Design choice — no alias filter. mise activate's typical
-  shims+installs layout is not "expected noise" the detector
-  should ignore: in mise's standard usage, only one of the two
-  dirs is on PATH at a time (`mise activate` exposes shims;
-  `mise hook-env` exposes installs). Both being on PATH at once
-  is itself a misconfiguration, already warned about from the
-  relation angle by the existing `mise_activate_both` Conflict
-  detector. Filtering out the same situation in a second
-  detector would hide the same mistake from a different angle.
-  When the host's noise is genuinely unwanted, suppress per host
-  with `--exclude`.
-
-- **`pathlint::doctor::fs_list_dir_real`** added as the
-  production wrapper for the new closure parameter.
-
-#### 0.0.18
-
-- **`pathlint doctor` learned the `per_source_missing_required`
-  detector.** Fires when a `[source.<name>]` entry from the user's
-  `pathlint.toml` points at a per-OS path that does not exist on
-  the host. Built-in catalog sources are deliberately skipped (most
-  hosts are missing 80% of the catalog by design).
-- **`--no-glyphs` now applies to `doctor` / `trace` / `sort`
-  output.** Pre-0.0.18 the flag only routed through `report.rs`
-  (check OK/NG tags). Em-dash and rightwards-arrow now fall back to
-  `-` and `->` across every human renderer.
-- **`pathlint::catalog::RelationIndex` typed accessor view.**
-  Internal-only refactor; no change to the `[[relation]] kind=...`
-  TOML shape. consumers (sort / doctor / trace / cycle check) read
-  through `iter_aliases()` / `iter_conflicts()` /
-  `iter_provenances()` / `iter_depends_on()` /
-  `iter_prefer_orders()` instead of open `match Relation { ... }`.
-- **`scripts/bench.sh` startup-time baseline.** hyperfine wrapper;
-  paste the table into release notes to verify the PRD §12
-  `<50 ms` claim on the host.
 
 ### 17.1 Cumulative breaking changes
 
@@ -1234,6 +1195,54 @@ The change log is split into two:
 - **`build.rs` aggregates referential integrity violations.**
   CI surfaces every offending plugin in one failure instead of
   bailing on the first.
+
+### 17.2 Cumulative additions (no breaking)
+
+#### 0.0.19
+
+- **`pathlint doctor` learned the `duplicate_but_shadowed`
+  detector.** Fires when the same command basename exists as a
+  real executable in two or more PATH dirs. Reports the winning
+  PATH index, the shadowed indices, and the command name.
+  Windows compares case-insensitively after stripping PATHEXT
+  extensions (so `python.exe` and `python.bat` count as the same
+  command). Suppress with `--exclude duplicate_but_shadowed`.
+
+  Design choice — no alias filter. mise activate's typical
+  shims+installs layout is not "expected noise" the detector
+  should ignore: in mise's standard usage, only one of the two
+  dirs is on PATH at a time (`mise activate` exposes shims;
+  `mise hook-env` exposes installs). Both being on PATH at once
+  is itself a misconfiguration, already warned about from the
+  relation angle by the existing `mise_activate_both` Conflict
+  detector. Filtering out the same situation in a second
+  detector would hide the same mistake from a different angle.
+  When the host's noise is genuinely unwanted, suppress per host
+  with `--exclude`.
+
+- **`pathlint::doctor::fs_list_dir_real`** added as the
+  production wrapper for the new closure parameter.
+
+#### 0.0.18
+
+- **`pathlint doctor` learned the `per_source_missing_required`
+  detector.** Fires when a `[source.<name>]` entry from the user's
+  `pathlint.toml` points at a per-OS path that does not exist on
+  the host. Built-in catalog sources are deliberately skipped (most
+  hosts are missing 80% of the catalog by design).
+- **`--no-glyphs` now applies to `doctor` / `trace` / `sort`
+  output.** Pre-0.0.18 the flag only routed through `report.rs`
+  (check OK/NG tags). Em-dash and rightwards-arrow now fall back to
+  `-` and `->` across every human renderer.
+- **`pathlint::catalog::RelationIndex` typed accessor view.**
+  Internal-only refactor; no change to the `[[relation]] kind=...`
+  TOML shape. consumers (sort / doctor / trace / cycle check) read
+  through `iter_aliases()` / `iter_conflicts()` /
+  `iter_provenances()` / `iter_depends_on()` /
+  `iter_prefer_orders()` instead of open `match Relation { ... }`.
+- **`scripts/bench.sh` startup-time baseline.** hyperfine wrapper;
+  paste the table into release notes to verify the PRD §12
+  `<50 ms` claim on the host.
 
 ## 18. Relationship to other tools
 
