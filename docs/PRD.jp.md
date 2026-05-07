@@ -896,7 +896,15 @@ post-1.0 議題。
   両方にあるかは問わない)。 こちらは *同 command* が 2 dir 以上に
   存在するときに発火 (dir が named source か否かは問わない)。
   named-source-pair の角度と unnamed command-name の角度を
-  両方カバーする 2 段構え。 *(0.0.19+。)*
+  両方カバーする 2 段構え。
+
+  常に報告する理由: mise activate の標準的な使い方では shims か
+  installs のどちらか片方しか PATH に出ない (`mise activate` は
+  shims、 `mise hook-env` は installs を露出する)。 両方が PATH に
+  あるのはそれ自体が設定ミスで、 既存の `mise_activate_both`
+  Conflict detector が別角度からカバーする。 同じ状況を別 detector
+  で隠すと同じミスを見逃すことになる。 詳細な設計議論は §17.2
+  0.0.19 entry。 *(0.0.19+。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
   する PATH は `process` と違うことがある。MVP 外、0.0.x 線でも
   扱わず 0.1.x 候補として整理。実装方針は 3 案：

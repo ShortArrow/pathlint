@@ -141,8 +141,8 @@ kind    = "executable"
 - `pathlint check --json` — machine-readable output for CI
   pipelines.
 - `pathlint doctor` — lint PATH itself (duplicates, missing dirs,
-  8.3 short names, env-var-shortenable entries, malformed entries).
-  Independent of `[[expect]]`.
+  8.3 short names, env-var-shortenable entries, malformed entries,
+  same-command-different-dir shadows). Independent of `[[expect]]`.
 - `pathlint trace <command>` — show where a command resolves from,
   which sources match it, and the most plausible uninstall command.
   Plugin-aware for mise (see [Working with mise](#working-with-mise)).

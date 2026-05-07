@@ -137,8 +137,9 @@ kind    = "executable"
   resolved / matched / prefer / avoid / diagnosis / hint を多行表示。
 - `pathlint check --json` — CI パイプライン向け機械可読出力。
 - `pathlint doctor` — PATH 自体の衛生チェック（重複、不在
-  ディレクトリ、8.3 短縮、env-var 短縮候補、形式破損エントリ）。
-  `[[expect]]` から独立。
+  ディレクトリ、8.3 短縮、env-var 短縮候補、形式破損エントリ、
+  同名コマンドが別 dir に実体を持つ shadow）。 `[[expect]]` から
+  独立。
 - `pathlint trace <command>` — コマンドの解決元、マッチ source、
   最も妥当な uninstall コマンドを表示。mise については plugin-aware
   ([mise を使うとき](#mise-を使うとき) 参照)。

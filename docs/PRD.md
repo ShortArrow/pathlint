@@ -971,7 +971,16 @@ Tagged with the role(s) each touches.
   when the *same command* exists in two PATH dirs, regardless of
   whether the dirs are named in any relation. Together they
   cover the two angles (named-source-pair conflicts vs unnamed
-  command-name shadows). *(0.0.19+.)*
+  command-name shadows).
+
+  Why always reported: in mise activate's standard usage only one
+  of `mise_shims` / `mise_installs` is on PATH at a time
+  (`mise activate` exposes shims; `mise hook-env` exposes
+  installs); both being on PATH is itself a misconfiguration the
+  existing `mise_activate_both` Conflict detector covers from a
+  different angle. Filtering out the same situation in a second
+  detector would hide the same mistake. See §17.2 0.0.19 entry
+  for the full design discussion. *(0.0.19+.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP and out of
   the 0.0.x line — flagged here as a 0.1.x candidate. Three
