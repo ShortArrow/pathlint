@@ -102,14 +102,10 @@ pub fn execute(cli: Cli) -> Result<u8> {
     // gives them a runway to migrate. Stderr only — JSON pipelines
     // are unaffected. --quiet does not suppress this on purpose.
     if matches!(cli.command, Some(Command::Trace(_))) && alias_used("where") {
-        eprintln!(
-            "pathlint: warning: 'where' is deprecated; use 'trace' instead"
-        );
+        eprintln!("pathlint: warning: 'where' is deprecated; use 'trace' instead");
     }
     if alias_used("--rules") {
-        eprintln!(
-            "pathlint: warning: '--rules' is deprecated; use '--config' instead"
-        );
+        eprintln!("pathlint: warning: '--rules' is deprecated; use '--config' instead");
     }
 
     let check_args = match cli.command {

@@ -981,6 +981,17 @@ Tagged with the role(s) each touches.
   different angle. Filtering out the same situation in a second
   detector would hide the same mistake. See §17.2 0.0.19 entry
   for the full design discussion. *(0.0.19+.)*
+- **[R3] RelativePathEntry.** PATH entry expands to a relative
+  path (`.`, `./bin`, bare `bin`, …). The shell resolves these
+  against the current working directory at command-invocation
+  time, so the binary that runs depends on where the user
+  happens to be — almost always a security or portability
+  footgun. Env vars are expanded first, so `$HOME/bin` does not
+  fire when `HOME` is set; an unresolved `$VAR/bin` stays
+  verbatim and fires (it is itself a config bug). "Absolute"
+  is judged by the target Os, not the host: `/usr/bin` is
+  absolute on Linux but not on Windows. Suppress per host with
+  `--exclude relative_path_entry`. *(0.0.20+.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP and out of
   the 0.0.x line — flagged here as a 0.1.x candidate. Three
@@ -1197,6 +1208,31 @@ The change log is split into two:
   bailing on the first.
 
 ### 17.2 Cumulative additions (no breaking)
+
+#### 0.0.20
+
+- **`pathlint doctor` learned the `relative_path_entry` detector.**
+  Fires when a PATH entry expands to a relative path (`.`,
+  `./bin`, bare `bin`, …). The shell would resolve these against
+  the cwd at command-invocation time — almost always a security
+  or portability footgun. Env vars are expanded first; an
+  unresolved `$VAR/bin` stays verbatim and fires (config bug
+  worth surfacing). "Absolute" is judged by the target OS, not
+  the host. Suppress with `--exclude relative_path_entry`.
+- **`pathlint where` and `--rules` now print a one-line
+  deprecation warning to stderr on use.** Canonical names
+  `trace` and `--config` remain unchanged. Removal is planned
+  for a future breaking release; the warning is the migration
+  runway.
+- **5 schema top-level descriptions tidied** for editor hover
+  use. Implementation jargon (`deny_unknown_fields`, "discriminated
+  union") removed; checked-in schemas regenerated. Drift gates
+  green.
+- **`source_match` rustdoc example** replaced with a concrete
+  `find()` call against `/usr/bin/ls`; the doctest now actually
+  validates the API instead of asserting a tautology.
+- **RELEASE checklist** clarifies that `docs/ARCHITECTURE.md` is
+  intentionally English-only and not gated by EN/JP parity.
 
 #### 0.0.19
 

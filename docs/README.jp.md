@@ -295,7 +295,7 @@ alias、`--rules` は `--config` の visible alias として 0.0.x
 ```
 
 特定リリースに固定したい場合は (`<TAG>` を使いたいバージョン
-に置換、例: `v0.0.17`)：
+に置換、例: `v0.0.19`)：
 
 ```toml
 #:schema https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json
