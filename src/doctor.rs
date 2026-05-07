@@ -1728,4 +1728,101 @@ mod tests {
             .collect();
         assert!(dbs.is_empty(), "no shadow when no command repeats");
     }
+
+    fn relative_kinds(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
+        diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::RelativePathEntry))
+            .collect()
+    }
+
+    #[test]
+    fn relative_path_entry_fires_on_dot() {
+        let e = entries(&["."]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        let hits = relative_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].index, 0);
+        assert_eq!(hits[0].entry, ".");
+        assert_eq!(hits[0].severity, Severity::Warn);
+    }
+
+    #[test]
+    fn relative_path_entry_fires_on_relative_with_subpath() {
+        let e = entries(&["./bin", "bin", "app/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        let hits = relative_kinds(&diags);
+        assert_eq!(hits.len(), 3, "all three relative entries fire");
+    }
+
+    #[test]
+    fn relative_path_entry_no_fire_on_absolute_unix() {
+        let e = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        assert!(relative_kinds(&diags).is_empty());
+    }
+
+    #[test]
+    fn relative_path_entry_no_fire_after_env_expansion() {
+        let e = entries(&["$PATHLINT_TEST_REL_HOME/bin"]);
+        let env = env_map(&[("PATHLINT_TEST_REL_HOME", "/home/u")]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env,
+            fs_list_empty,
+        );
+        assert!(
+            relative_kinds(&diags).is_empty(),
+            "env-expanded absolute path must not trigger relative_path_entry",
+        );
+    }
+
+    #[test]
+    fn relative_path_entry_fires_when_env_unresolved() {
+        let e = entries(&["$PATHLINT_TEST_REL_UNRESOLVED/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        let hits = relative_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "unresolved env var leaves the entry verbatim ($VAR/bin), \
+             which is treated as relative for safety",
+        );
+    }
 }
