@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json",
   "title": "pathlint.toml",
-  "description": "Top-level `pathlint.toml` document. Use `require_catalog = N` to pin a minimum embedded-catalog version. (`catalog_version` itself belongs to the embedded catalog file and is rejected here by `deny_unknown_fields`. See PRD §9 / §17.)",
+  "description": "User configuration for pathlint, parsed from `pathlint.toml`. See PRD §8 for the field reference.",
   "type": "object",
   "properties": {
     "expect": {

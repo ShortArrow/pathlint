@@ -26,10 +26,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-/// Top-level `pathlint.toml` document. Use `require_catalog = N` to
-/// pin a minimum embedded-catalog version. (`catalog_version` itself
-/// belongs to the embedded catalog file and is rejected here by
-/// `deny_unknown_fields`. See PRD §9 / §17.)
+/// User configuration for pathlint, parsed from `pathlint.toml`.
+/// See PRD §8 for the field reference.
 #[derive(Debug, Default, Deserialize, Clone, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "pathlint.toml")]

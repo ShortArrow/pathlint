@@ -41,9 +41,8 @@ pub enum TraceOutcome {
     NotFound,
 }
 
-/// JSON shape emitted by `pathlint trace --json`. Tagged enum
-/// discriminated by the `kind` field (`"found"` / `"not_found"`).
-/// See PRD §17 for the wire-shape history.
+/// Result of a `pathlint trace <command>` lookup, as emitted by
+/// `pathlint trace --json`. See PRD §17 for the wire-shape history.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TraceJsonOutput {

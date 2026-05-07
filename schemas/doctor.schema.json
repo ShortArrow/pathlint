@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/doctor.schema.json",
   "title": "Diagnostic",
-  "description": "Discriminated union of every doctor diagnostic kind. The `kind` field is the discriminator and the variant payload is flattened alongside it for JSON consumers — e.g. `Shortenable` emits `{\"kind\":\"shortenable\",\"suggestion\":\"...\"}` rather than nesting the suggestion under a wrapper.",
+  "description": "One PATH-hygiene problem reported by `pathlint doctor`. See PRD §7.7 for the full list of diagnostic kinds.",
   "type": "object",
   "oneOf": [
     {

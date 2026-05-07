@@ -110,11 +110,8 @@ pub enum Severity {
     Error,
 }
 
-/// Discriminated union of every doctor diagnostic kind. The
-/// `kind` field is the discriminator and the variant payload is
-/// flattened alongside it for JSON consumers — e.g. `Shortenable`
-/// emits `{"kind":"shortenable","suggestion":"..."}` rather than
-/// nesting the suggestion under a wrapper.
+/// One PATH-hygiene problem reported by `pathlint doctor`.
+/// See PRD §7.7 for the full list of diagnostic kinds.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Kind {

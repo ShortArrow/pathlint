@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/sort.schema.json",
   "title": "SortPlan",
-  "description": "Pure-data result of [`sort_path`]. Always carries both the `original` and the `sorted` vector, so consumers (human view / JSON) can present a self-contained before / after without re-running the algorithm.",
+  "description": "Proposed PATH reordering from `pathlint sort --dry-run`, carrying the original and sorted entries plus the move list.",
   "type": "object",
   "required": [
     "moves",
