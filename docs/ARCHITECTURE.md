@@ -58,7 +58,7 @@ fails CI.
 | `lint` | core PATH evaluation | `evaluate`, `exit_code`, `Outcome`, `Status`, `Diagnosis`, `CheckOutcomeView` |
 | `trace` | provenance lookup | `locate`, `TraceOutcome`, `Found`, `Provenance`, `UninstallHint` |
 | `sort` | PATH repair proposals | `sort_path`, `SortPlan`, `EntryMove`, `SortNote` |
-| `doctor` | PATH hygiene | `analyze`, `analyze_real`, `Diagnostic`, `Filter`, `Kind`, `Severity` |
+| `doctor` | PATH hygiene | `analyze`, `analyze_real`, `fs_list_dir_real`, `Diagnostic`, `Filter`, `Kind`, `Severity` |
 | `catalog` | built-in source catalog | `builtin`, `builtin_relations`, `merge_with_user`, `merge_with_user_relations`, `check_acyclic`, `version_check`, `embedded_version`, `RelationIndex` |
 | `source_match` | path → source matching | `find`, `names_only`, `validate_sources`, `Match`, `SourceWarning` |
 | `os_detect` | runtime OS dispatch | `Os`, `os_filter_applies` |

@@ -19,8 +19,9 @@
 //! - [`sort`]: PATH repair proposals. Headlines: `sort_path`,
 //!   `SortPlan`, `EntryMove`, `SortNote`.
 //! - [`doctor`]: PATH hygiene. Headlines: `analyze`,
-//!   `analyze_real`, `Diagnostic`, `Filter`,
-//!   plus the `Kind` / `Severity` enums.
+//!   `analyze_real`, `fs_list_dir_real` (the production wrapper
+//!   for the 0.0.19 `fs_list_dir` closure parameter),
+//!   `Diagnostic`, `Filter`, plus the `Kind` / `Severity` enums.
 //! - [`catalog`]: built-in source catalog. Headlines: `builtin`,
 //!   `builtin_relations`, `merge_with_user`,
 //!   `merge_with_user_relations`, `check_acyclic`,
