@@ -85,9 +85,33 @@ fn enforce_relation_acyclic(relations: &[pathlint::config::Relation]) -> Result<
     Ok(())
 }
 
+/// True if any process arg is an exact match for `needle`. Used
+/// to detect `where` (legacy alias of `trace`) and `--rules`
+/// (legacy alias of `--config`) for the 0.0.20 deprecation
+/// warning. Matching the raw arg string is sufficient because
+/// neither alias appears anywhere else in the CLI grammar.
+fn alias_used(needle: &str) -> bool {
+    std::env::args().any(|a| a == needle)
+}
+
 /// Returns a process exit code: 0 = clean, 1 = expectation failure,
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
+    // 0.0.20: warn the user when they invoke a deprecated alias.
+    // Removal will land in a future breaking release; the warning
+    // gives them a runway to migrate. Stderr only — JSON pipelines
+    // are unaffected. --quiet does not suppress this on purpose.
+    if matches!(cli.command, Some(Command::Trace(_))) && alias_used("where") {
+        eprintln!(
+            "pathlint: warning: 'where' is deprecated; use 'trace' instead"
+        );
+    }
+    if alias_used("--rules") {
+        eprintln!(
+            "pathlint: warning: '--rules' is deprecated; use '--config' instead"
+        );
+    }
+
     let check_args = match cli.command {
         Some(Command::Init(args)) => return execute_init(&args),
         Some(Command::Catalog {
