@@ -198,6 +198,21 @@
           }
         }
       }
+    },
+    {
+      "description": "PATH entry resolves to a relative path (`.`, `./bin`, bare `bin`, …). The shell resolves these against the current working directory at command-invocation time, so the binary that runs depends on where the user happens to be — almost always a security or portability footgun. Env vars are expanded before the check, so `$HOME/bin` does not fire when `HOME` is set; an unresolved `$VAR/bin` stays verbatim and fires (it is itself a config bug). 0.0.20+.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "relative_path_entry"
+          ]
+        }
+      }
     }
   ],
   "required": [
