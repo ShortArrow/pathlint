@@ -988,6 +988,22 @@ mod tests {
                 .unwrap_or_default()
         }
     }
+    fn fs_writable_no(_: &str) -> bool {
+        false
+    }
+    #[allow(dead_code)]
+    fn fs_writable_yes(_: &str) -> bool {
+        true
+    }
+    fn fs_writable_map<'a>(pairs: &'a [(&'a str, bool)]) -> impl Fn(&str) -> bool + 'a {
+        move |path| {
+            pairs
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, w)| *w)
+                .unwrap_or(false)
+        }
+    }
 
     fn empty_sources() -> BTreeMap<String, SourceDef> {
         BTreeMap::new()
@@ -1899,6 +1915,118 @@ mod tests {
             1,
             "unresolved env var leaves the entry verbatim ($VAR/bin), \
              which is treated as relative for safety",
+        );
+    }
+
+    fn writable_kinds(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
+        diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::WriteablePathDir))
+            .collect()
+    }
+
+    #[test]
+    fn writeable_path_dir_fires_when_writable() {
+        let e = entries(&["/usr/bin"]);
+        let writable = fs_writable_map(&[("/usr/bin", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        let hits = writable_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].index, 0);
+        assert_eq!(hits[0].entry, "/usr/bin");
+        assert_eq!(hits[0].severity, Severity::Warn);
+    }
+
+    #[test]
+    fn writeable_path_dir_no_fire_when_readonly() {
+        let e = entries(&["/usr/bin", "/usr/local/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        assert!(writable_kinds(&diags).is_empty());
+    }
+
+    #[test]
+    fn writeable_path_dir_skips_empty_entry() {
+        // Empty entry is handled by the malformed / shape stage; the
+        // writeable detector must not double-report on it.
+        let e = entries(&[""]);
+        let writable = fs_writable_map(&[("", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        assert!(writable_kinds(&diags).is_empty());
+    }
+
+    #[test]
+    fn writeable_path_dir_index_matches_entry_position() {
+        // Three entries; only the second is writable. The diagnostic
+        // index must point at #1, not #0 or #2.
+        let e = entries(&["/usr/bin", "/tmp", "/usr/local/bin"]);
+        let writable = fs_writable_map(&[("/tmp", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        let hits = writable_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].index, 1);
+        assert_eq!(hits[0].entry, "/tmp");
+    }
+
+    #[test]
+    fn writeable_path_dir_after_env_expansion() {
+        // The detector is supposed to expand env vars before asking
+        // whether the dir is writable. Use the same set_var + remove_var
+        // dance the relative_path_entry test uses.
+        unsafe { env::set_var("PATHLINT_TEST_WRITEABLE_DIR", "/srv/writable") };
+        let e = entries(&["$PATHLINT_TEST_WRITEABLE_DIR"]);
+        let writable = fs_writable_map(&[("/srv/writable", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        unsafe { env::remove_var("PATHLINT_TEST_WRITEABLE_DIR") };
+        let hits = writable_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "expanded path is forwarded to is_writable_dir, so the env-var entry fires",
         );
     }
 }
