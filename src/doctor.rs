@@ -73,8 +73,121 @@ pub fn analyze_real(
         fs_exists_real,
         env_lookup_real,
         fs_list_dir_real,
-        |_| false, // Step 2 stub; Step 3 swaps in is_writable_dir_real.
+        is_writable_dir_real,
     )
+}
+
+/// Production wrapper for the `is_writable_dir` closure on
+/// `analyze`. Returns `true` when the directory at `path` is
+/// writable by users other than the owner — Unix checks the
+/// others-write bit (`mode & 0o002`); Windows queries the DACL
+/// for the "Everyone" SID's effective `FILE_GENERIC_WRITE` /
+/// `FILE_APPEND_DATA`. Permission errors, missing dirs, files
+/// that aren't directories, and any winapi failure all return
+/// `false` (skip — the dedicated `Missing` detector covers
+/// nonexistence). Used by the 0.0.21 `WriteablePathDir` detector.
+#[cfg(unix)]
+pub fn is_writable_dir_real(path: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|m| m.is_dir() && m.permissions().mode() & 0o002 != 0)
+        .unwrap_or(false)
+}
+
+/// Windows variant of [`is_writable_dir_real`]. Reads the DACL
+/// via `GetNamedSecurityInfoW`, asks `GetEffectiveRightsFromAclW`
+/// for the rights granted to the well-known "Everyone" SID
+/// (`S-1-1-0`), and returns `true` iff `FILE_GENERIC_WRITE` or
+/// `FILE_APPEND_DATA` is set. Any winapi failure returns `false`.
+#[cfg(windows)]
+pub fn is_writable_dir_real(path: &str) -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, LocalFree};
+    use windows_sys::Win32::Security::Authorization::{
+        GetEffectiveRightsFromAclW, GetNamedSecurityInfoW, SE_FILE_OBJECT, TRUSTEE_IS_SID,
+        TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
+    };
+    use windows_sys::Win32::Security::{
+        ACL, AllocateAndInitializeSid, DACL_SECURITY_INFORMATION, FreeSid, PSECURITY_DESCRIPTOR,
+        SID_IDENTIFIER_AUTHORITY,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{FILE_APPEND_DATA, FILE_GENERIC_WRITE};
+    use windows_sys::Win32::System::SystemServices::SECURITY_WORLD_RID;
+
+    // Confirm the path is a directory before consulting ACLs;
+    // metadata() also captures the "doesn't exist" case which
+    // belongs to the Missing detector, not this one.
+    match std::fs::metadata(path) {
+        Ok(m) if m.is_dir() => {}
+        _ => return false,
+    }
+
+    let wide: Vec<u16> = OsStr::new(path).encode_wide().chain([0]).collect();
+
+    let mut dacl: *mut ACL = std::ptr::null_mut();
+    let mut sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    let result = unsafe {
+        GetNamedSecurityInfoW(
+            wide.as_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut dacl,
+            std::ptr::null_mut(),
+            &mut sd,
+        )
+    };
+    if result != ERROR_SUCCESS || dacl.is_null() {
+        if !sd.is_null() {
+            unsafe { LocalFree(sd as _) };
+        }
+        return false;
+    }
+
+    let everyone_auth = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 1],
+    };
+    let mut everyone_sid: *mut core::ffi::c_void = std::ptr::null_mut();
+    let alloc_ok = unsafe {
+        AllocateAndInitializeSid(
+            &everyone_auth,
+            1,
+            SECURITY_WORLD_RID as u32,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut everyone_sid,
+        )
+    };
+    if alloc_ok == 0 || everyone_sid.is_null() {
+        unsafe { LocalFree(sd as _) };
+        return false;
+    }
+
+    let mut trustee: TRUSTEE_W = unsafe { std::mem::zeroed() };
+    trustee.TrusteeForm = TRUSTEE_IS_SID;
+    trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    trustee.ptstrName = everyone_sid as *mut _;
+
+    let mut rights: u32 = 0;
+    let eff_ok = unsafe { GetEffectiveRightsFromAclW(dacl, &trustee, &mut rights) };
+
+    unsafe {
+        FreeSid(everyone_sid);
+        LocalFree(sd as _);
+    }
+
+    if eff_ok != ERROR_SUCCESS {
+        return false;
+    }
+
+    rights & (FILE_GENERIC_WRITE | FILE_APPEND_DATA) != 0
 }
 
 /// Real-world `fs_list_dir` for `analyze`: enumerates basenames of
@@ -363,7 +476,6 @@ where
     L: Fn(&str) -> Vec<String>,
     W: Fn(&str) -> bool,
 {
-    let _ = &is_writable_dir; // Step 2 stub; Step 3 wires the detector.
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         if let Some(d) = check_malformed(i, entry) {
@@ -398,6 +510,7 @@ where
     add_per_source_missing_required_diagnostics(sources, os, &fs_exists, &env_lookup, &mut out);
     add_duplicate_but_shadowed_diagnostics(entries, os, &fs_list_dir, &env_lookup, &mut out);
     add_relative_path_entry_diagnostics(entries, os, &mut out);
+    add_writeable_path_dir_diagnostics(entries, &is_writable_dir, &mut out);
     out
 }
 
@@ -430,6 +543,38 @@ fn add_relative_path_entry_diagnostics(entries: &[String], os: Os, out: &mut Vec
                 entry: entries[i].clone(),
                 severity: Severity::Warn,
                 kind: Kind::RelativePathEntry,
+            });
+        }
+    }
+}
+
+/// Flag PATH entries whose env-expanded form points at a directory
+/// writable by users other than the owner. The shell does not care
+/// who can write to a PATH dir, so an attacker with shell access can
+/// drop a malicious binary that the user runs by typing a common
+/// command name. Production wires `is_writable_dir_real` (Unix
+/// `mode & 0o002`; Windows DACL "Everyone" effective write) into
+/// the closure; tests pass deterministic stubs. Empty entries skip
+/// silently — `Malformed` already covers them — and missing dirs
+/// fall through to `Missing`. 0.0.21+.
+fn add_writeable_path_dir_diagnostics<W>(
+    entries: &[String],
+    is_writable_dir: &W,
+    out: &mut Vec<Diagnostic>,
+) where
+    W: Fn(&str) -> bool,
+{
+    for (i, entry) in entries.iter().enumerate() {
+        let expanded = expand::expand_env(entry);
+        if expanded.is_empty() {
+            continue;
+        }
+        if is_writable_dir(&expanded) {
+            out.push(Diagnostic {
+                index: i,
+                entry: entries[i].clone(),
+                severity: Severity::Warn,
+                kind: Kind::WriteablePathDir,
             });
         }
     }

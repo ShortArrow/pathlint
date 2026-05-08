@@ -268,6 +268,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "windows-sys 0.59.0",
  "winreg",
 ]
 
