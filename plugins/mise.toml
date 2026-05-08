@@ -7,7 +7,8 @@
 # the catch-all matches both layers.
 
 [source.mise]
-description = "any binary served by mise (alias matching shims + installs)"
+# Catch-all that matches both the shim and per-runtime install layers.
+description = "mise catch-all (shims + installs)"
 windows = "$LocalAppData/mise"
 unix    = "$HOME/.local/share/mise"
 
@@ -17,7 +18,7 @@ windows = "$LocalAppData/mise/shims"
 unix    = "$HOME/.local/share/mise/shims"
 
 [source.mise_installs]
-description = "mise per-runtime install dirs"
+description = "mise per-runtime installs"
 windows = "$LocalAppData/mise/installs"
 unix    = "$HOME/.local/share/mise/installs"
 

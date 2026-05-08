@@ -1,5 +1,5 @@
 [source.npm_global]
-description = "globally-installed npm package binaries (`npm install -g`)"
+description = "npm global package binaries"
 windows = "$AppData/npm"
 unix    = "$HOME/.npm-global/bin"
 uninstall_command = "npm uninstall -g {bin}"

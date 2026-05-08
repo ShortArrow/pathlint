@@ -1,4 +1,4 @@
 [source.asdf]
-description = "asdf shim layer for multi-runtime version management"
+description = "asdf version manager shim layer"
 unix    = "$HOME/.asdf/shims"
 # asdf removes tools by plugin: `asdf uninstall <plugin> <version>`.
