@@ -31,6 +31,7 @@
 //!     |_| true,
 //!     |_| None,
 //!     |_| Vec::new(),
+//!     |_| false,
 //! );
 //! assert!(diags.iter().any(|d| matches!(d.kind, doctor::Kind::Duplicate { .. })));
 //! ```
@@ -72,6 +73,7 @@ pub fn analyze_real(
         fs_exists_real,
         env_lookup_real,
         fs_list_dir_real,
+        |_| false, // Step 2 stub; Step 3 swaps in is_writable_dir_real.
     )
 }
 
@@ -176,6 +178,16 @@ pub enum Kind {
     /// `HOME` is set; an unresolved `$VAR/bin` stays verbatim and
     /// fires (it is itself a config bug). 0.0.20+.
     RelativePathEntry,
+    /// PATH entry resolves to a directory that is writable by users
+    /// other than the owner. An attacker with shell access could
+    /// drop a malicious binary that the user runs by typing a
+    /// common command name. On Unix, "writable by others" means the
+    /// others-write bit (`mode & 0o002`) is set. On Windows, the
+    /// directory's DACL grants the "Everyone" SID effective
+    /// `FILE_GENERIC_WRITE` or `FILE_APPEND_DATA`. Env vars are
+    /// expanded first; missing or unreadable directories are
+    /// skipped (the `Missing` detector covers them). 0.0.21+.
+    WriteablePathDir,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -209,6 +221,7 @@ pub fn kind_name(kind: &Kind) -> &str {
         Kind::PerSourceMissingRequired { .. } => "per_source_missing_required",
         Kind::DuplicateButShadowed { .. } => "duplicate_but_shadowed",
         Kind::RelativePathEntry => "relative_path_entry",
+        Kind::WriteablePathDir => "writeable_path_dir",
     }
 }
 
@@ -231,6 +244,7 @@ pub fn all_kind_names() -> &'static [&'static str] {
         "per_source_missing_required",
         "duplicate_but_shadowed",
         "relative_path_entry",
+        "writeable_path_dir",
     ]
 }
 
@@ -333,7 +347,7 @@ pub fn has_error(diags: &[&Diagnostic]) -> bool {
 /// `Kind::Conflict` diagnostics: every
 /// `Relation::ConflictsWhenBothInPath` in `relations` fires when
 /// at least two of its declared `sources` match the current PATH.
-pub fn analyze<F, V, L>(
+pub fn analyze<F, V, L, W>(
     entries: &[String],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
@@ -341,12 +355,15 @@ pub fn analyze<F, V, L>(
     fs_exists: F,
     env_lookup: V,
     fs_list_dir: L,
+    is_writable_dir: W,
 ) -> Vec<Diagnostic>
 where
     F: Fn(&str) -> bool,
     V: Fn(&str) -> Option<String>,
     L: Fn(&str) -> Vec<String>,
+    W: Fn(&str) -> bool,
 {
+    let _ = &is_writable_dir; // Step 2 stub; Step 3 wires the detector.
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         if let Some(d) = check_malformed(i, entry) {
@@ -1062,6 +1079,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let dups: Vec<_> = diags
             .iter()
@@ -1084,6 +1102,7 @@ mod tests {
             fs_no,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(diags.iter().any(|d| matches!(d.kind, Kind::Missing)));
     }
@@ -1099,6 +1118,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let trailing: Vec<_> = diags
             .iter()
@@ -1119,6 +1139,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1156,6 +1177,7 @@ mod tests {
             fs_yes,
             env_map(&[("UserProfile", "C:\\Users\\Mixed")]),
             fs_list_empty,
+            fs_writable_no,
         );
         let s = diags
             .iter()
@@ -1180,6 +1202,7 @@ mod tests {
             fs_yes,
             env_map(&[("HOME", "/home/u")]),
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             !diags
@@ -1202,6 +1225,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let case: Vec<_> = diags
             .iter()
@@ -1221,6 +1245,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         // Empty entries are filtered upstream by `split_path`. If one
         // does sneak in, our checks must not blow up.
@@ -1254,6 +1279,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let mab: Vec<_> = diags.iter().filter_map(match_mise_activate_both).collect();
         assert_eq!(mab.len(), 1);
@@ -1274,6 +1300,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1299,6 +1326,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1326,6 +1354,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let (shims, installs) = diags
             .iter()
@@ -1378,6 +1407,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let groups = diags
             .iter()
@@ -1413,6 +1443,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let groups = diags
             .iter()
@@ -1448,6 +1479,7 @@ mod tests {
             fs_no,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hit = diags
             .iter()
@@ -1472,6 +1504,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1499,6 +1532,7 @@ mod tests {
             fs_no,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1513,7 +1547,7 @@ mod tests {
         // and force fs_exists=false → fire.
         let sources = cat_local(&[("cargo", unix_source("$HOME/.cargo/bin"))]);
         let env = env_map(&[("HOME", "/tmp/no_such_path")]);
-        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env, fs_list_empty);
+        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env, fs_list_empty, fs_writable_no);
         assert!(diags.iter().any(
             |d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo")
         ));
@@ -1696,6 +1730,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list,
+            fs_writable_no,
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -1730,6 +1765,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list,
+            fs_writable_no,
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -1753,7 +1789,7 @@ mod tests {
         let listing: [(&str, &[&str]); 2] = [("C:/a", &["Git.exe"]), ("C:/b", &["git.exe"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT;.CMD")]);
-        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
+        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list, fs_writable_no);
         let dbs: Vec<&Diagnostic> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
@@ -1777,7 +1813,7 @@ mod tests {
         let listing: [(&str, &[&str]); 2] = [("C:/a", &["python.exe"]), ("C:/b", &["python.bat"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT")]);
-        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
+        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list, fs_writable_no);
         let dbs: Vec<&Diagnostic> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
@@ -1806,6 +1842,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list,
+            fs_writable_no,
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -1832,6 +1869,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hits = relative_kinds(&diags);
         assert_eq!(hits.len(), 1);
@@ -1851,6 +1889,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hits = relative_kinds(&diags);
         assert_eq!(hits.len(), 3, "all three relative entries fire");
@@ -1867,6 +1906,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(relative_kinds(&diags).is_empty());
     }
@@ -1885,6 +1925,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         unsafe { env::remove_var("PATHLINT_TEST_REL_HOME") };
         assert!(
@@ -1908,6 +1949,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hits = relative_kinds(&diags);
         assert_eq!(
