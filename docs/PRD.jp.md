@@ -915,6 +915,17 @@ post-1.0 議題。
   (Linux の `/usr/bin` は absolute、 Windows では drive letter が
   ないので相対扱い)。 抑制は `--exclude relative_path_entry`。
   *(0.0.20+。)*
+- **[R3] WriteablePathDir。** PATH entry が指す dir が owner 以外
+  のユーザに書き込み可能なときに発火。 shell 権限を持つ攻撃者が
+  malicious binary を置いて、 user が common command を typing した
+  ときに走らせるリスク。 Unix では others-write bit (`mode & 0o002`)
+  を見る。 Windows では DACL を取得し、 well-known "Everyone" SID の
+  effective `FILE_GENERIC_WRITE` / `FILE_APPEND_DATA` が立っていれば
+  発火。 これは approximation で完全な access control 監査ではない:
+  group inheritance ("Authenticated Users" 経由など) はまだ check
+  していない (0.0.22+ 候補)。 Missing / 読み取り不能 dir は skip
+  (Missing detector がカバー)。 抑制は `--exclude writeable_path_dir`。
+  *(0.0.21+。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
   する PATH は `process` と違うことがある。MVP 外、0.0.x 線でも
   扱わず 0.1.x 候補として整理。実装方針は 3 案：
@@ -993,6 +1004,17 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   追加したリリース。何が増えたかの記録のみで、移行は不要。
 
 ### 17.1 累積的な破壊的変更
+
+#### 0.0.21
+
+- **`doctor::analyze` に `is_writable_dir` closure 引数を追加。**
+  新 `WriteablePathDir` 検出器のために 8 番目の引数
+  `Fn(&str) -> bool` が増えた。 各 PATH dir が owner 以外に書き込み
+  可能かを問い合わせる。 自前で resolver loop を組んでいる embedder
+  は closure を追加する必要がある (production wiring の参考は
+  `pathlint::doctor::is_writable_dir_real`、 Unix は others-write
+  bit、 Windows は DACL を `GetEffectiveRightsFromAclW` で読む)。
+  `analyze_real` は CLI のみの caller には透過。
 
 #### 0.0.19
 
@@ -1103,6 +1125,28 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   CI 失敗で全違反 plugin を確認できる。
 
 ### 17.2 累積的な追加（破壊なし）
+
+#### 0.0.21
+
+- **`pathlint doctor` に `writeable_path_dir` 検出器追加。**
+  PATH entry が指す dir が owner 以外のユーザに書き込み可能な
+  ときに発火。 Unix では others-write bit (`mode & 0o002`)、
+  Windows では DACL を取得し、 well-known "Everyone" SID に
+  effective `FILE_GENERIC_WRITE` / `FILE_APPEND_DATA` が立って
+  いれば発火。 approximation: group 継承 (Authenticated Users 経由
+  等) はまだ check していない。 抑制は
+  `--exclude writeable_path_dir`。
+- **`pathlint::doctor::is_writable_dir_real`** を新 closure 引数の
+  production wrapper として公開。 permission error / 不在 dir /
+  非 dir / winapi 失敗時はすべて `false` を返す。
+- **plugin description の文体を 7 source で統一**
+  (mise / mise_installs / os_baseline_linux_sbin / npm_global /
+  pip_user / asdf。 mise_shims は既に短いので変更なし)。
+  `pathlint catalog list` 出力の一覧走査性が向上、 distro / 実装
+  詳細は TOML コメントに移動。 codex post-0.0.19 review finding 10。
+- **windows-sys = 0.59** を `[target.'cfg(windows)'.dependencies]`
+  に追加 (Windows の DACL / SID API 用)。 Linux / macOS / Termux
+  ビルドには影響なし。
 
 #### 0.0.20
 
