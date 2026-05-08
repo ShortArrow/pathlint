@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/doctor.schema.json",
   "title": "Diagnostic",
-  "description": "Discriminated union of every doctor diagnostic kind. The `kind` field is the discriminator and the variant payload is flattened alongside it for JSON consumers — e.g. `Shortenable` emits `{\"kind\":\"shortenable\",\"suggestion\":\"...\"}` rather than nesting the suggestion under a wrapper.",
+  "description": "One PATH-hygiene problem reported by `pathlint doctor`. See PRD §7.7 for the full list of diagnostic kinds.",
   "type": "object",
   "oneOf": [
     {
@@ -196,6 +196,21 @@
             "format": "uint",
             "minimum": 0.0
           }
+        }
+      }
+    },
+    {
+      "description": "PATH entry resolves to a relative path (`.`, `./bin`, bare `bin`, …). The shell resolves these against the current working directory at command-invocation time, so the binary that runs depends on where the user happens to be — almost always a security or portability footgun. Env vars are expanded before the check, so `$HOME/bin` does not fire when `HOME` is set; an unresolved `$VAR/bin` stays verbatim and fires (it is itself a config bug). 0.0.20+.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "relative_path_entry"
+          ]
         }
       }
     }

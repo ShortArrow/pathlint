@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/trace.schema.json",
   "title": "TraceJsonOutput",
-  "description": "JSON shape emitted by `pathlint trace --json`. Tagged enum discriminated by the `kind` field (`\"found\"` / `\"not_found\"`). See PRD §17 for the wire-shape history.",
+  "description": "Result of a `pathlint trace <command>` lookup, as emitted by `pathlint trace --json`. See PRD §17 for the wire-shape history.",
   "oneOf": [
     {
       "type": "object",

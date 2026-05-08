@@ -38,7 +38,6 @@ fn glyph(style: Style, unicode: &'static str, ascii: &'static str) -> &'static s
 /// (header line + indented detail). The trailing newline is
 /// omitted; the caller decides whether to add one.
 pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
-    let _ = style; // doctor's body uses no glyphs of its own — kept for signature symmetry.
     if let Kind::Conflict { diagnostic, groups } = &d.kind {
         return doctor_conflict(entries, diagnostic, groups);
     }
@@ -91,6 +90,10 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
                 list,
             )
         }
+        Kind::RelativePathEntry => format!(
+            "relative PATH entry {} resolved against cwd at command time",
+            glyph(style, "—", "-")
+        ),
     };
     // Per-source diagnostics use usize::MAX as the "no PATH index"
     // sentinel; render that as "(catalog)" instead of a number.

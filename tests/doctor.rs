@@ -95,6 +95,28 @@ fn doctor_reports_duplicate_but_shadowed_across_path_dirs() {
 }
 
 #[test]
+fn doctor_warns_on_relative_path_entry() {
+    // PATH containing "." (cwd) is the textbook security footgun
+    // for relative entries; doctor should surface it.
+    let tmp = tempfile::tempdir().unwrap();
+    let real = tmp.path().join("real");
+    fs::create_dir_all(&real).unwrap();
+    let real = fs::canonicalize(&real).unwrap();
+    let real = strip_unc_prefix(&real);
+    // Mix one absolute entry (the tempdir) with one relative one ("."),
+    // so the run isn't dominated by other warnings.
+    let path = if cfg!(windows) {
+        format!("{};.", real.display())
+    } else {
+        format!("{}:.", real.display())
+    };
+    let (code, stdout, stderr) = run_doctor(&path);
+    let context = format!("code={code} stdout={stdout:?} stderr={stderr:?}");
+    assert_eq!(code, 0, "warn-only must not fail the run; {context}");
+    assert!(stdout.contains("relative PATH entry"), "{context}");
+}
+
+#[test]
 fn doctor_clean_path_emits_nothing() {
     // The temp dir on Windows lives under %LocalAppData%, which would
     // trigger the "shortenable" warning even on an otherwise clean

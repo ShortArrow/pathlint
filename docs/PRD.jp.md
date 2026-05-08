@@ -905,6 +905,16 @@ post-1.0 議題。
   Conflict detector が別角度からカバーする。 同じ状況を別 detector
   で隠すと同じミスを見逃すことになる。 詳細な設計議論は §17.2
   0.0.19 entry。 *(0.0.19+。)*
+- **[R3] RelativePathEntry。** PATH entry が env 展開後も相対
+  path のまま (`.`、 `./bin`、 bare `bin`、 …)。 shell は呼出時の
+  cwd 基準で resolve するため、 走る binary が user の居場所に
+  依存する — security と可搬性の両面で footgun。 env 変数は先に
+  展開するので HOME 設定済の `$HOME/bin` は発火しない。 未解決の
+  `$VAR/bin` は verbatim 残るので発火 (それ自体が設定 bug)。
+  「absolute かどうか」は host ではなく target Os で判定する
+  (Linux の `/usr/bin` は absolute、 Windows では drive letter が
+  ないので相対扱い)。 抑制は `--exclude relative_path_entry`。
+  *(0.0.20+。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
   する PATH は `process` と違うことがある。MVP 外、0.0.x 線でも
   扱わず 0.1.x 候補として整理。実装方針は 3 案：
@@ -1093,6 +1103,30 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   CI 失敗で全違反 plugin を確認できる。
 
 ### 17.2 累積的な追加（破壊なし）
+
+#### 0.0.20
+
+- **`pathlint doctor` に `relative_path_entry` 検出器追加。**
+  PATH entry が env 展開後も相対 path のまま (`.`、 `./bin`、
+  bare `bin`、 …) のときに発火。 shell は呼出時の cwd 基準で
+  resolve するため、 走る binary が user の居場所に依存する
+  security と可搬性の footgun。 env 変数は先に展開するので
+  HOME 設定済の `$HOME/bin` は発火しない。 未解決の `$VAR/bin`
+  は verbatim 残るので発火 (それ自体が設定 bug)。 「absolute
+  かどうか」は host ではなく target OS で判定。 抑制は
+  `--exclude relative_path_entry`。
+- **`pathlint where` と `--rules` 使用時に stderr へ deprecation
+  warning を 1 行出力。** canonical 名 (`trace` / `--config`) は
+  従来通り。 削除は将来の breaking release で予定、 warning は
+  移行 runway として用意した。
+- **5 schema top-level description を hover 向けに短文化。**
+  実装用語 (`deny_unknown_fields`、 「discriminated union」 等) を
+  除外、 checked-in schema を再生成。 drift gate 緑。
+- **`source_match` rustdoc 例**を tautology から `/usr/bin/ls`
+  に対する具体的な `find()` 呼び出しに差し替え。 doctest が API
+  挙動を実際に検証するように。
+- **RELEASE checklist** に `docs/ARCHITECTURE.md` は意図的に
+  英語のみで EN/JP parity check の対象外、 と明記。
 
 #### 0.0.19
 

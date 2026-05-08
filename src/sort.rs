@@ -84,10 +84,8 @@ pub enum SortNote {
     },
 }
 
-/// Pure-data result of [`sort_path`]. Always carries both the
-/// `original` and the `sorted` vector, so consumers (human view /
-/// JSON) can present a self-contained before / after without
-/// re-running the algorithm.
+/// Proposed PATH reordering from `pathlint sort --dry-run`,
+/// carrying the original and sorted entries plus the move list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 pub struct SortPlan {
     pub original: Vec<String>,

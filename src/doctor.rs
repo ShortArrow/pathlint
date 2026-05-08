@@ -110,11 +110,8 @@ pub enum Severity {
     Error,
 }
 
-/// Discriminated union of every doctor diagnostic kind. The
-/// `kind` field is the discriminator and the variant payload is
-/// flattened alongside it for JSON consumers — e.g. `Shortenable`
-/// emits `{"kind":"shortenable","suggestion":"..."}` rather than
-/// nesting the suggestion under a wrapper.
+/// One PATH-hygiene problem reported by `pathlint doctor`.
+/// See PRD §7.7 for the full list of diagnostic kinds.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Kind {
@@ -170,6 +167,15 @@ pub enum Kind {
         command: String,
         shadowed_indexes: Vec<usize>,
     },
+    /// PATH entry resolves to a relative path (`.`, `./bin`, bare
+    /// `bin`, …). The shell resolves these against the current
+    /// working directory at command-invocation time, so the binary
+    /// that runs depends on where the user happens to be — almost
+    /// always a security or portability footgun. Env vars are
+    /// expanded before the check, so `$HOME/bin` does not fire when
+    /// `HOME` is set; an unresolved `$VAR/bin` stays verbatim and
+    /// fires (it is itself a config bug). 0.0.20+.
+    RelativePathEntry,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -202,6 +208,7 @@ pub fn kind_name(kind: &Kind) -> &str {
         Kind::Conflict { diagnostic, .. } => diagnostic.as_str(),
         Kind::PerSourceMissingRequired { .. } => "per_source_missing_required",
         Kind::DuplicateButShadowed { .. } => "duplicate_but_shadowed",
+        Kind::RelativePathEntry => "relative_path_entry",
     }
 }
 
@@ -223,6 +230,7 @@ pub fn all_kind_names() -> &'static [&'static str] {
         "mise_activate_both",
         "per_source_missing_required",
         "duplicate_but_shadowed",
+        "relative_path_entry",
     ]
 }
 
@@ -372,7 +380,65 @@ where
     add_relation_conflict_diagnostics(&normalized, entries, sources, relations, os, &mut out);
     add_per_source_missing_required_diagnostics(sources, os, &fs_exists, &env_lookup, &mut out);
     add_duplicate_but_shadowed_diagnostics(entries, os, &fs_list_dir, &env_lookup, &mut out);
+    add_relative_path_entry_diagnostics(entries, os, &mut out);
     out
+}
+
+/// Flag PATH entries whose env-expanded form is still a relative
+/// path. Shells resolve relative entries against the cwd at command
+/// invocation time, so the binary that runs depends on where the
+/// user happens to be — almost always a security or portability
+/// footgun. Empty entries are left to `Malformed` to flag (or
+/// quietly skip, depending on the previous detectors); this one
+/// only fires on a non-empty post-expansion relative path.
+///
+/// Env expansion uses `expand::expand_env` which reads the real
+/// process env. Unresolved `$VAR` references stay verbatim, which
+/// means `$VAR/bin` is treated as relative and fires — that itself
+/// is a config bug worth surfacing.
+///
+/// "Absolute" depends on the target OS, not the host running
+/// pathlint: `/usr/bin` is absolute on Linux but relative on
+/// Windows (no drive letter), and `C:\Users\u\bin` is absolute on
+/// Windows but a bare relative name on Unix.
+fn add_relative_path_entry_diagnostics(entries: &[String], os: Os, out: &mut Vec<Diagnostic>) {
+    for (i, entry) in entries.iter().enumerate() {
+        let expanded = expand::expand_env(entry);
+        if expanded.is_empty() {
+            continue;
+        }
+        if !is_absolute_for_os(&expanded, os) {
+            out.push(Diagnostic {
+                index: i,
+                entry: entries[i].clone(),
+                severity: Severity::Warn,
+                kind: Kind::RelativePathEntry,
+            });
+        }
+    }
+}
+
+/// Cross-OS "absolute path?" check. `Path::is_absolute()` would
+/// answer for the host (the machine running pathlint), but a PATH
+/// entry meant for a different OS needs to be judged by that OS's
+/// rules. Windows: `C:\` / `C:/` drive-letter + separator, or
+/// `\\server\share` UNC. Unix-family (Linux/macOS/Termux): leading
+/// `/`. Everything else is treated as relative.
+fn is_absolute_for_os(s: &str, os: Os) -> bool {
+    match os {
+        Os::Windows => {
+            let bytes = s.as_bytes();
+            if bytes.len() >= 3
+                && bytes[0].is_ascii_alphabetic()
+                && bytes[1] == b':'
+                && (bytes[2] == b'/' || bytes[2] == b'\\')
+            {
+                return true;
+            }
+            s.starts_with("\\\\") || s.starts_with("//")
+        }
+        Os::Macos | Os::Linux | Os::Termux => s.starts_with('/'),
+    }
 }
 
 /// Detect commands whose basename appears as a real executable in
@@ -1730,5 +1796,109 @@ mod tests {
             .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
             .collect();
         assert!(dbs.is_empty(), "no shadow when no command repeats");
+    }
+
+    fn relative_kinds(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
+        diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::RelativePathEntry))
+            .collect()
+    }
+
+    #[test]
+    fn relative_path_entry_fires_on_dot() {
+        let e = entries(&["."]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        let hits = relative_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].index, 0);
+        assert_eq!(hits[0].entry, ".");
+        assert_eq!(hits[0].severity, Severity::Warn);
+    }
+
+    #[test]
+    fn relative_path_entry_fires_on_relative_with_subpath() {
+        let e = entries(&["./bin", "bin", "app/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        let hits = relative_kinds(&diags);
+        assert_eq!(hits.len(), 3, "all three relative entries fire");
+    }
+
+    #[test]
+    fn relative_path_entry_no_fire_on_absolute_unix() {
+        let e = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        assert!(relative_kinds(&diags).is_empty());
+    }
+
+    #[test]
+    fn relative_path_entry_no_fire_after_env_expansion() {
+        // SAFETY: detector reads process env (expand::expand_env).
+        // Unique var name keeps cross-test interference low.
+        unsafe { env::set_var("PATHLINT_TEST_REL_HOME", "/home/u") };
+        let e = entries(&["$PATHLINT_TEST_REL_HOME/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        unsafe { env::remove_var("PATHLINT_TEST_REL_HOME") };
+        assert!(
+            relative_kinds(&diags).is_empty(),
+            "env-expanded absolute path must not trigger relative_path_entry",
+        );
+    }
+
+    #[test]
+    fn relative_path_entry_fires_when_env_unresolved() {
+        // Use a name that is exceedingly unlikely to be set in any
+        // CI runner. expand_env keeps `$NAME` verbatim, so the entry
+        // stays as `$PATHLINT_TEST_REL_UNDEFINED_XYZ/bin`, which is
+        // a relative path and should fire.
+        let e = entries(&["$PATHLINT_TEST_REL_UNDEFINED_XYZ/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+        );
+        let hits = relative_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "unresolved env var leaves the entry verbatim ($VAR/bin), \
+             which is treated as relative for safety",
+        );
     }
 }
