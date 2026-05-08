@@ -213,6 +213,21 @@
           ]
         }
       }
+    },
+    {
+      "description": "PATH entry resolves to a directory that is writable by users other than the owner. An attacker with shell access could drop a malicious binary that the user runs by typing a common command name. On Unix, \"writable by others\" means the others-write bit (`mode & 0o002`) is set. On Windows, the directory's DACL grants the \"Everyone\" SID effective `FILE_GENERIC_WRITE` or `FILE_APPEND_DATA`. Env vars are expanded first; missing or unreadable directories are skipped (the `Missing` detector covers them). 0.0.21+.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "writeable_path_dir"
+          ]
+        }
+      }
     }
   ],
   "required": [

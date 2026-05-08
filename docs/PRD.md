@@ -992,6 +992,19 @@ Tagged with the role(s) each touches.
   is judged by the target Os, not the host: `/usr/bin` is
   absolute on Linux but not on Windows. Suppress per host with
   `--exclude relative_path_entry`. *(0.0.20+.)*
+- **[R3] WriteablePathDir.** PATH entry resolves to a directory
+  writable by users other than the owner. An attacker with shell
+  access can drop a malicious binary that the user runs by
+  typing a common command name. On Unix, the others-write bit
+  (`mode & 0o002`) is the trigger. On Windows, the directory's
+  DACL is queried and the detector fires when the well-known
+  "Everyone" SID has effective `FILE_GENERIC_WRITE` or
+  `FILE_APPEND_DATA`. This is an approximation, not a full
+  access-control audit: write granted via group inheritance
+  (e.g. `Authenticated Users`) is not yet checked, which is a
+  follow-up on the 0.0.22+ list. Missing or unreadable dirs are
+  skipped (the `Missing` detector covers them). Suppress per
+  host with `--exclude writeable_path_dir`. *(0.0.21+.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP and out of
   the 0.0.x line — flagged here as a 0.1.x candidate. Three
@@ -1076,6 +1089,18 @@ The change log is split into two:
   what's new; nothing here requires a migration.
 
 ### 17.1 Cumulative breaking changes
+
+#### 0.0.21
+
+- **`doctor::analyze` gains `is_writable_dir` closure parameter.**
+  The function now takes an 8th `Fn(&str) -> bool` argument used
+  by the new `WriteablePathDir` detector to ask whether each PATH
+  directory is writable by users other than the owner. Embedders
+  that built their own resolver loop must add the closure
+  (production wiring in `pathlint::doctor::is_writable_dir_real`
+  is the reference; Unix checks the others-write bit, Windows
+  reads the DACL via `GetEffectiveRightsFromAclW`). `analyze_real`
+  is unchanged for CLI-only callers.
 
 #### 0.0.19
 
@@ -1208,6 +1233,32 @@ The change log is split into two:
   bailing on the first.
 
 ### 17.2 Cumulative additions (no breaking)
+
+#### 0.0.21
+
+- **`pathlint doctor` learned the `writeable_path_dir` detector.**
+  PATH entry resolves to a directory writable by users other than
+  the owner. On Unix, the others-write bit (`mode & 0o002`) is
+  the trigger. On Windows, the DACL is queried and the detector
+  fires when the well-known "Everyone" SID has effective
+  `FILE_GENERIC_WRITE` or `FILE_APPEND_DATA`. Approximation, not
+  a full ACL audit: group-inherited writes are not yet checked.
+  Suppress with `--exclude writeable_path_dir`.
+- **`pathlint::doctor::is_writable_dir_real`** added as the
+  production wrapper for the new closure parameter. Returns
+  `false` on permission errors, missing dirs, non-directories,
+  or any winapi failure.
+- **Plugin description phrasing unified across 7 built-in
+  sources** (`mise`, `mise_installs`, `os_baseline_linux_sbin`,
+  `npm_global`, `pip_user`, `asdf`, with `mise_shims` already
+  short and unchanged). `pathlint catalog list` is now scannable
+  at a glance; distro / implementation context moved into TOML
+  comment lines next to each source. Codex post-0.0.19 review
+  finding 10.
+- **windows-sys = 0.59** added to
+  `[target.'cfg(windows)'.dependencies]` for the DACL and SID
+  API surface used by `is_writable_dir_real` on Windows. Linux,
+  macOS, and Termux builds are unaffected.
 
 #### 0.0.20
 

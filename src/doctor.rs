@@ -31,6 +31,7 @@
 //!     |_| true,
 //!     |_| None,
 //!     |_| Vec::new(),
+//!     |_| false,
 //! );
 //! assert!(diags.iter().any(|d| matches!(d.kind, doctor::Kind::Duplicate { .. })));
 //! ```
@@ -72,7 +73,121 @@ pub fn analyze_real(
         fs_exists_real,
         env_lookup_real,
         fs_list_dir_real,
+        is_writable_dir_real,
     )
+}
+
+/// Production wrapper for the `is_writable_dir` closure on
+/// `analyze`. Returns `true` when the directory at `path` is
+/// writable by users other than the owner — Unix checks the
+/// others-write bit (`mode & 0o002`); Windows queries the DACL
+/// for the "Everyone" SID's effective `FILE_GENERIC_WRITE` /
+/// `FILE_APPEND_DATA`. Permission errors, missing dirs, files
+/// that aren't directories, and any winapi failure all return
+/// `false` (skip — the dedicated `Missing` detector covers
+/// nonexistence). Used by the 0.0.21 `WriteablePathDir` detector.
+#[cfg(unix)]
+pub fn is_writable_dir_real(path: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|m| m.is_dir() && m.permissions().mode() & 0o002 != 0)
+        .unwrap_or(false)
+}
+
+/// Windows variant of [`is_writable_dir_real`]. Reads the DACL
+/// via `GetNamedSecurityInfoW`, asks `GetEffectiveRightsFromAclW`
+/// for the rights granted to the well-known "Everyone" SID
+/// (`S-1-1-0`), and returns `true` iff `FILE_GENERIC_WRITE` or
+/// `FILE_APPEND_DATA` is set. Any winapi failure returns `false`.
+#[cfg(windows)]
+pub fn is_writable_dir_real(path: &str) -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, LocalFree};
+    use windows_sys::Win32::Security::Authorization::{
+        GetEffectiveRightsFromAclW, GetNamedSecurityInfoW, SE_FILE_OBJECT, TRUSTEE_IS_SID,
+        TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
+    };
+    use windows_sys::Win32::Security::{
+        ACL, AllocateAndInitializeSid, DACL_SECURITY_INFORMATION, FreeSid, PSECURITY_DESCRIPTOR,
+        SID_IDENTIFIER_AUTHORITY,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{FILE_APPEND_DATA, FILE_GENERIC_WRITE};
+    use windows_sys::Win32::System::SystemServices::SECURITY_WORLD_RID;
+
+    // Confirm the path is a directory before consulting ACLs;
+    // metadata() also captures the "doesn't exist" case which
+    // belongs to the Missing detector, not this one.
+    match std::fs::metadata(path) {
+        Ok(m) if m.is_dir() => {}
+        _ => return false,
+    }
+
+    let wide: Vec<u16> = OsStr::new(path).encode_wide().chain([0]).collect();
+
+    let mut dacl: *mut ACL = std::ptr::null_mut();
+    let mut sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    let result = unsafe {
+        GetNamedSecurityInfoW(
+            wide.as_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut dacl,
+            std::ptr::null_mut(),
+            &mut sd,
+        )
+    };
+    if result != ERROR_SUCCESS || dacl.is_null() {
+        if !sd.is_null() {
+            unsafe { LocalFree(sd as _) };
+        }
+        return false;
+    }
+
+    let everyone_auth = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 1],
+    };
+    let mut everyone_sid: *mut core::ffi::c_void = std::ptr::null_mut();
+    let alloc_ok = unsafe {
+        AllocateAndInitializeSid(
+            &everyone_auth,
+            1,
+            SECURITY_WORLD_RID as u32,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut everyone_sid,
+        )
+    };
+    if alloc_ok == 0 || everyone_sid.is_null() {
+        unsafe { LocalFree(sd as _) };
+        return false;
+    }
+
+    let mut trustee: TRUSTEE_W = unsafe { std::mem::zeroed() };
+    trustee.TrusteeForm = TRUSTEE_IS_SID;
+    trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    trustee.ptstrName = everyone_sid as *mut _;
+
+    let mut rights: u32 = 0;
+    let eff_ok = unsafe { GetEffectiveRightsFromAclW(dacl, &trustee, &mut rights) };
+
+    unsafe {
+        FreeSid(everyone_sid);
+        LocalFree(sd as _);
+    }
+
+    if eff_ok != ERROR_SUCCESS {
+        return false;
+    }
+
+    rights & (FILE_GENERIC_WRITE | FILE_APPEND_DATA) != 0
 }
 
 /// Real-world `fs_list_dir` for `analyze`: enumerates basenames of
@@ -176,6 +291,16 @@ pub enum Kind {
     /// `HOME` is set; an unresolved `$VAR/bin` stays verbatim and
     /// fires (it is itself a config bug). 0.0.20+.
     RelativePathEntry,
+    /// PATH entry resolves to a directory that is writable by users
+    /// other than the owner. An attacker with shell access could
+    /// drop a malicious binary that the user runs by typing a
+    /// common command name. On Unix, "writable by others" means the
+    /// others-write bit (`mode & 0o002`) is set. On Windows, the
+    /// directory's DACL grants the "Everyone" SID effective
+    /// `FILE_GENERIC_WRITE` or `FILE_APPEND_DATA`. Env vars are
+    /// expanded first; missing or unreadable directories are
+    /// skipped (the `Missing` detector covers them). 0.0.21+.
+    WriteablePathDir,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -209,6 +334,7 @@ pub fn kind_name(kind: &Kind) -> &str {
         Kind::PerSourceMissingRequired { .. } => "per_source_missing_required",
         Kind::DuplicateButShadowed { .. } => "duplicate_but_shadowed",
         Kind::RelativePathEntry => "relative_path_entry",
+        Kind::WriteablePathDir => "writeable_path_dir",
     }
 }
 
@@ -231,6 +357,7 @@ pub fn all_kind_names() -> &'static [&'static str] {
         "per_source_missing_required",
         "duplicate_but_shadowed",
         "relative_path_entry",
+        "writeable_path_dir",
     ]
 }
 
@@ -333,7 +460,8 @@ pub fn has_error(diags: &[&Diagnostic]) -> bool {
 /// `Kind::Conflict` diagnostics: every
 /// `Relation::ConflictsWhenBothInPath` in `relations` fires when
 /// at least two of its declared `sources` match the current PATH.
-pub fn analyze<F, V, L>(
+#[allow(clippy::too_many_arguments)]
+pub fn analyze<F, V, L, W>(
     entries: &[String],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
@@ -341,11 +469,13 @@ pub fn analyze<F, V, L>(
     fs_exists: F,
     env_lookup: V,
     fs_list_dir: L,
+    is_writable_dir: W,
 ) -> Vec<Diagnostic>
 where
     F: Fn(&str) -> bool,
     V: Fn(&str) -> Option<String>,
     L: Fn(&str) -> Vec<String>,
+    W: Fn(&str) -> bool,
 {
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
@@ -381,6 +511,7 @@ where
     add_per_source_missing_required_diagnostics(sources, os, &fs_exists, &env_lookup, &mut out);
     add_duplicate_but_shadowed_diagnostics(entries, os, &fs_list_dir, &env_lookup, &mut out);
     add_relative_path_entry_diagnostics(entries, os, &mut out);
+    add_writeable_path_dir_diagnostics(entries, &is_writable_dir, &mut out);
     out
 }
 
@@ -413,6 +544,38 @@ fn add_relative_path_entry_diagnostics(entries: &[String], os: Os, out: &mut Vec
                 entry: entries[i].clone(),
                 severity: Severity::Warn,
                 kind: Kind::RelativePathEntry,
+            });
+        }
+    }
+}
+
+/// Flag PATH entries whose env-expanded form points at a directory
+/// writable by users other than the owner. The shell does not care
+/// who can write to a PATH dir, so an attacker with shell access can
+/// drop a malicious binary that the user runs by typing a common
+/// command name. Production wires `is_writable_dir_real` (Unix
+/// `mode & 0o002`; Windows DACL "Everyone" effective write) into
+/// the closure; tests pass deterministic stubs. Empty entries skip
+/// silently — `Malformed` already covers them — and missing dirs
+/// fall through to `Missing`. 0.0.21+.
+fn add_writeable_path_dir_diagnostics<W>(
+    entries: &[String],
+    is_writable_dir: &W,
+    out: &mut Vec<Diagnostic>,
+) where
+    W: Fn(&str) -> bool,
+{
+    for (i, entry) in entries.iter().enumerate() {
+        let expanded = expand::expand_env(entry);
+        if expanded.is_empty() {
+            continue;
+        }
+        if is_writable_dir(&expanded) {
+            out.push(Diagnostic {
+                index: i,
+                entry: entries[i].clone(),
+                severity: Severity::Warn,
+                kind: Kind::WriteablePathDir,
             });
         }
     }
@@ -988,6 +1151,22 @@ mod tests {
                 .unwrap_or_default()
         }
     }
+    fn fs_writable_no(_: &str) -> bool {
+        false
+    }
+    #[allow(dead_code)]
+    fn fs_writable_yes(_: &str) -> bool {
+        true
+    }
+    fn fs_writable_map<'a>(pairs: &'a [(&'a str, bool)]) -> impl Fn(&str) -> bool + 'a {
+        move |path| {
+            pairs
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, w)| *w)
+                .unwrap_or(false)
+        }
+    }
 
     fn empty_sources() -> BTreeMap<String, SourceDef> {
         BTreeMap::new()
@@ -1046,6 +1225,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let dups: Vec<_> = diags
             .iter()
@@ -1068,6 +1248,7 @@ mod tests {
             fs_no,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(diags.iter().any(|d| matches!(d.kind, Kind::Missing)));
     }
@@ -1083,6 +1264,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let trailing: Vec<_> = diags
             .iter()
@@ -1103,6 +1285,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1140,6 +1323,7 @@ mod tests {
             fs_yes,
             env_map(&[("UserProfile", "C:\\Users\\Mixed")]),
             fs_list_empty,
+            fs_writable_no,
         );
         let s = diags
             .iter()
@@ -1164,6 +1348,7 @@ mod tests {
             fs_yes,
             env_map(&[("HOME", "/home/u")]),
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             !diags
@@ -1186,6 +1371,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let case: Vec<_> = diags
             .iter()
@@ -1205,6 +1391,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         // Empty entries are filtered upstream by `split_path`. If one
         // does sneak in, our checks must not blow up.
@@ -1238,6 +1425,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let mab: Vec<_> = diags.iter().filter_map(match_mise_activate_both).collect();
         assert_eq!(mab.len(), 1);
@@ -1258,6 +1446,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1283,6 +1472,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1310,6 +1500,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let (shims, installs) = diags
             .iter()
@@ -1362,6 +1553,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let groups = diags
             .iter()
@@ -1397,6 +1589,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let groups = diags
             .iter()
@@ -1432,6 +1625,7 @@ mod tests {
             fs_no,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hit = diags
             .iter()
@@ -1456,6 +1650,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1483,6 +1678,7 @@ mod tests {
             fs_no,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(
             diags
@@ -1497,7 +1693,16 @@ mod tests {
         // and force fs_exists=false → fire.
         let sources = cat_local(&[("cargo", unix_source("$HOME/.cargo/bin"))]);
         let env = env_map(&[("HOME", "/tmp/no_such_path")]);
-        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env, fs_list_empty);
+        let diags = analyze(
+            &[],
+            &sources,
+            &[],
+            Os::Linux,
+            fs_no,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
         assert!(diags.iter().any(
             |d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo")
         ));
@@ -1680,6 +1885,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list,
+            fs_writable_no,
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -1714,6 +1920,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list,
+            fs_writable_no,
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -1737,7 +1944,16 @@ mod tests {
         let listing: [(&str, &[&str]); 2] = [("C:/a", &["Git.exe"]), ("C:/b", &["git.exe"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT;.CMD")]);
-        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list,
+            fs_writable_no,
+        );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
@@ -1761,7 +1977,16 @@ mod tests {
         let listing: [(&str, &[&str]); 2] = [("C:/a", &["python.exe"]), ("C:/b", &["python.bat"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT")]);
-        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list,
+            fs_writable_no,
+        );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
@@ -1790,6 +2015,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list,
+            fs_writable_no,
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -1816,6 +2042,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hits = relative_kinds(&diags);
         assert_eq!(hits.len(), 1);
@@ -1835,6 +2062,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hits = relative_kinds(&diags);
         assert_eq!(hits.len(), 3, "all three relative entries fire");
@@ -1851,6 +2079,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         assert!(relative_kinds(&diags).is_empty());
     }
@@ -1869,6 +2098,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         unsafe { env::remove_var("PATHLINT_TEST_REL_HOME") };
         assert!(
@@ -1892,6 +2122,7 @@ mod tests {
             fs_yes,
             env_none,
             fs_list_empty,
+            fs_writable_no,
         );
         let hits = relative_kinds(&diags);
         assert_eq!(
@@ -1899,6 +2130,118 @@ mod tests {
             1,
             "unresolved env var leaves the entry verbatim ($VAR/bin), \
              which is treated as relative for safety",
+        );
+    }
+
+    fn writable_kinds(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
+        diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::WriteablePathDir))
+            .collect()
+    }
+
+    #[test]
+    fn writeable_path_dir_fires_when_writable() {
+        let e = entries(&["/usr/bin"]);
+        let writable = fs_writable_map(&[("/usr/bin", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        let hits = writable_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].index, 0);
+        assert_eq!(hits[0].entry, "/usr/bin");
+        assert_eq!(hits[0].severity, Severity::Warn);
+    }
+
+    #[test]
+    fn writeable_path_dir_no_fire_when_readonly() {
+        let e = entries(&["/usr/bin", "/usr/local/bin"]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        assert!(writable_kinds(&diags).is_empty());
+    }
+
+    #[test]
+    fn writeable_path_dir_skips_empty_entry() {
+        // Empty entry is handled by the malformed / shape stage; the
+        // writeable detector must not double-report on it.
+        let e = entries(&[""]);
+        let writable = fs_writable_map(&[("", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        assert!(writable_kinds(&diags).is_empty());
+    }
+
+    #[test]
+    fn writeable_path_dir_index_matches_entry_position() {
+        // Three entries; only the second is writable. The diagnostic
+        // index must point at #1, not #0 or #2.
+        let e = entries(&["/usr/bin", "/tmp", "/usr/local/bin"]);
+        let writable = fs_writable_map(&[("/tmp", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        let hits = writable_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].index, 1);
+        assert_eq!(hits[0].entry, "/tmp");
+    }
+
+    #[test]
+    fn writeable_path_dir_after_env_expansion() {
+        // The detector is supposed to expand env vars before asking
+        // whether the dir is writable. Use the same set_var + remove_var
+        // dance the relative_path_entry test uses.
+        unsafe { env::set_var("PATHLINT_TEST_WRITEABLE_DIR", "/srv/writable") };
+        let e = entries(&["$PATHLINT_TEST_WRITEABLE_DIR"]);
+        let writable = fs_writable_map(&[("/srv/writable", true)]);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Linux,
+            fs_yes,
+            env_none,
+            fs_list_empty,
+            writable,
+        );
+        unsafe { env::remove_var("PATHLINT_TEST_WRITEABLE_DIR") };
+        let hits = writable_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "expanded path is forwarded to is_writable_dir, so the env-var entry fires",
         );
     }
 }

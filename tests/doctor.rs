@@ -116,6 +116,29 @@ fn doctor_warns_on_relative_path_entry() {
     assert!(stdout.contains("relative PATH entry"), "{context}");
 }
 
+#[cfg(unix)]
+#[test]
+fn doctor_warns_on_writeable_path_dir() {
+    // Create a tempdir, chmod it 0o777 (others-write), and put it on
+    // PATH. doctor should surface writeable_path_dir. Windows is
+    // skipped because winapi mock for ACL is impractical at the
+    // integration-test layer; the unit tests cover the closure
+    // contract and is_writable_dir_real has its own smoke covered
+    // by the public_api callability check.
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let writable = tmp.path().join("writable");
+    fs::create_dir_all(&writable).unwrap();
+    fs::set_permissions(&writable, fs::Permissions::from_mode(0o777)).unwrap();
+    let writable = fs::canonicalize(&writable).unwrap();
+    let writable = strip_unc_prefix(&writable);
+    let path = join_path(&[&writable]);
+    let (code, stdout, stderr) = run_doctor(&path);
+    let context = format!("code={code} stdout={stdout:?} stderr={stderr:?}");
+    assert_eq!(code, 0, "warn-only must not fail the run; {context}");
+    assert!(stdout.contains("writable by other users"), "{context}");
+}
+
 #[test]
 fn doctor_clean_path_emits_nothing() {
     // The temp dir on Windows lives under %LocalAppData%, which would

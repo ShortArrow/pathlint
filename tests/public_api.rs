@@ -94,6 +94,7 @@ fn analyze_callable_with_fs_list_dir_closure() {
         |_path: &str| -> bool { false },
         |_var: &str| -> Option<String> { None },
         |_path: &str| -> Vec<String> { Vec::new() },
+        |_path: &str| -> bool { false },
     );
     assert!(diags.is_empty());
     // Real wrapper is also part of the surface.

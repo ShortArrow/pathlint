@@ -94,6 +94,9 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
             "relative PATH entry {} resolved against cwd at command time",
             glyph(style, "—", "-")
         ),
+        Kind::WriteablePathDir => {
+            "directory is writable by other users; binary substitution risk".into()
+        }
     };
     // Per-source diagnostics use usize::MAX as the "no PATH index"
     // sentinel; render that as "(catalog)" instead of a number.

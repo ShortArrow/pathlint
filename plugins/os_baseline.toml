@@ -32,6 +32,9 @@ linux = "/usr/bin"
 #   [[expect]]
 #   command = "ls"
 #   prefer = ["pacman", "os_baseline_linux_sbin"]
+# /usr/sbin is split from /usr/bin on traditional distros (Debian,
+# Fedora) but symlinked together on Arch / openSUSE Tumbleweed; both
+# layouts work because pathlint matches by directory.
 [source.os_baseline_linux_sbin]
-description = "Linux baseline /usr/sbin (split on traditional distros, symlinked on Arch/openSUSE)"
+description = "Linux baseline /usr/sbin binaries"
 linux = "/usr/sbin"
