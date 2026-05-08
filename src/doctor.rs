@@ -460,6 +460,7 @@ pub fn has_error(diags: &[&Diagnostic]) -> bool {
 /// `Kind::Conflict` diagnostics: every
 /// `Relation::ConflictsWhenBothInPath` in `relations` fires when
 /// at least two of its declared `sources` match the current PATH.
+#[allow(clippy::too_many_arguments)]
 pub fn analyze<F, V, L, W>(
     entries: &[String],
     sources: &BTreeMap<String, SourceDef>,
@@ -1692,7 +1693,16 @@ mod tests {
         // and force fs_exists=false → fire.
         let sources = cat_local(&[("cargo", unix_source("$HOME/.cargo/bin"))]);
         let env = env_map(&[("HOME", "/tmp/no_such_path")]);
-        let diags = analyze(&[], &sources, &[], Os::Linux, fs_no, env, fs_list_empty, fs_writable_no);
+        let diags = analyze(
+            &[],
+            &sources,
+            &[],
+            Os::Linux,
+            fs_no,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
         assert!(diags.iter().any(
             |d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo")
         ));
@@ -1934,7 +1944,16 @@ mod tests {
         let listing: [(&str, &[&str]); 2] = [("C:/a", &["Git.exe"]), ("C:/b", &["git.exe"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT;.CMD")]);
-        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list, fs_writable_no);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list,
+            fs_writable_no,
+        );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
@@ -1958,7 +1977,16 @@ mod tests {
         let listing: [(&str, &[&str]); 2] = [("C:/a", &["python.exe"]), ("C:/b", &["python.bat"])];
         let fs_list = fs_list_map(&listing);
         let env = env_map(&[("PATHEXT", ".EXE;.BAT")]);
-        let diags = analyze(&e, &empty_sources(), &[], Os::Windows, fs_yes, env, fs_list, fs_writable_no);
+        let diags = analyze(
+            &e,
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list,
+            fs_writable_no,
+        );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
             .filter(|d| matches!(d.kind, Kind::DuplicateButShadowed { .. }))
