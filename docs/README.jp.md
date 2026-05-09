@@ -336,6 +336,7 @@ bump は path / 意味の変更があったときに限られ、新規 source �
 - [PRD（英語）](PRD.md)
 - [Architecture（英語）](ARCHITECTURE.md) — 5 分で把握する repo map
 - [リリース手順（英語）](RELEASE.md)
+- [Changelog（英語）](../CHANGELOG.md) — Keep a Changelog 形式、 breaking change の migration note 入り (英語のみ)
 - [Releases](https://github.com/ShortArrow/pathlint/releases) — 自動生成のリリースノート付き履歴
 
 ## ライセンス
