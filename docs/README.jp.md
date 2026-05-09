@@ -332,14 +332,12 @@ bump は path / 意味の変更があったときに限られ、新規 source �
 
 ## ドキュメント
 
-翻訳がある文書は冒頭に言語切替リンクを置いている。 切替はそちらで
-行うので、ここでは日本語版 (またはオリジナル言語) を直接 link する。
+各文書冒頭に言語切替がある。 List は doc 名のみ。
 
-- [PRD（日本語）](PRD.jp.md) — 詳細設計、組み込み source カタログ含む
-- [Architecture](ARCHITECTURE.md) — 5 分で把握する repo map (英語)
-- [リリース手順（日本語）](RELEASE.jp.md) — リリース実施手順
-- [Changelog](../CHANGELOG.md) — Keep a Changelog 形式、breaking
-  change の migration note 入り (英語)
+- [PRD](PRD.jp.md) — 詳細設計、組み込み source カタログ含む
+- [Architecture](ARCHITECTURE.md) — 5 分で把握する repo map
+- [Release](RELEASE.jp.md) — リリース実施手順
+- [Changelog](../CHANGELOG.md) — breaking change の migration note 入り
 - [Releases](https://github.com/ShortArrow/pathlint/releases) —
   自動生成のリリースノート付き履歴
 

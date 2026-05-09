@@ -344,17 +344,14 @@ it, so old rules don't break.
 
 ## Documentation
 
-Each translated doc carries a language switcher at the top. Pick
-the language there; the list below stays English so the project's
-Documentation section does not grow with each new translation.
+Each translated doc has a language switcher at the top.
 
 - [PRD](docs/PRD.md) — full design, including the built-in source
   catalog
 - [Architecture](docs/ARCHITECTURE.md) — 5-minute repo map for new
   contributors
-- [Release process](docs/RELEASE.md) — how to cut a new version
-- [Changelog](CHANGELOG.md) — Keep a Changelog history with
-  breaking-change migration notes
+- [Release](docs/RELEASE.md) — how to cut a new version
+- [Changelog](CHANGELOG.md) — breaking-change migration notes
 - [Releases](https://github.com/ShortArrow/pathlint/releases) —
   version history with auto-generated notes
 
