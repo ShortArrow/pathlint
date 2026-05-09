@@ -18,10 +18,18 @@ it locally before a release that touches:
 - `bash` (the orchestrator and inner smoke script)
 - Either `podman` (preferred for rootless) or `docker`. The
   orchestrator auto-detects.
-- `cargo` toolchain that can target `x86_64-unknown-linux-gnu`.
-  On non-Linux hosts: install the cross target with
-  `rustup target add x86_64-unknown-linux-gnu` and a Linux linker
-  (e.g. `mold`, `lld`, or `gcc-multilib`).
+- A way to produce the Linux release binary. Two modes:
+  - **Builder container (default on Windows / macOS).** The
+    orchestrator runs `cargo build --release --bin pathlint`
+    inside a `rust:1.85-slim` image and mounts the result into
+    each distro container. No Linux toolchain required on the
+    host. Set `PATHLINT_E2E_USE_BUILDER=0` to skip.
+  - **Host cargo (default on Linux).** Runs
+    `cargo build --release --target $PATHLINT_E2E_TARGET` on the
+    host. On non-Linux hosts this means installing the cross
+    target with `rustup target add x86_64-unknown-linux-gnu` and
+    a Linux linker (`mold`, `lld`, `gcc-multilib`); the builder
+    container exists to avoid that.
 
 ## Run
 
@@ -71,9 +79,14 @@ distro needs to install those.
 - **"neither podman nor docker is on PATH"**: install one. On
   Windows, [Docker Desktop] or [Podman Desktop]; on macOS, the
   same plus `brew install podman` works rootless.
-- **"cargo build failed"**: the runner needs the
-  `x86_64-unknown-linux-gnu` target. Override with
-  `PATHLINT_E2E_TARGET=...` if you want a different triple.
+- **"cargo build inside builder container failed"**: usually a
+  registry / network issue. Re-run after a moment; the cargo
+  registry cache is reused via the bind-mounted `target/` and
+  the home cargo dir.
+- **"cargo build failed"** (host cargo mode): the host needs the
+  `x86_64-unknown-linux-gnu` target installed and a Linux linker.
+  Either install them (`rustup target add ...`) or just leave
+  `PATHLINT_E2E_USE_BUILDER=1` to use the builder container.
 - **arch keyring failures during `pacman -Sy`**: stale base image,
   `${runtime} pull archlinux:latest` to refresh and retry.
 

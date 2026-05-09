@@ -8,11 +8,18 @@
 # the diagnostic output is non-empty where expected.
 #
 # Auto-detects podman first (rootless preferred), falls back to
-# docker. Either runtime works without changes; container images
-# are pulled from the runtime's default registry.
+# docker. Either runtime works without changes.
+#
+# Build mode:
+#   PATHLINT_E2E_USE_BUILDER=1 (default on non-Linux hosts) — build
+#     the binary inside a rust:1.85-slim container so the host does
+#     not need a Linux cross-compile toolchain.
+#   PATHLINT_E2E_USE_BUILDER=0 — assume `cargo build --release
+#     --target $PATHLINT_E2E_TARGET` works on the host. Useful on
+#     Linux hosts where no extra container layer is needed.
 #
 # Usage:
-#   scripts/e2e/run.sh                # run all three distros
+#   scripts/e2e/run.sh                # all three distros
 #   scripts/e2e/run.sh ubuntu         # one distro only
 #   scripts/e2e/run.sh ubuntu archlinux
 #
@@ -28,6 +35,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TARGET_TRIPLE="${PATHLINT_E2E_TARGET:-x86_64-unknown-linux-gnu}"
 
 # ----------------------------------------------------------------
+# Pick build mode
+# ----------------------------------------------------------------
+# Default: use the builder container on non-Linux hosts (Windows,
+# macOS) so callers do not need to install a Linux cross
+# toolchain. Override with PATHLINT_E2E_USE_BUILDER=0 / 1.
+default_use_builder=1
+if [[ "$(uname -s 2>/dev/null || echo unknown)" == "Linux" ]]; then
+    default_use_builder=0
+fi
+USE_BUILDER="${PATHLINT_E2E_USE_BUILDER:-${default_use_builder}}"
+
+# ----------------------------------------------------------------
 # Container runtime detection
 # ----------------------------------------------------------------
 runtime=""
@@ -40,17 +59,42 @@ else
     exit 2
 fi
 echo "==> runtime: ${runtime}"
+echo "==> build mode: $([[ ${USE_BUILDER} == 1 ]] && echo 'builder container' || echo 'host cargo')"
 
 # ----------------------------------------------------------------
 # Build the Linux release binary the containers will execute
 # ----------------------------------------------------------------
-echo "==> building pathlint for ${TARGET_TRIPLE}"
-cd "${REPO_ROOT}"
-if ! cargo build --release --target "${TARGET_TRIPLE}" --bin pathlint; then
-    echo "scripts/e2e/run.sh: cargo build failed" >&2
-    exit 2
+if [[ "${USE_BUILDER}" == "1" ]]; then
+    builder_image="pathlint-e2e-builder:latest"
+    echo "==> building builder image ${builder_image}"
+    if ! "${runtime}" build \
+        --file "${SCRIPT_DIR}/Dockerfile.builder" \
+        --tag "${builder_image}" \
+        "${SCRIPT_DIR}"; then
+        echo "scripts/e2e/run.sh: builder image build failed" >&2
+        exit 2
+    fi
+
+    echo "==> running builder (cargo build --release --bin pathlint)"
+    # Bind-mount the source and the target dir so cargo's
+    # incremental cache survives between runs of run.sh.
+    if ! "${runtime}" run --rm \
+        --volume "${REPO_ROOT}:/work" \
+        "${builder_image}"; then
+        echo "scripts/e2e/run.sh: cargo build inside builder container failed" >&2
+        exit 2
+    fi
+    BINARY_PATH="${REPO_ROOT}/target/release/pathlint"
+else
+    echo "==> building pathlint for ${TARGET_TRIPLE} on the host"
+    cd "${REPO_ROOT}"
+    if ! cargo build --release --target "${TARGET_TRIPLE}" --bin pathlint; then
+        echo "scripts/e2e/run.sh: cargo build failed" >&2
+        exit 2
+    fi
+    BINARY_PATH="${REPO_ROOT}/target/${TARGET_TRIPLE}/release/pathlint"
 fi
-BINARY_PATH="${REPO_ROOT}/target/${TARGET_TRIPLE}/release/pathlint"
+
 if [[ ! -x "${BINARY_PATH}" ]]; then
     echo "scripts/e2e/run.sh: built binary not found at ${BINARY_PATH}" >&2
     exit 2
