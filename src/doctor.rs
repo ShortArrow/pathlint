@@ -113,7 +113,10 @@ pub fn is_writable_dir_real(path: &str) -> bool {
         SID_IDENTIFIER_AUTHORITY,
     };
     use windows_sys::Win32::Storage::FileSystem::{FILE_APPEND_DATA, FILE_GENERIC_WRITE};
-    use windows_sys::Win32::System::SystemServices::SECURITY_WORLD_RID;
+    use windows_sys::Win32::System::SystemServices::{
+        DOMAIN_ALIAS_RID_USERS, SECURITY_AUTHENTICATED_USER_RID, SECURITY_BUILTIN_DOMAIN_RID,
+        SECURITY_WORLD_RID,
+    };
 
     // Confirm the path is a directory before consulting ACLs;
     // metadata() also captures the "doesn't exist" case which
@@ -122,6 +125,47 @@ pub fn is_writable_dir_real(path: &str) -> bool {
         Ok(m) if m.is_dir() => {}
         _ => return false,
     }
+
+    // SIDs to test against the directory's effective rights. A real
+    // dotfiles host on Windows almost never grants Everyone write,
+    // but routinely grants BUILTIN\Users (and Authenticated Users
+    // by inheritance) write — so checking Everyone alone is the
+    // canonical false-negative trap. Probe all three; short-circuit
+    // on the first SID that gets effective write.
+    //
+    // Layout: (auth_value, sub_authority_count, sub_authorities[8]).
+    // Only the first `count` sub-authorities are read by
+    // AllocateAndInitializeSid; the trailing zeros are filler so we
+    // can keep one fixed signature for the loop.
+    const SIDS_TO_CHECK: &[([u8; 6], u8, [u32; 8])] = &[
+        // Everyone (S-1-1-0)
+        (
+            [0, 0, 0, 0, 0, 1],
+            1,
+            [SECURITY_WORLD_RID as u32, 0, 0, 0, 0, 0, 0, 0],
+        ),
+        // Authenticated Users (S-1-5-11)
+        (
+            [0, 0, 0, 0, 0, 5],
+            1,
+            [SECURITY_AUTHENTICATED_USER_RID as u32, 0, 0, 0, 0, 0, 0, 0],
+        ),
+        // BUILTIN\Users (S-1-5-32-545)
+        (
+            [0, 0, 0, 0, 0, 5],
+            2,
+            [
+                SECURITY_BUILTIN_DOMAIN_RID as u32,
+                DOMAIN_ALIAS_RID_USERS as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+        ),
+    ];
 
     let wide: Vec<u16> = OsStr::new(path).encode_wide().chain([0]).collect();
 
@@ -146,48 +190,47 @@ pub fn is_writable_dir_real(path: &str) -> bool {
         return false;
     }
 
-    let everyone_auth = SID_IDENTIFIER_AUTHORITY {
-        Value: [0, 0, 0, 0, 0, 1],
-    };
-    let mut everyone_sid: *mut core::ffi::c_void = std::ptr::null_mut();
-    let alloc_ok = unsafe {
-        AllocateAndInitializeSid(
-            &everyone_auth,
-            1,
-            SECURITY_WORLD_RID as u32,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &mut everyone_sid,
-        )
-    };
-    if alloc_ok == 0 || everyone_sid.is_null() {
-        unsafe { LocalFree(sd as _) };
-        return false;
+    let mut writable = false;
+    for (auth_value, count, sub_auths) in SIDS_TO_CHECK {
+        let auth = SID_IDENTIFIER_AUTHORITY { Value: *auth_value };
+        let mut sid: *mut core::ffi::c_void = std::ptr::null_mut();
+        let alloc_ok = unsafe {
+            AllocateAndInitializeSid(
+                &auth,
+                *count,
+                sub_auths[0],
+                sub_auths[1],
+                sub_auths[2],
+                sub_auths[3],
+                sub_auths[4],
+                sub_auths[5],
+                sub_auths[6],
+                sub_auths[7],
+                &mut sid,
+            )
+        };
+        if alloc_ok == 0 || sid.is_null() {
+            continue;
+        }
+
+        let mut trustee: TRUSTEE_W = unsafe { std::mem::zeroed() };
+        trustee.TrusteeForm = TRUSTEE_IS_SID;
+        trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+        trustee.ptstrName = sid as *mut _;
+
+        let mut rights: u32 = 0;
+        let eff_ok = unsafe { GetEffectiveRightsFromAclW(dacl, &trustee, &mut rights) };
+
+        unsafe { FreeSid(sid) };
+
+        if eff_ok == ERROR_SUCCESS && rights & (FILE_GENERIC_WRITE | FILE_APPEND_DATA) != 0 {
+            writable = true;
+            break;
+        }
     }
 
-    let mut trustee: TRUSTEE_W = unsafe { std::mem::zeroed() };
-    trustee.TrusteeForm = TRUSTEE_IS_SID;
-    trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
-    trustee.ptstrName = everyone_sid as *mut _;
-
-    let mut rights: u32 = 0;
-    let eff_ok = unsafe { GetEffectiveRightsFromAclW(dacl, &trustee, &mut rights) };
-
-    unsafe {
-        FreeSid(everyone_sid);
-        LocalFree(sd as _);
-    }
-
-    if eff_ok != ERROR_SUCCESS {
-        return false;
-    }
-
-    rights & (FILE_GENERIC_WRITE | FILE_APPEND_DATA) != 0
+    unsafe { LocalFree(sd as _) };
+    writable
 }
 
 /// Real-world `fs_list_dir` for `analyze`: enumerates basenames of
