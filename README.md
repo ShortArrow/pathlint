@@ -342,16 +342,18 @@ it, so old rules don't break.
 
 ## Documentation
 
-- [日本語 README](docs/README.jp.md)
-- [PRD (English)](docs/PRD.md) — the full design, including the
-  built-in source catalog
-- [PRD (日本語)](docs/PRD.jp.md)
-- [Architecture](docs/ARCHITECTURE.md) — 5-minute repo map for
-  new contributors
+> 日本語版: [docs/README.jp.md](docs/README.jp.md)
+
+- [PRD](docs/PRD.md) — full design, including the built-in source
+  catalog ([日本語](docs/PRD.jp.md))
+- [Architecture](docs/ARCHITECTURE.md) — 5-minute repo map for new
+  contributors (English only)
 - [Release process](docs/RELEASE.md) — how to cut a new version
-- [リリース手順 (日本語)](docs/RELEASE.jp.md)
-- [Changelog](CHANGELOG.md) — Keep a Changelog history with breaking-change migration notes
-- [Releases](https://github.com/ShortArrow/pathlint/releases) — version history with auto-generated notes
+  ([日本語](docs/RELEASE.jp.md))
+- [Changelog](CHANGELOG.md) — Keep a Changelog history with
+  breaking-change migration notes (English only)
+- [Releases](https://github.com/ShortArrow/pathlint/releases) —
+  version history with auto-generated notes
 
 ## License
 
