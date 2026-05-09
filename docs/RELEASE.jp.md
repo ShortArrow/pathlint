@@ -29,7 +29,7 @@ opt-in。
   README には反映されないまま 0.0.18 まで残っていた、ような
   drift をこの checklist で防ぐ。
 
-  注: `docs/ARCHITECTURE.md` は意図的に英語のみ。 user feedback
+  注: `docs/ARCHITECTURE.md` と `CHANGELOG.md` は意図的に英語のみ。 user feedback
   次第で将来 JP 版を別 release で追加する余地はあるが、 現時点では
   この parity check の対象外。
 

@@ -350,6 +350,7 @@ it, so old rules don't break.
   new contributors
 - [Release process](docs/RELEASE.md) — how to cut a new version
 - [リリース手順 (日本語)](docs/RELEASE.jp.md)
+- [Changelog](CHANGELOG.md) — Keep a Changelog history with breaking-change migration notes
 - [Releases](https://github.com/ShortArrow/pathlint/releases) — version history with auto-generated notes
 
 ## License
