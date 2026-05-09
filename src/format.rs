@@ -8,6 +8,7 @@
 use crate::config::Relation;
 use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::Outcome;
+use crate::path_entry::PathEntry;
 use crate::sort::{SortNote, SortPlan};
 use crate::trace::{Found, Provenance, TraceOutcome, UninstallHint};
 
@@ -37,7 +38,7 @@ fn glyph(style: Style, unicode: &'static str, ascii: &'static str) -> &'static s
 /// Render a single doctor diagnostic into a multi-line block
 /// (header line + indented detail). The trailing newline is
 /// omitted; the caller decides whether to add one.
-pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
+pub fn doctor_line(d: &Diagnostic, entries: &[PathEntry], style: Style) -> String {
     if let Kind::Conflict { diagnostic, groups } = &d.kind {
         return doctor_conflict(entries, diagnostic, groups);
     }
@@ -52,7 +53,12 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
     // escapes into doctor's human output (Z16-L1).
     let detail = match &d.kind {
         Kind::Duplicate { first_index } => {
-            let first_path = entries.get(*first_index).cloned().unwrap_or_default();
+            // Display the raw form of the referenced entry — that is
+            // what the user wrote and recognises.
+            let first_path = entries
+                .get(*first_index)
+                .map(|e| e.raw.clone())
+                .unwrap_or_default();
             format!(
                 "duplicate of entry #{first} ({first_path})",
                 first = first_index,
@@ -117,7 +123,7 @@ pub fn doctor_line(d: &Diagnostic, entries: &[String], style: Style) -> String {
 /// built-in conflicts (`mise_activate_both`); everything else falls
 /// back to a generic "two sources collide" message that still names
 /// the diagnostic so the user can grep for it.
-fn doctor_conflict(entries: &[String], diagnostic: &str, groups: &[Vec<usize>]) -> String {
+fn doctor_conflict(entries: &[PathEntry], diagnostic: &str, groups: &[Vec<usize>]) -> String {
     // diagnostic is user-supplied via [[relation]] when not a
     // built-in name. Strip + match against the built-in literal
     // first so hostile diagnostics still land in the generic
@@ -132,7 +138,7 @@ fn doctor_conflict(entries: &[String], diagnostic: &str, groups: &[Vec<usize>]) 
     for (idx, group) in groups.iter().enumerate() {
         buf.push_str(&format!("      group #{idx}:\n"));
         for &i in group {
-            let entry = entries.get(i).cloned().unwrap_or_default();
+            let entry = entries.get(i).map(|e| e.raw.clone()).unwrap_or_default();
             buf.push_str(&format!(
                 "        #{i:>3} {}\n",
                 strip_control_chars(&entry)
@@ -485,8 +491,10 @@ mod tests {
     use crate::lint::Status;
     use std::path::PathBuf;
 
-    fn entries(strs: &[&str]) -> Vec<String> {
-        strs.iter().map(|s| s.to_string()).collect()
+    fn entries(strs: &[&str]) -> Vec<PathEntry> {
+        strs.iter()
+            .map(|s| PathEntry::from_raw(*s, |_| -> Option<String> { None }))
+            .collect()
     }
 
     fn found_minimal() -> Found {
@@ -884,7 +892,7 @@ mod tests {
         let entries = entries(&["/foo/a\x1b[31m_evil", "/foo/b"]);
         let d = Diagnostic {
             index: 0,
-            entry: entries[0].clone(),
+            entry: entries[0].raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: "evil\x1b[31mlabel\rFAKE".into(),
@@ -1053,7 +1061,7 @@ mod tests {
         ]);
         let d = Diagnostic {
             index: 0,
-            entry: entries[0].clone(),
+            entry: entries[0].raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: "mise_activate_both".into(),
@@ -1104,7 +1112,7 @@ mod tests {
         let entries = entries(&["/foo/a", "/foo/b"]);
         let d = Diagnostic {
             index: 0,
-            entry: entries[0].clone(),
+            entry: entries[0].raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: "foo_overlap".into(),

@@ -2,7 +2,7 @@
 //!
 //! # Public API surface (0.0.15+)
 //!
-//! The supported library surface is **nine modules**, each
+//! The supported library surface is **ten modules**, each
 //! described below by a few representative symbols. The
 //! authoritative contract is `tests/public_api.rs`, which
 //! imports every symbol pathlint promises here and fails the
@@ -32,6 +32,8 @@
 //!   `os_filter_applies`.
 //! - [`expand`]: env-var expansion + slash normalisation.
 //!   Headlines: `expand_env`, `normalize`, `expand_and_normalize`.
+//! - [`path_entry`]: PATH entry duality (raw + expanded). Headlines:
+//!   `PathEntry`, `PathEntry::from_raw`. 0.0.23+.
 //!
 //! Anything not exported through one of those modules — including
 //! the CLI plumbing, presentation layer, registry reader, and
@@ -102,6 +104,7 @@ pub mod doctor;
 pub mod expand;
 pub mod lint;
 pub mod os_detect;
+pub mod path_entry;
 pub mod sort;
 pub mod source_match;
 pub mod trace;

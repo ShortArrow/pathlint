@@ -23,11 +23,38 @@
 use std::env;
 
 /// Expand `%VAR%`, `$VAR`, `${VAR}`, and a leading `~` against the
+/// caller-supplied env lookup. Pure — every env reference is
+/// resolved through `env_lookup`, never through the process
+/// environment directly. `~` resolves through the closure too:
+/// pathlint asks for `HOME` first, then `USERPROFILE`. Unresolved
+/// variables are kept verbatim.
+///
+/// Production callers pass `|v| std::env::var(v).ok()` (which is
+/// what [`expand_env`] does internally). Tests and lib embedders
+/// pass a deterministic closure so the result is independent of
+/// the host environment.
+///
+/// 0.0.23+: introduced as the injection-aware form. [`expand_env`]
+/// is now a thin wrapper.
+pub fn expand_env_with<V>(input: &str, env_lookup: V) -> String
+where
+    V: Fn(&str) -> Option<String>,
+{
+    let tilde = expand_tilde(input, &env_lookup);
+    let dollar = expand_dollar(&tilde, &env_lookup);
+    expand_percent(&dollar, &env_lookup)
+}
+
+/// Expand `%VAR%`, `$VAR`, `${VAR}`, and a leading `~` against the
 /// process environment. Unresolved variables are kept verbatim.
+///
+/// 0.0.23+: thin wrapper over [`expand_env_with`] that reads the
+/// live process env. The actual expansion logic lives in
+/// `expand_env_with`; this entry point exists for callers (the lib
+/// itself, doctests, and embedders happy to read the host env)
+/// who don't need to inject a custom lookup.
 pub fn expand_env(input: &str) -> String {
-    let tilde = expand_tilde(input);
-    let dollar = expand_dollar(&tilde);
-    expand_percent(&dollar)
+    expand_env_with(input, |v| env::var(v).ok())
 }
 
 /// Lowercase + slash-normalize. Use on both haystack and needle before
@@ -65,19 +92,25 @@ pub(crate) fn pathext_lower(env_lookup: impl Fn(&str) -> Option<String>) -> Vec<
         .collect()
 }
 
-fn expand_tilde(s: &str) -> String {
+fn expand_tilde<V>(s: &str, env_lookup: &V) -> String
+where
+    V: Fn(&str) -> Option<String>,
+{
     if let Some(rest) = s.strip_prefix('~') {
-        if let Some(home) = env::var_os("HOME") {
-            return format!("{}{}", home.to_string_lossy(), rest);
+        if let Some(home) = env_lookup("HOME") {
+            return format!("{home}{rest}");
         }
-        if let Some(profile) = env::var_os("USERPROFILE") {
-            return format!("{}{}", profile.to_string_lossy(), rest);
+        if let Some(profile) = env_lookup("USERPROFILE") {
+            return format!("{profile}{rest}");
         }
     }
     s.to_string()
 }
 
-fn expand_dollar(s: &str) -> String {
+fn expand_dollar<V>(s: &str, env_lookup: &V) -> String
+where
+    V: Fn(&str) -> Option<String>,
+{
     let mut out = String::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -86,9 +119,9 @@ fn expand_dollar(s: &str) -> String {
             if bytes[i + 1] == b'{' {
                 if let Some(end) = s[i + 2..].find('}') {
                     let name = &s[i + 2..i + 2 + end];
-                    match env::var(name) {
-                        Ok(val) => out.push_str(&val),
-                        Err(_) => out.push_str(&s[i..i + 2 + end + 1]),
+                    match env_lookup(name) {
+                        Some(val) => out.push_str(&val),
+                        None => out.push_str(&s[i..i + 2 + end + 1]),
                     }
                     i += 2 + end + 1;
                     continue;
@@ -99,9 +132,9 @@ fn expand_dollar(s: &str) -> String {
                     j += 1;
                 }
                 let name = &s[i + 1..j];
-                match env::var(name) {
-                    Ok(val) => out.push_str(&val),
-                    Err(_) => out.push_str(&s[i..j]),
+                match env_lookup(name) {
+                    Some(val) => out.push_str(&val),
+                    None => out.push_str(&s[i..j]),
                 }
                 i = j;
                 continue;
@@ -113,7 +146,10 @@ fn expand_dollar(s: &str) -> String {
     out
 }
 
-fn expand_percent(s: &str) -> String {
+fn expand_percent<V>(s: &str, env_lookup: &V) -> String
+where
+    V: Fn(&str) -> Option<String>,
+{
     let mut out = String::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -122,9 +158,9 @@ fn expand_percent(s: &str) -> String {
             if let Some(rel_end) = s[i + 1..].find('%') {
                 let name = &s[i + 1..i + 1 + rel_end];
                 if !name.is_empty() && name.chars().all(is_ident_char) {
-                    match env::var(name) {
-                        Ok(val) => out.push_str(&val),
-                        Err(_) => out.push_str(&s[i..i + 1 + rel_end + 1]),
+                    match env_lookup(name) {
+                        Some(val) => out.push_str(&val),
+                        None => out.push_str(&s[i..i + 1 + rel_end + 1]),
                     }
                     i += 1 + rel_end + 1;
                     continue;
@@ -273,5 +309,50 @@ mod tests {
             }
         });
         assert_eq!(lower, vec![".exe".to_string(), ".bat".to_string()]);
+    }
+
+    // ---- 0.0.23: env_lookup injection through expand_env_with --------
+
+    #[test]
+    fn expand_env_with_calls_lookup_for_dollar_var() {
+        // The injected closure is the only env source — process env
+        // is not consulted. Pin both the call shape and that
+        // unresolved tails stay verbatim.
+        let out = expand_env_with("/x/$FOO/bin", |k| {
+            (k == "FOO").then(|| "/replaced".to_string())
+        });
+        assert_eq!(out, "/x//replaced/bin");
+    }
+
+    #[test]
+    fn expand_env_with_keeps_unresolved_var_verbatim() {
+        let out = expand_env_with(
+            "/x/$DEFINITELY_NOT_DEFINED_XYZ/bin",
+            |_| -> Option<String> { None },
+        );
+        assert_eq!(out, "/x/$DEFINITELY_NOT_DEFINED_XYZ/bin");
+    }
+
+    #[test]
+    fn expand_env_with_does_not_touch_process_env() {
+        // Set a process env var that the closure does NOT report,
+        // and confirm the result keeps the variable verbatim — the
+        // closure is the only oracle expand_env_with consults.
+        with_var("PATHLINT_TEST_INJECTION_LEAK", "leaked", || {
+            let out = expand_env_with("x/$PATHLINT_TEST_INJECTION_LEAK/y", |_| -> Option<String> {
+                None
+            });
+            assert_eq!(out, "x/$PATHLINT_TEST_INJECTION_LEAK/y");
+        });
+    }
+
+    #[test]
+    fn expand_env_with_handles_percent_and_brace_through_lookup() {
+        let lookup = |k: &str| match k {
+            "A" => Some("AA".to_string()),
+            "B" => Some("BB".to_string()),
+            _ => None,
+        };
+        assert_eq!(expand_env_with("%A%/${B}/c", lookup), "AA/BB/c");
     }
 }

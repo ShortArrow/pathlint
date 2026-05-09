@@ -34,12 +34,17 @@
 //! ```
 //! use pathlint::config::Config;
 //! use pathlint::os_detect::Os;
+//! use pathlint::path_entry::PathEntry;
 //! use pathlint::sort;
 //!
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
 //! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
-//! let entries = vec!["/usr/local/bin".to_string(), "/usr/bin".to_string()];
+//! let null_env = |_: &str| -> Option<String> { None };
+//! let entries = vec![
+//!     PathEntry::from_raw("/usr/local/bin", null_env),
+//!     PathEntry::from_raw("/usr/bin", null_env),
+//! ];
 //! let plan = sort::sort_path(&entries, &cfg.expectations, &sources, &relations, Os::Linux);
 //! // No expectations → no moves proposed.
 //! assert!(plan.moves.is_empty());
@@ -52,6 +57,7 @@ use serde::Serialize;
 use crate::config::{Expectation, Relation, SourceDef};
 use crate::expand::normalize;
 use crate::os_detect::Os;
+use crate::path_entry::PathEntry;
 use crate::source_match;
 
 /// One entry's movement from old to new index. Only emitted when
@@ -115,18 +121,20 @@ impl SortPlan {
 /// bucket. Only `prefer_order_over` participates here; other kinds
 /// are ignored by sort.
 pub fn sort_path(
-    entries: &[String],
+    entries: &[PathEntry],
     expectations: &[Expectation],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
 ) -> SortPlan {
-    let original: Vec<String> = entries.to_vec();
+    let original: Vec<String> = entries.iter().map(|e| e.raw.clone()).collect();
 
-    // Index every entry by which sources it matches.
+    // Index every entry by which sources it matches. Source matching
+    // is done against the expanded form because catalog needles
+    // (`$HOME/.cargo/bin`) only line up after env expansion.
     let entry_sources: Vec<Vec<String>> = entries
         .iter()
-        .map(|e| source_match::names_only(&normalize(e), sources, os))
+        .map(|e| source_match::names_only(&normalize(&e.expanded), sources, os))
         .collect();
 
     // Walk every applicable expectation and gather both promotion
@@ -175,7 +183,7 @@ pub fn sort_path(
         .chain(neutral_bucket)
         .chain(avoided_bucket)
         .collect();
-    let sorted: Vec<String> = new_order.iter().map(|&i| entries[i].clone()).collect();
+    let sorted: Vec<String> = new_order.iter().map(|&i| entries[i].raw.clone()).collect();
 
     let moves: Vec<EntryMove> = new_order
         .iter()
@@ -183,7 +191,7 @@ pub fn sort_path(
         .enumerate()
         .filter(|(new_idx, old_idx)| new_idx != old_idx)
         .map(|(new_idx, old_idx)| EntryMove {
-            entry: entries[old_idx].clone(),
+            entry: entries[old_idx].raw.clone(),
             from: old_idx,
             to: new_idx,
             reason: reason_for(old_idx, &intents),
@@ -353,8 +361,10 @@ mod tests {
             .collect()
     }
 
-    fn entries(s: &[&str]) -> Vec<String> {
-        s.iter().map(|x| x.to_string()).collect()
+    fn entries(s: &[&str]) -> Vec<PathEntry> {
+        s.iter()
+            .map(|x| PathEntry::from_raw(*x, |_| -> Option<String> { None }))
+            .collect()
     }
 
     fn expect_simple(command: &str, prefer: &[&str]) -> Expectation {

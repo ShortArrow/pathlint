@@ -22,12 +22,13 @@ use pathlint::doctor::{
     analyze_real, env_lookup_real, fs_exists_real, fs_list_dir_real, has_error, kind_name,
     user_diagnostic_names, validate_filter_names,
 };
-use pathlint::expand::{expand_and_normalize, expand_env, normalize};
+use pathlint::expand::{expand_and_normalize, expand_env, expand_env_with, normalize};
 use pathlint::lint::{
     CheckOutcomeView, Diagnosis, Outcome, Status, check_shape_filesystem, diagnose, evaluate,
     exit_code, has_config_error, is_failure,
 };
 use pathlint::os_detect::{Os, os_filter_applies};
+use pathlint::path_entry::PathEntry;
 use pathlint::sort::{EntryMove, SortNote, SortPlan, sort_path};
 use pathlint::source_match::{
     Match, SourceWarning, SourceWarningReason, find, names_only, validate_sources,
@@ -99,4 +100,53 @@ fn analyze_callable_with_fs_list_dir_closure() {
     assert!(diags.is_empty());
     // Real wrapper is also part of the surface.
     let _real: Vec<String> = fs_list_dir_real("/this/path/does/not/exist");
+}
+
+#[test]
+fn path_entry_from_raw_takes_env_lookup_closure() {
+    // 0.0.23 BREAKING: PathEntry::from_raw is closure-receiving so
+    // env injection is uniform across the lib. Pin both the field
+    // shape and the closure signature here so a future change can't
+    // silently revert.
+    let entry = PathEntry::from_raw("$FOO/bin", |k| {
+        (k == "FOO").then(|| "/expanded".to_string())
+    });
+    assert_eq!(entry.raw, "$FOO/bin");
+    assert_eq!(entry.expanded, "/expanded/bin");
+}
+
+#[test]
+fn analyze_signature_pinned_with_pathentry_slice() {
+    // 0.0.23 BREAKING: doctor::analyze takes &[PathEntry]. A bare
+    // `&[]` would still type-check via inference, so pin the slice
+    // type explicitly here.
+    use std::collections::BTreeMap;
+    let entries: Vec<PathEntry> = vec![PathEntry::from_raw("/usr/bin", |_| -> Option<String> {
+        None
+    })];
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let relations: Vec<Relation> = Vec::new();
+    let diags = analyze(
+        &entries,
+        &sources,
+        &relations,
+        Os::Linux,
+        |_path: &str| -> bool { true },
+        |_var: &str| -> Option<String> { None },
+        |_path: &str| -> Vec<String> { Vec::new() },
+        |_path: &str| -> bool { false },
+    );
+    // No expectations / no detectors that fire on an existing single
+    // entry — just confirm the signature compiles and runs.
+    assert!(diags.is_empty(), "got: {diags:?}");
+}
+
+#[test]
+fn expand_env_with_pinned_on_public_surface() {
+    // 0.0.23: pin expand::expand_env_with as part of the public lib
+    // surface. The closure-receiving form is what `PathEntry::from_raw`
+    // delegates to, and embedders building their own PathEntry-like
+    // values may want it directly.
+    let out = expand_env_with("$X", |k| (k == "X").then(|| "ok".to_string()));
+    assert_eq!(out, "ok");
 }

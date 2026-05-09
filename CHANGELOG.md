@@ -12,6 +12,78 @@ when 0.0.x graduates to 0.1.0 is undecided.
 
 ## [Unreleased]
 
+## [0.0.23] — 2026-05-10
+
+### Breaking
+
+- **PATH entry handling moved to a `PathEntry { raw, expanded }`
+  type.** `pathlint::doctor::analyze`,
+  `pathlint::doctor::analyze_real`, `pathlint::sort::sort_path`,
+  and the doc-hidden `path_source::PathRead` /
+  `resolve::resolve` / `resolve::split_path` all now consume or
+  return `&[PathEntry]` instead of `&[String]`. The boundary
+  point at which env expansion runs is now exactly one place
+  (`PathEntry::from_raw`, called from
+  `pathlint::path_source::read_path` and `resolve::split_path`),
+  so detectors that reason about *what the user typed*
+  (Shortenable, RelativePathEntry) see `entry.raw` and
+  detectors that reason about *the directory on disk* (Missing,
+  WriteablePathDir, the resolver) see `entry.expanded`.
+- **`PathEntry::from_raw` takes a `(raw, env_lookup)` pair.** The
+  constructor is closure-receiving so pathlint never touches
+  `std::env::var` from inside it. Production callers inject
+  `|v| std::env::var(v).ok()` at the two infrastructure
+  boundary points; lib embedders and tests inject deterministic
+  closures.
+  **Migration**: replace `PathEntry::from_raw(s)` (never
+  released) with `PathEntry::from_raw(s, |v|
+  std::env::var(v).ok())` for production behaviour, or pass a
+  custom closure for deterministic env handling.
+
+### Added
+
+- `pathlint::path_entry::PathEntry { raw, expanded }` is the new
+  10th public module. `PathEntry::from_raw(raw, env_lookup)`
+  takes a `Fn(&str) -> Option<String>` so callers control the
+  env oracle — pathlint never touches the process env from
+  inside the constructor. Production callers (the
+  `path_source::read_path` and `resolve::split_path` boundary
+  points) inject `|v| std::env::var(v).ok()`.
+- `pathlint::expand::expand_env_with(input, env_lookup)` is the
+  injection-aware form of the existing `expand_env`, which is
+  now a thin wrapper over `expand_env_with` that reads the live
+  process env. Public surface; embedders and tests can drive
+  `%VAR%` / `$VAR` / `${VAR}` / `~` expansion deterministically.
+- `pathlint::path_source::decode_reg_string` (Windows-only,
+  crate-internal): UTF-16 LE decoder for `REG_SZ` /
+  `REG_EXPAND_SZ` registry values. Lossy on invalid surrogate
+  pairs (offending code unit replaced with `U+FFFD`), `Err` on
+  unsupported registry types (`REG_MULTI_SZ`, `REG_BINARY`,
+  `REG_DWORD`, …). In both error cases `read_path` returns a
+  warning and an empty `entries` vector — pathlint never panics
+  on a hostile payload, never silently emits diagnostics built
+  from garbled bytes.
+
+### Fixed
+
+- **Windows: `doctor` no longer falsely suggests "shorten with
+  `%LocalAppData%`" for entries the user already wrote in that
+  form.** Before 0.0.23, `winreg`'s
+  `RegKey::get_value::<String, _>` silently expanded
+  `REG_EXPAND_SZ` registry payloads via
+  `ExpandEnvironmentStringsW`, so pathlint received a fully
+  expanded `C:\Users\...\AppData\Local\...` string for an entry
+  the user had stored as `%LocalAppData%\...`. The Shortenable
+  detector's `entry.contains('%')` skip therefore never fired,
+  and the user got a confusing "shorten this entry that is
+  already shortened" warning. 0.0.23 reads the raw bytes via
+  `RegKey::get_raw_value`, decodes them as UTF-16 LE in
+  `decode_reg_string`, and lets `expand_env` run exactly once —
+  so the raw form is preserved through the whole lint pipeline.
+  Doctor output for a Windows registry-driven PATH now also
+  displays `%LocalAppData%`-style entries verbatim, matching
+  what the user has in their environment.
+
 ## [0.0.22] — 2026-05-09
 
 ### Breaking

@@ -702,6 +702,71 @@ vs User」のレジストリ的区別が無い — `pathlint` は MVP では
 `~/.bashrc`、`~/.zshrc`、`/etc/environment`、launchd plist、PAM を
 パースしない。
 
+### 10.1 PATH entry の raw/expanded 二重性 (0.0.23+)
+
+PATH entry には、 検出器と resolver が別々の理由で必要とする 2 つの
+意味的な形がある:
+
+- **raw** — source に保存されたままの文字列。 Windows では
+  `REG_EXPAND_SZ` の `%LocalAppData%\WindowsApps`、 Unix では
+  shell が `PATH` を export する際に展開しなかった
+  `~/.local/bin` や `$HOME/bin`。
+- **expanded** — `expand::expand_env(raw)`。 OS が実際に
+  ディスク上で参照するディレクトリ文字列。
+
+`pathlint` はこの 2 形式を **境界点 1 箇所**
+(`pathlint::path_source::read_path`) で確定し、 全 entry を
+`pathlint::path_entry::PathEntry { raw, expanded }` に lift する。
+*ユーザが書いた文字列* を見る検出器 — Shortenable (既に短縮済の
+entry をさらに短縮しろと誤誘導してはならない)、 RelativePathEntry
+(未解決 `$VAR/bin` は config bug で surface すべき) — は
+`entry.raw` を読む。 *ファイルシステム上のディレクトリ* を見る
+検出器 — Missing、 WriteablePathDir、 DuplicateButShadowed、
+PerSourceMissingRequired — と `resolve` walker は `entry.expanded`
+を読む。
+
+**Windows registry の取り扱い方針。** `winreg` の
+`RegKey::get_value::<String, _>` は REG_EXPAND_SZ に対して内部で
+`ExpandEnvironmentStringsW` を黙って呼んでしまい、
+`%LocalAppData%` の形が `PathEntry::from_raw` に届く前に剥がれて
+しまう。 そのため `pathlint` は `RegKey::get_raw_value` で raw
+bytes を取得し、 `path_source::decode_reg_string` で UTF-16 LE
+として decode する。 invalid surrogate は U+FFFD に置換 (lossy
+decode)。 `REG_SZ` / `REG_EXPAND_SZ` 以外の registry type
+(`REG_MULTI_SZ`、 `REG_BINARY`、 `REG_DWORD` …) に対しては
+明示的な warning を出して空 PATH に fallback — 悪意ある payload
+で panic しない。 `expand_env` の呼び出しは `PathEntry::from_raw`
+1 箇所のみ、 これにより Windows と Unix が完全に同じ
+「source は raw、 boundary で expand」ルールに乗る。
+
+**ユーザから見える効果。** `pathlint doctor --target user` /
+`--target machine` の Windows 出力で、 `%LocalAppData%`-style
+entry が registry に書いたまま raw 形式で表示されるようになった
+(human / JSON 共通)。 0.0.22 までは展開後の形式が出ていたため、
+ユーザが registry に入力した文字列と一致せず混乱の元だった。
+
+**Decoder 失敗時の方針。** `path_source::decode_reg_string` は
+invalid UTF-16 surrogate pair に対して **lossy** に
+(該当 code unit を `U+FFFD` で置換、 panic はしない)、 `REG_SZ`
+/ `REG_EXPAND_SZ` 以外の registry value type (`REG_MULTI_SZ`、
+`REG_BINARY`、 `REG_DWORD`、 …) に対しては **`Err`** を返す。
+どちらの場合も `read_path` は `warning` と空の `entries` を返す
+ので、 pathlint は悪意ある registry payload で panic せず、
+壊れた bytes から黙って diagnostic を組み立てもせず、
+理解できない type の値を見過ごしもしない。
+
+**env-lookup injection。** `PathEntry::from_raw(raw, env_lookup)`
+は `Fn(&str) -> Option<String>` を取り、 constructor は
+caller の closure のみ env oracle として参照する — pathlint は
+`from_raw` の中から `std::env::var` を呼ばない。 infrastructure
+境界の 2 箇所 (`path_source::read_path` と
+`resolve::split_path`) のみ `|v| std::env::var(v).ok()` を
+inject する。 lib embedder と test は決定論的 closure を
+inject することで、 host 環境に依存しない動作を得る。 同じ
+closure が `expand::expand_env_with` にも流れる (これが従来の
+`expand::expand_env` の公開 form、 `expand_env` 自体は
+process env を読む薄い wrapper として残る)。
+
 ## 11. CLI 表面
 
 ```
@@ -1013,6 +1078,29 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
 
 ### 17.1 累積的な破壊的変更
 
+#### 0.0.23
+
+- **PATH entry を `PathEntry { raw, expanded }` 型に格上げ。**
+  `pathlint::doctor::analyze` / `analyze_real`、
+  `pathlint::sort::sort_path`、 および doc-hidden な
+  `path_source::PathRead` / `resolve::resolve` /
+  `resolve::split_path` が `&[String]` 受けから
+  `&[PathEntry]` 受けに変わった。 env 展開が動く境界点が
+  `PathEntry::from_raw` に集約され (`path_source::read_path` と
+  `resolve::split_path` から呼ばれる)、 *ユーザが書いた文字列*
+  を見る検出器 (Shortenable / RelativePathEntry) は
+  `entry.raw` を、 *ファイルシステム上のディレクトリ* を見る
+  検出器 (Missing / WriteablePathDir / 他) と resolver は
+  `entry.expanded` を読むようになった。
+- **`PathEntry::from_raw` が `(raw, env_lookup)` を取る形に。**
+  constructor は closure 受け化されており、 pathlint は内部
+  から `std::env::var` を呼ばない。 production caller は 2 つの
+  infrastructure 境界点で `|v| std::env::var(v).ok()` を
+  inject、 lib embedder と test は決定論的 closure を inject。
+  移行：未リリースの 1 引数版 `PathEntry::from_raw(s)` を
+  `PathEntry::from_raw(s, |v| std::env::var(v).ok())` に置換
+  (production)、 または独自 closure を渡す (test / 決定論的)。
+
 #### 0.0.22
 
 - **`pathlint where` と `--rules` alias を削除。** 0.0.14 で
@@ -1144,6 +1232,37 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   CI 失敗で全違反 plugin を確認できる。
 
 ### 17.2 累積的な追加（破壊なし）
+
+#### 0.0.23
+
+- **Windows registry の `REG_EXPAND_SZ` false positive を修正。**
+  0.0.22 までは `winreg` の `RegKey::get_value::<String, _>` が
+  内部で `ExpandEnvironmentStringsW` を呼んで REG_EXPAND_SZ を
+  自動展開していたため、 user が `%LocalAppData%\WindowsApps`
+  と registry に書いた entry に対して `pathlint doctor` が
+  「`%LocalAppData%` で短縮できる」と誤った Shortenable 警告を
+  出していた (entry が `%` を含むかの skip 判定が、 既に展開
+  された string を見ていたため発火しなかった)。 0.0.23 で
+  `RegKey::get_raw_value` 経由で raw bytes を読み、
+  `path_source::decode_reg_string` で UTF-16 LE を decode し、
+  `expand_env` を `PathEntry::from_raw` で 1 度だけ呼ぶ形に
+  統一した。 raw form が lint pipeline 全体で保持され、 doctor
+  の human / JSON 出力でも `%LocalAppData%`-style entry が
+  registry に書かれたままの形で表示される。
+- **`pathlint::path_entry::PathEntry { raw, expanded }` を
+  公開 module として追加 (10 番目)。** `PathEntry::from_raw(raw,
+  env_lookup)` は closure 受け、 caller が env oracle を制御する。
+- **`pathlint::expand::expand_env_with(input, env_lookup)`** を
+  公開 API に追加。 既存 `expand_env` は process env を読む薄い
+  wrapper として残置 (`expand_env_with(input, |v| std::env::var(v).ok())`)。
+- **`pathlint::path_source::decode_reg_string`** (Windows-only、
+  crate-internal): `REG_SZ` / `REG_EXPAND_SZ` 用の UTF-16 LE
+  decoder。 invalid surrogate は U+FFFD (lossy)、 unsupported
+  registry type (`REG_MULTI_SZ` / `REG_BINARY` / `REG_DWORD` 等)
+  は `Err`、 panic しない。 失敗時は `read_path` が warning + 空
+  `entries` を返す。
+- **PRD §10.1 で raw/expanded duality + env injection +
+  decoder failure policy を明文化。**
 
 #### 0.0.22
 
