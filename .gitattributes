@@ -8,3 +8,10 @@ schemas/*.json text eol=lf
 # Windows checkout doesn't accidentally embed CRLFs that downstream
 # TOML parsers would have to tolerate.
 plugins/*.toml text eol=lf
+
+# Shell scripts run inside Linux containers via the e2e harness;
+# CRLF line endings break bash with cryptic `$'\r': command not
+# found` errors. Pin LF on the working tree so a Windows checkout
+# can bind-mount the script straight into a Linux container.
+*.sh text eol=lf
+scripts/e2e/Dockerfile.* text eol=lf
