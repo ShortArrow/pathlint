@@ -1,5 +1,7 @@
 # Releasing pathlint
 
+🌐 **English** | [日本語](RELEASE.jp.md)
+
 Releases are cut from `main` by running the `release` workflow on
 GitHub Actions. The workflow handles the version bump, tag, build,
 and GitHub Release. crates.io publishing is opt-in.

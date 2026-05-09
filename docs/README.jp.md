@@ -1,5 +1,7 @@
 # pathlint
 
+🌐 [English](../README.md) | **日本語**
+
 [![crates.io](https://img.shields.io/crates/v/pathlint.svg)](https://crates.io/crates/pathlint)
 [![CI](https://github.com/ShortArrow/pathlint/actions/workflows/ci.yml/badge.svg)](https://github.com/ShortArrow/pathlint/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/pathlint.svg)](#ライセンス)
@@ -330,15 +332,14 @@ bump は path / 意味の変更があったときに限られ、新規 source �
 
 ## ドキュメント
 
-> English: [README.md](../README.md)
+翻訳がある文書は冒頭に言語切替リンクを置いている。 切替はそちらで
+行うので、ここでは日本語版 (またはオリジナル言語) を直接 link する。
 
-- [PRD](PRD.jp.md) — 詳細設計、組み込み source カタログ含む
-  ([English](PRD.md))
-- [Architecture](ARCHITECTURE.md) — 5 分で把握する repo map（英語のみ）
-- [リリース手順](RELEASE.jp.md) — リリース実施手順
-  ([English](RELEASE.md))
+- [PRD（日本語）](PRD.jp.md) — 詳細設計、組み込み source カタログ含む
+- [Architecture](ARCHITECTURE.md) — 5 分で把握する repo map (英語)
+- [リリース手順（日本語）](RELEASE.jp.md) — リリース実施手順
 - [Changelog](../CHANGELOG.md) — Keep a Changelog 形式、breaking
-  change の migration note 入り（英語のみ）
+  change の migration note 入り (英語)
 - [Releases](https://github.com/ShortArrow/pathlint/releases) —
   自動生成のリリースノート付き履歴
 

@@ -1,5 +1,7 @@
 # pathlint のリリース手順
 
+🌐 [English](RELEASE.md) | **日本語**
+
 リリースは `main` ブランチに対して GitHub Actions の `release`
 ワークフローを実行することで行う。version bump、tag、build、
 GitHub Release はワークフローが行う。crates.io への publish は

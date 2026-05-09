@@ -1,5 +1,7 @@
 # pathlint
 
+🌐 **English** | [日本語](docs/README.jp.md)
+
 [![crates.io](https://img.shields.io/crates/v/pathlint.svg)](https://crates.io/crates/pathlint)
 [![CI](https://github.com/ShortArrow/pathlint/actions/workflows/ci.yml/badge.svg)](https://github.com/ShortArrow/pathlint/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/pathlint.svg)](#license)
@@ -342,16 +344,17 @@ it, so old rules don't break.
 
 ## Documentation
 
-> 日本語版: [docs/README.jp.md](docs/README.jp.md)
+Each translated doc carries a language switcher at the top. Pick
+the language there; the list below stays English so the project's
+Documentation section does not grow with each new translation.
 
 - [PRD](docs/PRD.md) — full design, including the built-in source
-  catalog ([日本語](docs/PRD.jp.md))
+  catalog
 - [Architecture](docs/ARCHITECTURE.md) — 5-minute repo map for new
-  contributors (English only)
+  contributors
 - [Release process](docs/RELEASE.md) — how to cut a new version
-  ([日本語](docs/RELEASE.jp.md))
 - [Changelog](CHANGELOG.md) — Keep a Changelog history with
-  breaking-change migration notes (English only)
+  breaking-change migration notes
 - [Releases](https://github.com/ShortArrow/pathlint/releases) —
   version history with auto-generated notes
 
