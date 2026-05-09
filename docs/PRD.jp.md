@@ -735,11 +735,13 @@ post-1.0 議題。
 `[[relation]]` ブロックが宣言した source 間の関係を表示する
 （§9.1 参照）。
 
-**alias の退役。** `pathlint where`（`pathlint trace` の alias）と
-`--rules`（`--config` の alias）は 0.0.13 以前との後方互換のため
-0.0.x 線では維持する。将来のリリースで削除予定だが、削除タイミング
-は未定で、破壊リリース前に告知する。それまでは clap の
-`visible_alias` 経由で `--help` に両方の綴りが表示される。
+**alias の退役 (0.0.22 で削除済)。** `pathlint where` (`pathlint
+trace` の alias) と `--rules` (`--config` の alias) は 0.0.14 から
+0.0.21 まで clap の `visible_alias` として維持されていた (0.0.20
+で stderr deprecation warning も追加)。 0.0.22 BREAKING リリースで
+両方とも削除。 `pathlint trace` と `--config` に rename して
+ください。 旧 alias を渡すと clap が unknown argument として reject
+する。
 
 ## 12. 非機能要件
 
@@ -919,13 +921,17 @@ post-1.0 議題。
   のユーザに書き込み可能なときに発火。 shell 権限を持つ攻撃者が
   malicious binary を置いて、 user が common command を typing した
   ときに走らせるリスク。 Unix では others-write bit (`mode & 0o002`)
-  を見る。 Windows では DACL を取得し、 well-known "Everyone" SID の
+  を見る。 Windows では DACL を取得し、 3 つの well-known SID
+  — **Everyone** (`S-1-1-0`)、 **Authenticated Users**
+  (`S-1-5-11`)、 **BUILTIN\\Users** (`S-1-5-32-545`) — のいずれかに
   effective `FILE_GENERIC_WRITE` / `FILE_APPEND_DATA` が立っていれば
-  発火。 これは approximation で完全な access control 監査ではない:
-  group inheritance ("Authenticated Users" 経由など) はまだ check
-  していない (0.0.22+ 候補)。 Missing / 読み取り不能 dir は skip
+  発火。 0.0.21 は Everyone のみ check していたが、 0.0.22 で残り
+  2 つを追加した (典型的な Windows host では Everyone より group
+  経由 write の方が多い)。 まだ approximation: この 3 group の外で
+  per-user に explicit grant されたケースや DENY ACE の伝搬は
+  modelling していない。 Missing / 読み取り不能 dir は skip
   (Missing detector がカバー)。 抑制は `--exclude writeable_path_dir`。
-  *(0.0.21+。)*
+  *(0.0.21+。 0.0.22 で SID を 3 つに拡張。)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`。** これらが設定
   する PATH は `process` と違うことがある。MVP 外、0.0.x 線でも
   扱わず 0.1.x 候補として整理。実装方針は 3 案：
@@ -1004,6 +1010,17 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   追加したリリース。何が増えたかの記録のみで、移行は不要。
 
 ### 17.1 累積的な破壊的変更
+
+#### 0.0.22
+
+- **`pathlint where` と `--rules` alias を削除。** 0.0.14 で
+  rename した時の deprecation runway (0.0.20 で warning phase、
+  0.0.21 で 1 release 経過) が終わり、 0.0.22 で完全に削除。
+  clap が `where` subcommand alias と `--rules` long-flag alias
+  を accept しなくなり、 unknown argument の error で exit 2。
+  Migration: `pathlint trace` と `--config` に rename。 stderr
+  で deprecation warning を grep していた script は warning ごと
+  消えるので grep そのものを撤去。
 
 #### 0.0.21
 
@@ -1125,6 +1142,18 @@ section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどう�
   CI 失敗で全違反 plugin を確認できる。
 
 ### 17.2 累積的な追加（破壊なし）
+
+#### 0.0.22
+
+- **`WriteablePathDir` の Windows 実装が Authenticated Users と
+  BUILTIN\\Users も check するように。** 0.0.21 は Everyone SID
+  のみ check していたが、 Windows host では Everyone より group
+  経由 (`BUILTIN\\Users` / `Authenticated Users`) の write が
+  圧倒的に多く、 false negative の典型例だった。 0.0.22 で 3 SID
+  を順次 check し、 最初に effective `FILE_GENERIC_WRITE` /
+  `FILE_APPEND_DATA` を見つけた時点で fire するように変更。 Unix
+  挙動 / closure 契約は変わらず。 まだ approximation (DENY ACE や
+  この 3 group の外の per-user 直接 grant は modelling していない)。
 
 #### 0.0.21
 

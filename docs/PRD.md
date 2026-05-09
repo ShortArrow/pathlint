@@ -798,13 +798,12 @@ post-1.0 list.
 `pathlint catalog relations` prints the source relations declared
 by built-in plugins and any user `[[relation]]` blocks (see §9.1).
 
-**Alias retirement.** `pathlint where` (alias of `pathlint trace`)
-and `--rules` (alias of `--config`) are kept through 0.0.x for
-backwards compatibility with 0.0.13 and earlier. They are slated
-for removal in a future release; the exact timing is undecided
-and will be announced ahead of the breaking release. Until then
-both spellings remain discoverable in `--help` via clap's
-`visible_alias`.
+**Alias retirement (removed in 0.0.22).** `pathlint where` (alias
+of `pathlint trace`) and `--rules` (alias of `--config`) lived as
+clap `visible_alias` forms from 0.0.14 to 0.0.21, with a stderr
+deprecation warning added in 0.0.20. The 0.0.22 BREAKING release
+removed both. Migrate to `pathlint trace` and `--config`; clap
+will reject the legacy spellings as unknown arguments otherwise.
 
 ## 12. Non-functional requirements
 
@@ -997,14 +996,19 @@ Tagged with the role(s) each touches.
   access can drop a malicious binary that the user runs by
   typing a common command name. On Unix, the others-write bit
   (`mode & 0o002`) is the trigger. On Windows, the directory's
-  DACL is queried and the detector fires when the well-known
-  "Everyone" SID has effective `FILE_GENERIC_WRITE` or
-  `FILE_APPEND_DATA`. This is an approximation, not a full
-  access-control audit: write granted via group inheritance
-  (e.g. `Authenticated Users`) is not yet checked, which is a
-  follow-up on the 0.0.22+ list. Missing or unreadable dirs are
-  skipped (the `Missing` detector covers them). Suppress per
-  host with `--exclude writeable_path_dir`. *(0.0.21+.)*
+  DACL is queried and the detector fires when any of three
+  well-known SIDs has effective `FILE_GENERIC_WRITE` or
+  `FILE_APPEND_DATA`: **Everyone** (`S-1-1-0`),
+  **Authenticated Users** (`S-1-5-11`), and **BUILTIN\\Users**
+  (`S-1-5-32-545`). 0.0.21 covered Everyone only; 0.0.22 added
+  the latter two so the detector catches the typical
+  Windows-host case where writes are inherited through a group
+  rather than granted to Everyone explicitly. Still
+  approximation: per-user explicit grants outside these three
+  groups, and DENY ACEs that don't propagate, are not modelled.
+  Missing or unreadable dirs are skipped (the `Missing` detector
+  covers them). Suppress per host with
+  `--exclude writeable_path_dir`. *(0.0.21+; expanded 0.0.22.)*
 - **[R3] macOS launchd / `eval $(brew shellenv)`.** PATH set by
   these paths may differ from `process`. Out of MVP and out of
   the 0.0.x line — flagged here as a 0.1.x candidate. Three
@@ -1089,6 +1093,18 @@ The change log is split into two:
   what's new; nothing here requires a migration.
 
 ### 17.1 Cumulative breaking changes
+
+#### 0.0.22
+
+- **`pathlint where` and `--rules` aliases removed.** The
+  6-release deprecation runway (0.0.14 introduction, 0.0.20
+  warning phase, 0.0.21 second runway release) is over. clap
+  no longer accepts `where` as a subcommand alias of `trace`
+  or `--rules` as a long-flag alias of `--config`; both produce
+  the standard "unknown argument" error and exit 2. Migration:
+  rename to `pathlint trace` and `--config`. Scripts that grepped
+  for the old spelling on the warning line in stderr can drop
+  the grep entirely — the warning is gone with the alias.
 
 #### 0.0.21
 
@@ -1233,6 +1249,22 @@ The change log is split into two:
   bailing on the first.
 
 ### 17.2 Cumulative additions (no breaking)
+
+#### 0.0.22
+
+- **`WriteablePathDir` on Windows now probes Authenticated
+  Users and BUILTIN\\Users in addition to Everyone.** 0.0.21
+  shipped the detector with a single SID check
+  (`S-1-1-0`/Everyone), which captured the dictionary case but
+  missed the common one — Windows hosts almost always grant
+  write through `BUILTIN\\Users` (`S-1-5-32-545`) or
+  `Authenticated Users` (`S-1-5-11`), not Everyone. 0.0.22
+  probes all three SIDs in turn and short-circuits on the first
+  effective `FILE_GENERIC_WRITE` / `FILE_APPEND_DATA`, so the
+  typical "writes inherited through a group" case is now flagged.
+  Unix behaviour and the closure contract are unchanged; the
+  detector is still approximation (DENY ACEs and arbitrary
+  per-user grants outside these three groups are not modelled).
 
 #### 0.0.21
 
