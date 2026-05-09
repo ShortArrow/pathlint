@@ -40,9 +40,10 @@
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
 //! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
+//! let null_env = |_: &str| -> Option<String> { None };
 //! let entries = vec![
-//!     PathEntry::from_raw("/usr/local/bin"),
-//!     PathEntry::from_raw("/usr/bin"),
+//!     PathEntry::from_raw("/usr/local/bin", null_env),
+//!     PathEntry::from_raw("/usr/bin", null_env),
 //! ];
 //! let plan = sort::sort_path(&entries, &cfg.expectations, &sources, &relations, Os::Linux);
 //! // No expectations → no moves proposed.
@@ -361,7 +362,9 @@ mod tests {
     }
 
     fn entries(s: &[&str]) -> Vec<PathEntry> {
-        s.iter().map(|x| PathEntry::from_raw(*x)).collect()
+        s.iter()
+            .map(|x| PathEntry::from_raw(*x, |_| -> Option<String> { None }))
+            .collect()
     }
 
     fn expect_simple(command: &str, prefer: &[&str]) -> Expectation {

@@ -20,9 +20,10 @@
 //! use pathlint::os_detect::Os;
 //! use pathlint::path_entry::PathEntry;
 //!
+//! let null_env = |_: &str| -> Option<String> { None };
 //! let entries = vec![
-//!     PathEntry::from_raw("/usr/bin"),
-//!     PathEntry::from_raw("/usr/bin"), // duplicate
+//!     PathEntry::from_raw("/usr/bin", null_env),
+//!     PathEntry::from_raw("/usr/bin", null_env), // duplicate
 //! ];
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
@@ -1184,7 +1185,24 @@ mod tests {
     use super::*;
 
     fn entries(strs: &[&str]) -> Vec<PathEntry> {
-        strs.iter().map(|s| PathEntry::from_raw(*s)).collect()
+        // Doctor unit tests that don't need env injection use the
+        // null lookup so `$VAR` / `%VAR%` in test strings stays
+        // verbatim. Tests that DO need a non-empty env build their
+        // PathEntry directly with explicit raw + expanded fields,
+        // which is more obvious than threading a closure here.
+        strs.iter()
+            .map(|s| PathEntry::from_raw(*s, |_| -> Option<String> { None }))
+            .collect()
+    }
+
+    /// Like `entries`, but each PATH entry is expanded via the live
+    /// process environment. Used by the small handful of tests that
+    /// stage a `std::env::set_var` and want the entry's `$VAR` to
+    /// resolve through the same channel.
+    fn entries_with_process_env(strs: &[&str]) -> Vec<PathEntry> {
+        strs.iter()
+            .map(|s| PathEntry::from_raw(*s, |v| env::var(v).ok()))
+            .collect()
     }
 
     fn kinds(diags: &[Diagnostic]) -> Vec<&Kind> {
@@ -2159,10 +2177,11 @@ mod tests {
 
     #[test]
     fn relative_path_entry_no_fire_after_env_expansion() {
-        // SAFETY: detector reads process env (expand::expand_env).
-        // Unique var name keeps cross-test interference low.
+        // SAFETY: PathEntry::from_raw reads process env when wired
+        // with `entries_with_process_env`. Unique var name keeps
+        // cross-test interference low.
         unsafe { env::set_var("PATHLINT_TEST_REL_HOME", "/home/u") };
-        let e = entries(&["$PATHLINT_TEST_REL_HOME/bin"]);
+        let e = entries_with_process_env(&["$PATHLINT_TEST_REL_HOME/bin"]);
         let diags = analyze(
             &e,
             &empty_sources(),
@@ -2297,7 +2316,7 @@ mod tests {
         // whether the dir is writable. Use the same set_var + remove_var
         // dance the relative_path_entry test uses.
         unsafe { env::set_var("PATHLINT_TEST_WRITEABLE_DIR", "/srv/writable") };
-        let e = entries(&["$PATHLINT_TEST_WRITEABLE_DIR"]);
+        let e = entries_with_process_env(&["$PATHLINT_TEST_WRITEABLE_DIR"]);
         let writable = fs_writable_map(&[("/srv/writable", true)]);
         let diags = analyze(
             &e,
@@ -2375,7 +2394,7 @@ mod tests {
     #[test]
     fn shortenable_still_fires_for_unshortened_entry() {
         let raw = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps";
-        let pe = PathEntry::from_raw(raw);
+        let pe = PathEntry::from_raw(raw, |_| -> Option<String> { None });
         let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
         let diags = analyze(
             &[pe],

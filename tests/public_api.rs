@@ -23,12 +23,12 @@ use pathlint::doctor::{
     user_diagnostic_names, validate_filter_names,
 };
 use pathlint::expand::{expand_and_normalize, expand_env, expand_env_with, normalize};
-use pathlint::path_entry::PathEntry;
 use pathlint::lint::{
     CheckOutcomeView, Diagnosis, Outcome, Status, check_shape_filesystem, diagnose, evaluate,
     exit_code, has_config_error, is_failure,
 };
 use pathlint::os_detect::{Os, os_filter_applies};
+use pathlint::path_entry::PathEntry;
 use pathlint::sort::{EntryMove, SortNote, SortPlan, sort_path};
 use pathlint::source_match::{
     Match, SourceWarning, SourceWarningReason, find, names_only, validate_sources,
@@ -121,7 +121,9 @@ fn analyze_signature_pinned_with_pathentry_slice() {
     // `&[]` would still type-check via inference, so pin the slice
     // type explicitly here.
     use std::collections::BTreeMap;
-    let entries: Vec<PathEntry> = vec![PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None })];
+    let entries: Vec<PathEntry> = vec![PathEntry::from_raw("/usr/bin", |_| -> Option<String> {
+        None
+    })];
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
     let diags = analyze(

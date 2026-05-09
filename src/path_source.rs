@@ -49,13 +49,17 @@ pub fn read_path(target: Target) -> PathRead {
 /// Split a raw PATH string on the platform's separator and lift each
 /// entry into a [`PathEntry`]. Empty entries are dropped — they are
 /// the result of `::` / `;;` artefacts in the source, not genuine
-/// PATH directories. Pure: `PathEntry::from_raw` runs `expand_env`
-/// on each entry exactly once.
+/// PATH directories.
+///
+/// `path_source` is the infrastructure boundary, so this is one of
+/// the two places in the lib that reads `std::env::var` (the other
+/// is `resolve::split_path`). Every other caller of
+/// `PathEntry::from_raw` injects a deterministic closure.
 pub(crate) fn split_into_entries(s: &str) -> Vec<PathEntry> {
     let sep = if cfg!(windows) { ';' } else { ':' };
     s.split(sep)
         .filter(|x| !x.is_empty())
-        .map(PathEntry::from_raw)
+        .map(|raw| PathEntry::from_raw(raw, |v| std::env::var(v).ok()))
         .collect()
 }
 

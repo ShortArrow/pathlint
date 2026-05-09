@@ -26,15 +26,22 @@
 //! ```
 //! use pathlint::path_entry::PathEntry;
 //!
-//! // Construction from raw runs `expand_env` once.
-//! let e = PathEntry::from_raw("/usr/bin");
+//! // Construction from raw runs `expand_env_with` once. The closure
+//! // is the only env oracle — pathlint never reads the process
+//! // environment from this constructor.
+//! let e = PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None });
 //! assert_eq!(e.raw, "/usr/bin");
 //! assert_eq!(e.expanded, "/usr/bin");
 //!
-//! // Unresolved variables stay verbatim in `expanded` (matches
-//! // `expand_env`'s contract).
-//! let e = PathEntry::from_raw("$THIS_VAR_DOES_NOT_EXIST_PROBABLY_XYZ/bin");
-//! assert!(e.raw.contains('$'));
+//! // The closure decides what `$VAR` / `%VAR%` / `~` resolve to.
+//! let e = PathEntry::from_raw("$VAR/bin", |k| {
+//!     (k == "VAR").then(|| "/x".to_string())
+//! });
+//! assert_eq!(e.expanded, "/x/bin");
+//!
+//! // Unresolved variables stay verbatim.
+//! let e = PathEntry::from_raw("$NOPE/bin", |_| None);
+//! assert_eq!(e.expanded, "$NOPE/bin");
 //! ```
 
 use crate::expand;
@@ -58,11 +65,24 @@ pub struct PathEntry {
 
 impl PathEntry {
     /// Build a `PathEntry` from a raw string by running
-    /// `expand::expand_env` once. The intended construction path for
-    /// every caller — keeps the raw/expanded duality consistent.
-    pub fn from_raw(raw: impl Into<String>) -> Self {
+    /// [`crate::expand::expand_env_with`] exactly once with the
+    /// caller-supplied env lookup. The intended construction path
+    /// for every caller — keeps the raw/expanded duality consistent
+    /// and makes env injection uniform across the lib.
+    ///
+    /// pathlint never reads the process environment from this
+    /// constructor: the closure is the only oracle. Production
+    /// callers (`path_source::read_path`, `resolve::split_path`)
+    /// pass `|v| std::env::var(v).ok()` so the constructor still
+    /// reflects the host env in production. Tests and lib
+    /// embedders pass deterministic closures so behaviour is
+    /// independent of whatever vars happen to exist on the host.
+    pub fn from_raw<V>(raw: impl Into<String>, env_lookup: V) -> Self
+    where
+        V: Fn(&str) -> Option<String>,
+    {
         let raw = raw.into();
-        let expanded = expand::expand_env(&raw);
+        let expanded = expand::expand_env_with(&raw, &env_lookup);
         Self { raw, expanded }
     }
 }
@@ -73,7 +93,7 @@ mod tests {
 
     #[test]
     fn from_raw_preserves_literal_path() {
-        let e = PathEntry::from_raw("/usr/bin");
+        let e = PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None });
         assert_eq!(e.raw, "/usr/bin");
         assert_eq!(e.expanded, "/usr/bin");
     }

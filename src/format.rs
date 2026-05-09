@@ -492,7 +492,9 @@ mod tests {
     use std::path::PathBuf;
 
     fn entries(strs: &[&str]) -> Vec<PathEntry> {
-        strs.iter().map(|s| PathEntry::from_raw(*s)).collect()
+        strs.iter()
+            .map(|s| PathEntry::from_raw(*s, |_| -> Option<String> { None }))
+            .collect()
     }
 
     fn found_minimal() -> Found {

@@ -14,12 +14,19 @@ use crate::path_entry::PathEntry;
 /// Split a `PATH` string on the platform's separator. Each entry is
 /// lifted into a [`PathEntry`] so the caller never juggles raw vs
 /// expanded forms manually.
+///
+/// Reads `std::env::var` to expand entries — `resolve` is the
+/// infrastructure layer for command lookup, so reading the live
+/// env here is correct (and matches `path_source::read_path`).
+/// Lib embedders that need deterministic env can build a
+/// `Vec<PathEntry>` directly via `PathEntry::from_raw(raw,
+/// closure)` and skip this helper.
 pub fn split_path(path_value: &str) -> Vec<PathEntry> {
     let sep = if cfg!(windows) { ';' } else { ':' };
     path_value
         .split(sep)
         .filter(|s| !s.is_empty())
-        .map(PathEntry::from_raw)
+        .map(|raw| PathEntry::from_raw(raw, |v| std::env::var(v).ok()))
         .collect()
 }
 
@@ -127,7 +134,10 @@ mod tests {
     #[test]
     fn missing_command_returns_none() {
         let dir = std::env::temp_dir();
-        let entry = PathEntry::from_raw(dir.to_string_lossy().into_owned());
+        let entry =
+            PathEntry::from_raw(dir.to_string_lossy().into_owned(), |_| -> Option<String> {
+                None
+            });
         let result = resolve("pathlint_definitely_no_such_command_xyz", &[entry]);
         assert!(result.is_none());
     }
