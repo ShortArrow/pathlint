@@ -1,0 +1,21 @@
+# Container image for pathlint e2e smoke on Fedora.
+#
+# Fedora ships a slightly different default PATH layout than ubuntu
+# (dnf-installed binaries land in /usr/bin; /usr/sbin is split). The
+# smoke test verifies pathlint doctor copes; it does not pin
+# Fedora-specific output.
+
+FROM fedora:latest
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+        bash \
+        coreutils \
+        ca-certificates \
+    && dnf clean all
+
+# Sanity: /bin/ls or /usr/bin/ls must be present.
+RUN test -x /bin/ls || test -x /usr/bin/ls
+
+WORKDIR /work
+
+CMD ["bash", "/usr/local/bin/smoke.sh"]

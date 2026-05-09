@@ -1,0 +1,24 @@
+# Container image for pathlint e2e smoke on Arch Linux.
+#
+# Arch is interesting because /usr/sbin is symlinked to /usr/bin —
+# this is exactly the case that drove the 0.0.14
+# os_baseline_linux_sbin source. The smoke test does not assert
+# the symlink directly, but running pathlint doctor here confirms
+# pathlint does not crash on the merged layout.
+
+FROM archlinux:latest
+
+# pacman occasionally needs a keyring refresh on stale base images.
+# Tolerate it; if the network is offline the run will fail later
+# during the smoke step rather than during build.
+RUN pacman -Sy --noconfirm --needed bash coreutils ca-certificates \
+    && pacman -Scc --noconfirm
+
+# Sanity: /usr/sbin should be a symlink to usr/bin (or merged) on
+# modern Arch. Don't fail the build if not — the smoke test will
+# still exercise pathlint doctor against whatever PATH exists.
+RUN test -L /usr/sbin || test -d /usr/sbin || true
+
+WORKDIR /work
+
+CMD ["bash", "/usr/local/bin/smoke.sh"]
