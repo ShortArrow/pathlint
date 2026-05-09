@@ -587,10 +587,12 @@ where
 /// quietly skip, depending on the previous detectors); this one
 /// only fires on a non-empty post-expansion relative path.
 ///
-/// Env expansion uses `expand::expand_env` which reads the real
-/// process env. Unresolved `$VAR` references stay verbatim, which
-/// means `$VAR/bin` is treated as relative and fires — that itself
-/// is a config bug worth surfacing.
+/// Reads `entry.expanded`, which `PathEntry::from_raw` already
+/// computed via the caller-supplied env lookup at the
+/// `path_source` boundary. Unresolved `$VAR` references stay
+/// verbatim in `expanded`, which means `$VAR/bin` is treated as
+/// relative and fires — that itself is a config bug worth
+/// surfacing.
 ///
 /// "Absolute" depends on the target OS, not the host running
 /// pathlint: `/usr/bin` is absolute on Linux but relative on
@@ -894,6 +896,12 @@ fn check_malformed(index: usize, entry: &str) -> Option<Diagnostic> {
     None
 }
 
+/// Fires when the directory the entry points at does not exist.
+/// Reads `entry.expanded` because the filesystem cannot evaluate
+/// `%LocalAppData%` etc. — that work was done once at the
+/// `path_source` boundary by `PathEntry::from_raw`. The
+/// user-facing `Diagnostic.entry` keeps `entry.raw` so the report
+/// matches what the user has in their environment.
 fn check_missing<F>(index: usize, entry: &PathEntry, fs_exists: &F) -> Option<Diagnostic>
 where
     F: Fn(&str) -> bool,
@@ -972,6 +980,17 @@ fn looks_like_8dot3(segment: &str) -> bool {
     matches!(after.get(digits), None | Some(b'.'))
 }
 
+/// Suggest shortening a literal path the user could write more
+/// portably with `%LocalAppData%` / `$HOME` / etc. Reads
+/// `entry.raw` (not `entry.expanded`) so an entry the user
+/// already wrote in `%VAR%`-form is left alone — the whole point
+/// of the detector is "you typed a long literal, would `%VAR%`
+/// be shorter?", not "expand-then-suggest". A future change that
+/// tries to read the expanded form would re-introduce the
+/// 0.0.22 regression where Windows registry `REG_EXPAND_SZ`
+/// entries (always pre-expanded by `winreg::get_value`) tripped
+/// the suggestion despite the user already having shortened
+/// them.
 fn check_shortenable<V>(
     index: usize,
     entry: &PathEntry,
@@ -984,9 +1003,7 @@ where
     // Skip if the user already wrote a variable form. We read the
     // *raw* side here on purpose: on Windows, `path_source` keeps
     // REG_EXPAND_SZ values un-expanded (`%LocalAppData%\...`) so the
-    // detector sees what the user actually stored. Reading the
-    // expanded side would chase the auto-expansion and falsely
-    // suggest shortening an entry the user already shortened.
+    // detector sees what the user actually stored.
     if entry.raw.contains('%') || entry.raw.contains('$') {
         return None;
     }

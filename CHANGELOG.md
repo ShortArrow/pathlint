@@ -22,25 +22,47 @@ when 0.0.x graduates to 0.1.0 is undecided.
   and the doc-hidden `path_source::PathRead` /
   `resolve::resolve` / `resolve::split_path` all now consume or
   return `&[PathEntry]` instead of `&[String]`. The boundary
-  point at which `expand_env` runs is now exactly one place
-  (`pathlint::path_source::read_path`), so detectors that reason
-  about *what the user typed* (Shortenable, RelativePathEntry)
-  see `entry.raw` and detectors that reason about *the directory
-  on disk* (Missing, WriteablePathDir, the resolver) see
-  `entry.expanded`. **Migration**: lift any raw `String` into
-  `PathEntry::from_raw(s)` at the call site — `from_raw` runs
-  `expand_env` once and gives you both forms.
+  point at which env expansion runs is now exactly one place
+  (`PathEntry::from_raw`, called from
+  `pathlint::path_source::read_path` and `resolve::split_path`),
+  so detectors that reason about *what the user typed*
+  (Shortenable, RelativePathEntry) see `entry.raw` and
+  detectors that reason about *the directory on disk* (Missing,
+  WriteablePathDir, the resolver) see `entry.expanded`.
+- **`PathEntry::from_raw` takes a `(raw, env_lookup)` pair.** The
+  constructor is closure-receiving so pathlint never touches
+  `std::env::var` from inside it. Production callers inject
+  `|v| std::env::var(v).ok()` at the two infrastructure
+  boundary points; lib embedders and tests inject deterministic
+  closures.
+  **Migration**: replace `PathEntry::from_raw(s)` (never
+  released) with `PathEntry::from_raw(s, |v|
+  std::env::var(v).ok())` for production behaviour, or pass a
+  custom closure for deterministic env handling.
 
 ### Added
 
 - `pathlint::path_entry::PathEntry { raw, expanded }` is the new
-  10th public module. Construct via `PathEntry::from_raw` so
-  `expand_env` runs exactly once at the boundary.
+  10th public module. `PathEntry::from_raw(raw, env_lookup)`
+  takes a `Fn(&str) -> Option<String>` so callers control the
+  env oracle — pathlint never touches the process env from
+  inside the constructor. Production callers (the
+  `path_source::read_path` and `resolve::split_path` boundary
+  points) inject `|v| std::env::var(v).ok()`.
+- `pathlint::expand::expand_env_with(input, env_lookup)` is the
+  injection-aware form of the existing `expand_env`, which is
+  now a thin wrapper over `expand_env_with` that reads the live
+  process env. Public surface; embedders and tests can drive
+  `%VAR%` / `$VAR` / `${VAR}` / `~` expansion deterministically.
 - `pathlint::path_source::decode_reg_string` (Windows-only,
   crate-internal): UTF-16 LE decoder for `REG_SZ` /
   `REG_EXPAND_SZ` registry values. Lossy on invalid surrogate
-  pairs, `Err` on unsupported registry types — never panics on a
-  hostile payload.
+  pairs (offending code unit replaced with `U+FFFD`), `Err` on
+  unsupported registry types (`REG_MULTI_SZ`, `REG_BINARY`,
+  `REG_DWORD`, …). In both error cases `read_path` returns a
+  warning and an empty `entries` vector — pathlint never panics
+  on a hostile payload, never silently emits diagnostics built
+  from garbled bytes.
 
 ### Fixed
 

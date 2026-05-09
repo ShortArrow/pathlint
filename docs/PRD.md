@@ -812,6 +812,29 @@ has stored in the registry. Pre-0.0.23 the output was the
 already-expanded form, which surprised users who recognised the
 raw form they typed but not the expanded one the OS produced.
 
+**Decoder failure policy.** `path_source::decode_reg_string` is
+*lossy* on invalid UTF-16 surrogate pairs — the offending code
+unit is replaced with `U+FFFD` rather than panicking — and
+*rejects* registry value types other than `REG_SZ` /
+`REG_EXPAND_SZ` (`REG_MULTI_SZ`, `REG_BINARY`, `REG_DWORD`, …) by
+returning `Err`. In both error cases `read_path` surfaces a
+`warning` and an empty `entries` vector, so pathlint never
+panics on a hostile registry payload, never silently emits
+diagnostics built from garbled bytes, and never quietly succeeds
+on a registry value whose type pathlint doesn't understand.
+
+**Env-lookup injection.** `PathEntry::from_raw(raw, env_lookup)`
+takes a `Fn(&str) -> Option<String>` so the constructor reads
+the env exclusively through the caller's closure — pathlint
+never touches `std::env::var` from inside `from_raw`. The two
+infrastructure boundary points (`path_source::read_path` and
+`resolve::split_path`) inject `|v| std::env::var(v).ok()`; lib
+embedders and tests inject deterministic closures so behaviour
+is independent of the host environment. The same closure flows
+through `expand::expand_env_with`, which is the public-facing
+form of the previous `expand::expand_env` (kept as a thin
+wrapper over `expand_env_with` with the live process env).
+
 ## 11. CLI surface
 
 ```
