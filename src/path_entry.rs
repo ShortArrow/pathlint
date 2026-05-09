@@ -81,12 +81,29 @@ mod tests {
     #[test]
     fn from_raw_keeps_raw_for_unresolved_var() {
         // `$THIS_VAR_...` is unlikely to be in the test process env;
-        // expand_env returns the input verbatim in that case.
-        let e = PathEntry::from_raw("$THIS_VAR_DOES_NOT_EXIST_PROBABLY_XYZ/bin");
+        // expand_env_with + closure returning None returns the input
+        // verbatim in that case.
+        let e = PathEntry::from_raw(
+            "$THIS_VAR_DOES_NOT_EXIST_PROBABLY_XYZ/bin",
+            |_| -> Option<String> { None },
+        );
         assert!(e.raw.starts_with('$'));
-        // Either the var was unresolved (raw == expanded) or, on a
-        // hostile env that happens to define this name, it was
-        // expanded — either way `raw` keeps the `$` prefix.
         assert!(e.raw.contains("THIS_VAR_DOES_NOT_EXIST_PROBABLY_XYZ"));
+        // With a None lookup, expanded === raw (verbatim).
+        assert_eq!(e.expanded, e.raw);
+    }
+
+    /// 0.0.23: PathEntry::from_raw must consult only the supplied
+    /// `env_lookup` — never `std::env::var` directly. Pre-injection,
+    /// the constructor read the live process env, which made tests
+    /// non-deterministic and lib embedders unable to substitute
+    /// their own oracle.
+    #[test]
+    fn from_raw_uses_caller_env_lookup() {
+        let e = PathEntry::from_raw("$STUB/bin", |k| {
+            (k == "STUB").then(|| "/from-closure".to_string())
+        });
+        assert_eq!(e.raw, "$STUB/bin");
+        assert_eq!(e.expanded, "/from-closure/bin");
     }
 }

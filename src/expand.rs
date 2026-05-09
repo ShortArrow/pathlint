@@ -274,4 +274,53 @@ mod tests {
         });
         assert_eq!(lower, vec![".exe".to_string(), ".bat".to_string()]);
     }
+
+    // ---- 0.0.23: env_lookup injection through expand_env_with --------
+
+    #[test]
+    fn expand_env_with_calls_lookup_for_dollar_var() {
+        // The injected closure is the only env source — process env
+        // is not consulted. Pin both the call shape and that
+        // unresolved tails stay verbatim.
+        let out = expand_env_with("/x/$FOO/bin", |k| {
+            (k == "FOO").then(|| "/replaced".to_string())
+        });
+        assert_eq!(out, "/x//replaced/bin");
+    }
+
+    #[test]
+    fn expand_env_with_keeps_unresolved_var_verbatim() {
+        let out = expand_env_with(
+            "/x/$DEFINITELY_NOT_DEFINED_XYZ/bin",
+            |_| -> Option<String> { None },
+        );
+        assert_eq!(out, "/x/$DEFINITELY_NOT_DEFINED_XYZ/bin");
+    }
+
+    #[test]
+    fn expand_env_with_does_not_touch_process_env() {
+        // Set a process env var that the closure does NOT report,
+        // and confirm the result keeps the variable verbatim — the
+        // closure is the only oracle expand_env_with consults.
+        with_var("PATHLINT_TEST_INJECTION_LEAK", "leaked", || {
+            let out = expand_env_with(
+                "x/$PATHLINT_TEST_INJECTION_LEAK/y",
+                |_| -> Option<String> { None },
+            );
+            assert_eq!(out, "x/$PATHLINT_TEST_INJECTION_LEAK/y");
+        });
+    }
+
+    #[test]
+    fn expand_env_with_handles_percent_and_brace_through_lookup() {
+        let lookup = |k: &str| match k {
+            "A" => Some("AA".to_string()),
+            "B" => Some("BB".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            expand_env_with("%A%/${B}/c", lookup),
+            "AA/BB/c"
+        );
+    }
 }
