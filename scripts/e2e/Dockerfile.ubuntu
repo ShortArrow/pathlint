@@ -1,0 +1,27 @@
+# Container image for pathlint e2e smoke on Ubuntu.
+#
+# The pathlint binary is mounted at /usr/local/bin/pathlint at run
+# time by scripts/e2e/run.sh — this Dockerfile only sets up the
+# distro-specific PATH layout and the bash + ca-certificates needed
+# to execute smoke.sh. Keeping the binary out of the image avoids
+# rebuilding on every cargo change.
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        coreutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Sanity: confirm /bin/ls exists on this base. smoke.sh resolves it.
+RUN test -x /bin/ls || test -x /usr/bin/ls
+
+WORKDIR /work
+
+# smoke.sh is mounted read-only by run.sh. The default command is
+# overridden on `run` invocation, so this is just a safety net.
+CMD ["bash", "/usr/local/bin/smoke.sh"]

@@ -1,5 +1,7 @@
 # pathlint — Product Requirements Document
 
+🌐 **English** | [日本語](PRD.jp.md)
+
 **Status:** 0.0.x in progress. Schema and CLI surface remain in
 motion through 0.1.0; the current crate version is whatever
 `Cargo.toml` (and the crates.io badge in the README) say.
