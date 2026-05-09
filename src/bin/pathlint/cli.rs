@@ -36,12 +36,9 @@ pub enum Command {
     Doctor(DoctorArgs),
 
     /// Show where a command resolves from, which sources it matches,
-    /// and the most plausible uninstall command. Renamed from `where`
-    /// in 0.0.14; `pathlint where` keeps working as a visible alias
-    /// throughout the 0.0.x line. The alias is slated for removal
-    /// in a future release — exact timing TBD; until then it remains
-    /// discoverable in `--help`.
-    #[command(visible_alias = "where")]
+    /// and the most plausible uninstall command. Renamed from
+    /// `pathlint where` in 0.0.14; the legacy alias was removed in
+    /// 0.0.22 after a deprecation-warning runway in 0.0.20–0.0.21.
     Trace(TraceArgs),
 
     /// Propose a PATH order that satisfies every applicable
@@ -185,11 +182,9 @@ pub struct GlobalOpts {
 
     /// Path to pathlint.toml. Default search: ./pathlint.toml then
     /// $XDG_CONFIG_HOME/pathlint/pathlint.toml. Renamed from
-    /// `--rules` in 0.0.14; the old `--rules` spelling stays as an
-    /// alias throughout the 0.0.x line. The alias is slated for
-    /// removal in a future release — exact timing TBD; until then
-    /// it remains discoverable in `--help`.
-    #[arg(long = "config", visible_alias = "rules")]
+    /// `--rules` in 0.0.14; the legacy `--rules` alias was removed
+    /// in 0.0.22 after a deprecation-warning runway in 0.0.20–0.0.21.
+    #[arg(long = "config")]
     pub config: Option<PathBuf>,
 
     /// Print every expectation incl. n/a, plus the resolved PATH.

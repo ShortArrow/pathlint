@@ -83,7 +83,7 @@ fn where_rejects_user_source_pointing_at_root() {
     let mut cmd = Command::new(BIN);
     cmd.arg("--config")
         .arg(&rules)
-        .arg("where")
+        .arg("trace")
         .arg("ls")
         .env("PATH", "/usr/bin")
         .env_remove("XDG_CONFIG_HOME");
@@ -350,7 +350,7 @@ guest_provider = "a"
     let mut cmd = Command::new(BIN);
     cmd.arg("--config")
         .arg(&rules)
-        .arg("where")
+        .arg("trace")
         .arg("ls")
         .env("PATH", "/usr/bin")
         .env_remove("XDG_CONFIG_HOME");

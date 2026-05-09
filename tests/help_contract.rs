@@ -42,23 +42,6 @@ fn help_lists_every_canonical_subcommand() {
 }
 
 #[test]
-fn help_surfaces_where_alias_for_trace() {
-    // 0.0.15: visible_alias on Command::Trace publishes `where`
-    // in the help output. The alias is wired in src/cli.rs and
-    // documented as scheduled for removal in a future release;
-    // until then it must remain discoverable.
-    let out = Command::new(BIN)
-        .arg("--help")
-        .output()
-        .expect("failed to run pathlint");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("where"),
-        "trace alias `where` must surface in --help: {stdout}"
-    );
-}
-
-#[test]
 fn help_top_level_snapshot() {
     // Step 5 of 0.0.16: pin a handful of representative lines
     // from `pathlint --help` so a clap upgrade or accidental
@@ -81,12 +64,6 @@ fn help_top_level_snapshot() {
         "Commands:",
         // Global options heading.
         "Options:",
-        // The 0.0.15 visible_alias surfacing (`[aliases: where]`
-        // / `[aliases: --rules]`) — separately gated by
-        // help_surfaces_*_alias_*. Asserting the literal
-        // `[aliases:` token here pins clap's alias-rendering
-        // contract too.
-        "[aliases:",
         // Concrete option / flag presence.
         "--target",
         "--config",
@@ -100,23 +77,4 @@ fn help_top_level_snapshot() {
             "--help output missing representative line `{needle}`:\n{stdout}"
         );
     }
-}
-
-#[test]
-fn help_surfaces_rules_alias_for_config() {
-    // 0.0.16: parallel discoverability gate for the --config /
-    // --rules alias. visible_alias on GlobalOpts.config publishes
-    // `rules` in the help output. Without this test, the alias
-    // could be silently dropped from --help (e.g. by a clap
-    // upgrade that changed visible_alias rendering) and only
-    // detected at the next break window.
-    let out = Command::new(BIN)
-        .arg("--help")
-        .output()
-        .expect("failed to run pathlint");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("rules"),
-        "--config alias `--rules` must surface in --help: {stdout}"
-    );
 }
