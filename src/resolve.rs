@@ -9,27 +9,37 @@
 
 use std::path::{Path, PathBuf};
 
-/// Split a `PATH` string on the platform's separator.
-pub fn split_path(path_value: &str) -> Vec<String> {
+use crate::path_entry::PathEntry;
+
+/// Split a `PATH` string on the platform's separator. Each entry is
+/// lifted into a [`PathEntry`] so the caller never juggles raw vs
+/// expanded forms manually.
+pub fn split_path(path_value: &str) -> Vec<PathEntry> {
     let sep = if cfg!(windows) { ';' } else { ':' };
     path_value
         .split(sep)
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(PathEntry::from_raw)
         .collect()
 }
 
 /// Resolve `command` against the given PATH entries. Returns the
 /// first matching full path, or `None`.
 ///
+/// Reads `entry.expanded` because the filesystem cannot evaluate
+/// `%LocalAppData%` etc. — `PathEntry::from_raw` (computed once at
+/// the `path_source` boundary) already ran `expand_env`.
+///
 /// 0.0.16: dropped the `Resolution { full_path }` wrapper —
 /// `PathBuf` carries the same information and lets the public
 /// surface (`lint::evaluate`, `trace::locate`) accept resolver
 /// closures expressed in standard-library types alone.
-pub fn resolve(command: &str, path_entries: &[String]) -> Option<PathBuf> {
+/// 0.0.23: lifted to `&[PathEntry]` so callers no longer pass raw
+/// strings whose expansion state is implicit.
+pub fn resolve(command: &str, path_entries: &[PathEntry]) -> Option<PathBuf> {
     let exts = pathext_list();
     for entry in path_entries {
-        let dir = Path::new(entry);
+        let dir = Path::new(&entry.expanded);
         if !dir.is_dir() {
             continue;
         }
@@ -110,16 +120,15 @@ mod tests {
         let sep = if cfg!(windows) { ';' } else { ':' };
         let s = format!("a{sep}{sep}b");
         let parts = split_path(&s);
-        assert_eq!(parts, vec!["a".to_string(), "b".to_string()]);
+        let raw: Vec<&str> = parts.iter().map(|e| e.raw.as_str()).collect();
+        assert_eq!(raw, vec!["a", "b"]);
     }
 
     #[test]
     fn missing_command_returns_none() {
         let dir = std::env::temp_dir();
-        let result = resolve(
-            "pathlint_definitely_no_such_command_xyz",
-            &[dir.to_string_lossy().into_owned()],
-        );
+        let entry = PathEntry::from_raw(dir.to_string_lossy().into_owned());
+        let result = resolve("pathlint_definitely_no_such_command_xyz", &[entry]);
         assert!(result.is_none());
     }
 }

@@ -16,6 +16,7 @@ use pathlint::format;
 use pathlint::init::{self, InitOptions, InitOutcome};
 use pathlint::lint;
 use pathlint::os_detect::Os;
+use pathlint::path_entry::PathEntry;
 use pathlint::path_source::{self, Target};
 use pathlint::report;
 use pathlint::resolve;
@@ -23,16 +24,18 @@ use pathlint::source_match::{self, SourceWarningReason};
 use pathlint::trace::{self, TraceOutcome};
 
 /// Read PATH for the chosen `--target`, surface any warning, and
-/// split it into entries. The three caller sites (`check`,
-/// `doctor`, `where`) all run the same sequence; centralising it
-/// keeps the warning prefix consistent.
-fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<String> {
+/// return the entries already lifted into `PathEntry`. The three
+/// caller sites (`check`, `doctor`, `where`) all run the same
+/// sequence; centralising it keeps the warning prefix consistent
+/// and the boundary point single (raw + expanded captured exactly
+/// once, in `path_source::read_path`).
+fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<PathEntry> {
     let target: Target = global.target.into();
     let path_read = path_source::read_path(target);
     if let Some(w) = &path_read.warning {
         eprintln!("pathlint: warning: {w}");
     }
-    resolve::split_path(&path_read.value)
+    path_read.entries
 }
 
 /// Validate the merged catalog and turn warnings into a config
@@ -126,7 +129,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         }
         eprintln!("pathlint: PATH entries ({}):", path_entries.len());
         for entry in &path_entries {
-            eprintln!("  {entry}");
+            eprintln!("  {}", entry.raw);
         }
     }
 

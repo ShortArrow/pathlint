@@ -12,6 +12,56 @@ when 0.0.x graduates to 0.1.0 is undecided.
 
 ## [Unreleased]
 
+## [0.0.23] — 2026-05-10
+
+### Breaking
+
+- **PATH entry handling moved to a `PathEntry { raw, expanded }`
+  type.** `pathlint::doctor::analyze`,
+  `pathlint::doctor::analyze_real`, `pathlint::sort::sort_path`,
+  and the doc-hidden `path_source::PathRead` /
+  `resolve::resolve` / `resolve::split_path` all now consume or
+  return `&[PathEntry]` instead of `&[String]`. The boundary
+  point at which `expand_env` runs is now exactly one place
+  (`pathlint::path_source::read_path`), so detectors that reason
+  about *what the user typed* (Shortenable, RelativePathEntry)
+  see `entry.raw` and detectors that reason about *the directory
+  on disk* (Missing, WriteablePathDir, the resolver) see
+  `entry.expanded`. **Migration**: lift any raw `String` into
+  `PathEntry::from_raw(s)` at the call site — `from_raw` runs
+  `expand_env` once and gives you both forms.
+
+### Added
+
+- `pathlint::path_entry::PathEntry { raw, expanded }` is the new
+  10th public module. Construct via `PathEntry::from_raw` so
+  `expand_env` runs exactly once at the boundary.
+- `pathlint::path_source::decode_reg_string` (Windows-only,
+  crate-internal): UTF-16 LE decoder for `REG_SZ` /
+  `REG_EXPAND_SZ` registry values. Lossy on invalid surrogate
+  pairs, `Err` on unsupported registry types — never panics on a
+  hostile payload.
+
+### Fixed
+
+- **Windows: `doctor` no longer falsely suggests "shorten with
+  `%LocalAppData%`" for entries the user already wrote in that
+  form.** Before 0.0.23, `winreg`'s
+  `RegKey::get_value::<String, _>` silently expanded
+  `REG_EXPAND_SZ` registry payloads via
+  `ExpandEnvironmentStringsW`, so pathlint received a fully
+  expanded `C:\Users\...\AppData\Local\...` string for an entry
+  the user had stored as `%LocalAppData%\...`. The Shortenable
+  detector's `entry.contains('%')` skip therefore never fired,
+  and the user got a confusing "shorten this entry that is
+  already shortened" warning. 0.0.23 reads the raw bytes via
+  `RegKey::get_raw_value`, decodes them as UTF-16 LE in
+  `decode_reg_string`, and lets `expand_env` run exactly once —
+  so the raw form is preserved through the whole lint pipeline.
+  Doctor output for a Windows registry-driven PATH now also
+  displays `%LocalAppData%`-style entries verbatim, matching
+  what the user has in their environment.
+
 ## [0.0.22] — 2026-05-09
 
 ### Breaking

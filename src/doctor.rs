@@ -18,8 +18,12 @@
 //! use pathlint::doctor;
 //! use pathlint::config::Config;
 //! use pathlint::os_detect::Os;
+//! use pathlint::path_entry::PathEntry;
 //!
-//! let entries = vec!["/usr/bin".to_string(), "/usr/bin".to_string()]; // duplicate
+//! let entries = vec![
+//!     PathEntry::from_raw("/usr/bin"),
+//!     PathEntry::from_raw("/usr/bin"), // duplicate
+//! ];
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
 //! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
@@ -43,6 +47,7 @@ use std::path::Path;
 use crate::config::{Relation, SourceDef};
 use crate::expand;
 use crate::os_detect::Os;
+use crate::path_entry::PathEntry;
 use crate::source_match;
 
 /// Real-world `fs_exists` for `analyze`: hits the filesystem.
@@ -60,7 +65,7 @@ pub fn env_lookup_real(var: &str) -> Option<String> {
 /// the merged catalog; relation-driven conflict diagnostics
 /// (`Relation::ConflictsWhenBothInPath`) fire from this set.
 pub fn analyze_real(
-    entries: &[String],
+    entries: &[PathEntry],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
@@ -505,7 +510,7 @@ pub fn has_error(diags: &[&Diagnostic]) -> bool {
 /// at least two of its declared `sources` match the current PATH.
 #[allow(clippy::too_many_arguments)]
 pub fn analyze<F, V, L, W>(
-    entries: &[String],
+    entries: &[PathEntry],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
@@ -522,31 +527,46 @@ where
 {
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
-        if let Some(d) = check_malformed(i, entry) {
+        // Malformed reads the raw form: NUL bytes / illegal characters
+        // are user-input concerns, not filesystem concerns.
+        if let Some(d) = check_malformed(i, &entry.raw) {
             out.push(d);
             // If the entry is malformed, skip the other checks for it
             // — they're going to be noisy or wrong.
             continue;
         }
+        // Missing reads the expanded form: the filesystem doesn't
+        // know what `%LocalAppData%` means.
         if let Some(d) = check_missing(i, entry, &fs_exists) {
             out.push(d);
         }
-        if let Some(d) = check_trailing_slash(i, entry) {
+        // TrailingSlash reads the raw form: the user wrote it.
+        if let Some(d) = check_trailing_slash(i, &entry.raw) {
             out.push(d);
         }
         if os == Os::Windows {
-            if let Some(d) = check_short_name(i, entry) {
+            // ShortName reads the raw form: 8.3 short-name segments
+            // appear in raw paths if anywhere.
+            if let Some(d) = check_short_name(i, &entry.raw) {
                 out.push(d);
             }
         }
+        // Shortenable reads the raw form: the whole point is to
+        // detect entries the user wrote in *un*-shortened form.
+        // Reading the expanded form would chase the registry's
+        // auto-expansion of REG_EXPAND_SZ and falsely suggest
+        // shortening an entry the user already shortened.
         if let Some(d) = check_shortenable(i, entry, os, &env_lookup) {
             out.push(d);
         }
     }
-    // Pair-wise checks need every entry's normalized form.
+    // Pair-wise checks need every entry's normalized form. Normalising
+    // the expanded view collapses `%LocalAppData%` and the underlying
+    // `C:\Users\...` to the same key so duplicate / case-variant
+    // detection treats them as the same directory.
     let normalized: Vec<String> = entries
         .iter()
-        .map(|e| expand::normalize(&expand::expand_env(e)))
+        .map(|e| expand::normalize(&e.expanded))
         .collect();
     add_duplicate_diagnostics(&normalized, entries, &mut out);
     add_case_variant_diagnostics(entries, &mut out);
@@ -575,16 +595,15 @@ where
 /// pathlint: `/usr/bin` is absolute on Linux but relative on
 /// Windows (no drive letter), and `C:\Users\u\bin` is absolute on
 /// Windows but a bare relative name on Unix.
-fn add_relative_path_entry_diagnostics(entries: &[String], os: Os, out: &mut Vec<Diagnostic>) {
+fn add_relative_path_entry_diagnostics(entries: &[PathEntry], os: Os, out: &mut Vec<Diagnostic>) {
     for (i, entry) in entries.iter().enumerate() {
-        let expanded = expand::expand_env(entry);
-        if expanded.is_empty() {
+        if entry.expanded.is_empty() {
             continue;
         }
-        if !is_absolute_for_os(&expanded, os) {
+        if !is_absolute_for_os(&entry.expanded, os) {
             out.push(Diagnostic {
                 index: i,
-                entry: entries[i].clone(),
+                entry: entry.raw.clone(),
                 severity: Severity::Warn,
                 kind: Kind::RelativePathEntry,
             });
@@ -602,21 +621,20 @@ fn add_relative_path_entry_diagnostics(entries: &[String], os: Os, out: &mut Vec
 /// silently — `Malformed` already covers them — and missing dirs
 /// fall through to `Missing`. 0.0.21+.
 fn add_writeable_path_dir_diagnostics<W>(
-    entries: &[String],
+    entries: &[PathEntry],
     is_writable_dir: &W,
     out: &mut Vec<Diagnostic>,
 ) where
     W: Fn(&str) -> bool,
 {
     for (i, entry) in entries.iter().enumerate() {
-        let expanded = expand::expand_env(entry);
-        if expanded.is_empty() {
+        if entry.expanded.is_empty() {
             continue;
         }
-        if is_writable_dir(&expanded) {
+        if is_writable_dir(&entry.expanded) {
             out.push(Diagnostic {
                 index: i,
-                entry: entries[i].clone(),
+                entry: entry.raw.clone(),
                 severity: Severity::Warn,
                 kind: Kind::WriteablePathDir,
             });
@@ -656,7 +674,7 @@ fn is_absolute_for_os(s: &str, os: Os) -> bool {
 /// should know about. Suppress per host with
 /// `--exclude duplicate_but_shadowed`.
 fn add_duplicate_but_shadowed_diagnostics<L, V>(
-    entries: &[String],
+    entries: &[PathEntry],
     os: Os,
     fs_list_dir: &L,
     env_lookup: &V,
@@ -674,14 +692,13 @@ fn add_duplicate_but_shadowed_diagnostics<L, V>(
     // command basename -> sorted unique PATH indices
     let mut by_command: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     for (i, entry) in entries.iter().enumerate() {
-        // Expand env vars but keep the original case + slash style;
-        // case-sensitive filesystems (Linux) need the path verbatim
-        // so `read_dir` can find the directory.
-        let expanded = expand::expand_env(entry);
-        if expanded.is_empty() {
+        // The expanded form is what `read_dir` needs; case + slash
+        // style stay verbatim there so case-sensitive filesystems
+        // (Linux) can still find the directory.
+        if entry.expanded.is_empty() {
             continue;
         }
-        for file in fs_list_dir(&expanded) {
+        for file in fs_list_dir(&entry.expanded) {
             let Some(cmd) = normalize_command(&file, os, &pathext_lower) else {
                 continue;
             };
@@ -697,7 +714,7 @@ fn add_duplicate_but_shadowed_diagnostics<L, V>(
         let shadowed_indexes = sorted[1..].to_vec();
         out.push(Diagnostic {
             index: winning,
-            entry: entries[winning].clone(),
+            entry: entries[winning].raw.clone(),
             severity: Severity::Warn,
             kind: Kind::DuplicateButShadowed {
                 command: cmd,
@@ -876,17 +893,16 @@ fn check_malformed(index: usize, entry: &str) -> Option<Diagnostic> {
     None
 }
 
-fn check_missing<F>(index: usize, entry: &str, fs_exists: &F) -> Option<Diagnostic>
+fn check_missing<F>(index: usize, entry: &PathEntry, fs_exists: &F) -> Option<Diagnostic>
 where
     F: Fn(&str) -> bool,
 {
-    let expanded = expand::expand_env(entry);
-    if fs_exists(&expanded) {
+    if fs_exists(&entry.expanded) {
         return None;
     }
     Some(Diagnostic {
         index,
-        entry: entry.to_string(),
+        entry: entry.raw.clone(),
         severity: Severity::Warn,
         kind: Kind::Missing,
     })
@@ -955,18 +971,28 @@ fn looks_like_8dot3(segment: &str) -> bool {
     matches!(after.get(digits), None | Some(b'.'))
 }
 
-fn check_shortenable<V>(index: usize, entry: &str, os: Os, env_lookup: &V) -> Option<Diagnostic>
+fn check_shortenable<V>(
+    index: usize,
+    entry: &PathEntry,
+    os: Os,
+    env_lookup: &V,
+) -> Option<Diagnostic>
 where
     V: Fn(&str) -> Option<String>,
 {
-    // Skip if the entry is already using an env var.
-    if entry.contains('%') || entry.contains('$') {
+    // Skip if the user already wrote a variable form. We read the
+    // *raw* side here on purpose: on Windows, `path_source` keeps
+    // REG_EXPAND_SZ values un-expanded (`%LocalAppData%\...`) so the
+    // detector sees what the user actually stored. Reading the
+    // expanded side would chase the auto-expansion and falsely
+    // suggest shortening an entry the user already shortened.
+    if entry.raw.contains('%') || entry.raw.contains('$') {
         return None;
     }
     // Match on normalized form (lowercased + slash-unified) but reuse
     // the raw entry's tail so the suggestion preserves the user's
     // capitalization and slash style.
-    let normalized_entry = expand::normalize(entry);
+    let normalized_entry = expand::normalize(&entry.raw);
     for (var, prefer_style) in candidate_vars(os) {
         let Some(raw) = env_lookup(var) else {
             continue;
@@ -981,14 +1007,14 @@ where
         // The raw entry begins with the same prefix length (in chars)
         // because normalize is char-preserving — only case and slashes
         // change. Cut the same number of bytes off the raw entry.
-        let suffix = entry.get(normalized_var.len()..).unwrap_or("");
+        let suffix = entry.raw.get(normalized_var.len()..).unwrap_or("");
         let suggestion = match prefer_style {
             VarStyle::Percent => format!("%{var}%{suffix}"),
             VarStyle::Dollar => format!("${var}{suffix}"),
         };
         return Some(Diagnostic {
             index,
-            entry: entry.to_string(),
+            entry: entry.raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Shortenable { suggestion },
         });
@@ -1019,7 +1045,11 @@ fn candidate_vars(os: Os) -> &'static [(&'static str, VarStyle)] {
     }
 }
 
-fn add_duplicate_diagnostics(normalized: &[String], raw: &[String], out: &mut Vec<Diagnostic>) {
+fn add_duplicate_diagnostics(
+    normalized: &[String],
+    entries: &[PathEntry],
+    out: &mut Vec<Diagnostic>,
+) {
     let mut first_seen: BTreeMap<&str, usize> = BTreeMap::new();
     for (i, n) in normalized.iter().enumerate() {
         if n.is_empty() {
@@ -1028,7 +1058,7 @@ fn add_duplicate_diagnostics(normalized: &[String], raw: &[String], out: &mut Ve
         if let Some(&first) = first_seen.get(n.as_str()) {
             out.push(Diagnostic {
                 index: i,
-                entry: raw[i].clone(),
+                entry: entries[i].raw.clone(),
                 severity: Severity::Warn,
                 kind: Kind::Duplicate { first_index: first },
             });
@@ -1052,7 +1082,7 @@ fn add_duplicate_diagnostics(normalized: &[String], raw: &[String], out: &mut Ve
 /// the first non-empty group for sort stability.
 fn add_relation_conflict_diagnostics(
     normalized: &[String],
-    raw: &[String],
+    entries: &[PathEntry],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
@@ -1076,7 +1106,7 @@ fn add_relation_conflict_diagnostics(
             .expect("at least two groups are non-empty");
         out.push(Diagnostic {
             index: anchor,
-            entry: raw[anchor].clone(),
+            entry: entries[anchor].raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: diagnostic.to_string(),
@@ -1113,15 +1143,15 @@ fn matched_entries_for_source(
         .collect()
 }
 
-fn add_case_variant_diagnostics(raw: &[String], out: &mut Vec<Diagnostic>) {
+fn add_case_variant_diagnostics(entries: &[PathEntry], out: &mut Vec<Diagnostic>) {
     // Two PATH entries can have identical normalized form but differ
     // verbatim (case difference, mixed slashes). The plain Duplicate
     // diagnostic already covers exact-string duplicates; this one
     // catches "looks the same to the OS, looks different in the
     // file" cases so the user can decide whether to canonicalize.
     let mut buckets: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-    for (i, entry) in raw.iter().enumerate() {
-        let key = expand::normalize(&expand::expand_env(entry));
+    for (i, entry) in entries.iter().enumerate() {
+        let key = expand::normalize(&entry.expanded);
         if key.is_empty() {
             continue;
         }
@@ -1134,15 +1164,15 @@ fn add_case_variant_diagnostics(raw: &[String], out: &mut Vec<Diagnostic>) {
         let first = indices[0];
         for &i in &indices[1..] {
             // Skip exact-verbatim duplicates — Duplicate covers them.
-            if raw[i] == raw[first] {
+            if entries[i].raw == entries[first].raw {
                 continue;
             }
             out.push(Diagnostic {
                 index: i,
-                entry: raw[i].clone(),
+                entry: entries[i].raw.clone(),
                 severity: Severity::Warn,
                 kind: Kind::CaseVariant {
-                    canonical: raw[first].clone(),
+                    canonical: entries[first].raw.clone(),
                 },
             });
         }
@@ -1153,8 +1183,8 @@ fn add_case_variant_diagnostics(raw: &[String], out: &mut Vec<Diagnostic>) {
 mod tests {
     use super::*;
 
-    fn entries(strs: &[&str]) -> Vec<String> {
-        strs.iter().map(|s| s.to_string()).collect()
+    fn entries(strs: &[&str]) -> Vec<PathEntry> {
+        strs.iter().map(|s| PathEntry::from_raw(*s)).collect()
     }
 
     fn kinds(diags: &[Diagnostic]) -> Vec<&Kind> {
@@ -2285,6 +2315,146 @@ mod tests {
             hits.len(),
             1,
             "expanded path is forwarded to is_writable_dir, so the env-var entry fires",
+        );
+    }
+
+    // ---- 0.0.23: REG_EXPAND_SZ raw/expanded duality regression -----
+
+    fn shortenable_kinds(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
+        diags
+            .iter()
+            .filter(|d| matches!(d.kind, Kind::Shortenable { .. }))
+            .collect()
+    }
+
+    fn missing_kinds(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
+        diags.iter().filter(|d| d.kind == Kind::Missing).collect()
+    }
+
+    /// 0.0.23 regression gate: a Windows registry `REG_EXPAND_SZ`
+    /// entry that the user already wrote in `%LocalAppData%\...` form
+    /// must NOT trip the Shortenable detector. Pre-0.0.23, winreg's
+    /// `get_value::<String, _>` auto-expanded REG_EXPAND_SZ via
+    /// `ExpandEnvironmentStrings`, feeding `analyze` an already-
+    /// expanded path; the detector's `entry.contains('%')` skip was
+    /// never reached, and the user got told to "shorten" an entry
+    /// they had already shortened. PathEntry preserves the raw form
+    /// so this never fires for an entry whose raw side has `%VAR%`.
+    #[test]
+    fn shortenable_does_not_fire_for_already_shortened_entry() {
+        let raw = r"%LocalAppData%\Microsoft\WindowsApps";
+        let expanded = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps";
+        let pe = PathEntry {
+            raw: raw.to_string(),
+            expanded: expanded.to_string(),
+        };
+        let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = shortenable_kinds(&diags);
+        assert!(
+            hits.is_empty(),
+            "raw entry already uses %LocalAppData%; Shortenable must not fire. got: {hits:?}"
+        );
+    }
+
+    /// Symmetric green case: a Windows entry stored verbatim as a
+    /// fully-expanded path (REG_SZ in the registry, or any literal
+    /// path on PATH) SHOULD still trip Shortenable when it lines up
+    /// with a candidate var. Without this test the regression gate
+    /// above could be satisfied by a detector that simply never
+    /// fires.
+    #[test]
+    fn shortenable_still_fires_for_unshortened_entry() {
+        let raw = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps";
+        let pe = PathEntry::from_raw(raw);
+        let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = shortenable_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "literal path under %LocalAppData% should fire Shortenable. got: {hits:?}"
+        );
+    }
+
+    /// Missing reads the *expanded* side: the filesystem doesn't know
+    /// what `%LocalAppData%` means. Pin the contract by passing a
+    /// PathEntry whose raw still has `%VAR%` and whose expanded
+    /// resolves to a path the fs_exists stub claims doesn't exist.
+    #[test]
+    fn missing_uses_expanded_form_not_raw() {
+        let pe = PathEntry {
+            raw: r"%LocalAppData%\NopeDir".into(),
+            expanded: r"C:\Users\me\AppData\Local\NopeDir".into(),
+        };
+        // fs_exists returns true only for the literal `%LocalAppData%`
+        // string (which the fs would never see in practice). Expanded
+        // path is unknown → Missing should fire.
+        let fs_check = |p: &str| p.starts_with('%');
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_check,
+            env_none,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = missing_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "Missing must consult expanded; got: {hits:?}"
+        );
+        // The user-facing diagnostic preserves the raw form.
+        assert_eq!(hits[0].entry, r"%LocalAppData%\NopeDir");
+    }
+
+    /// Diagnostic.entry must hold the raw text the user typed, not
+    /// the post-expansion form. Otherwise the user looks at the
+    /// doctor output and can't recognise the entry they put in their
+    /// shell rc / registry.
+    #[test]
+    fn diagnostic_entry_text_is_raw_form() {
+        let pe = PathEntry {
+            raw: r"%LocalAppData%\Some\WhereThatDoesNotExist".into(),
+            expanded: r"C:\Users\me\AppData\Local\Some\WhereThatDoesNotExist".into(),
+        };
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_no, // force Missing
+            env_none,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = missing_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert!(
+            hits[0].entry.contains('%'),
+            "Diagnostic.entry must keep the raw `%VAR%` form; got: {:?}",
+            hits[0].entry
         );
     }
 }
