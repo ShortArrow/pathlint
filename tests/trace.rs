@@ -10,7 +10,7 @@ fn run_where(rules: &Path, path_value: &str, command: &str) -> (i32, String, Str
     let out = Command::new(BIN)
         .arg("--config")
         .arg(rules)
-        .arg("where")
+        .arg("trace")
         .arg(command)
         .env("PATH", path_value)
         .env_remove("XDG_CONFIG_HOME")
@@ -203,7 +203,7 @@ fn run_where_args(
     let mut cmd = Command::new(BIN);
     cmd.arg("--config")
         .arg(rules)
-        .arg("where")
+        .arg("trace")
         .args(extra_before)
         .arg(command)
         .env("PATH", path_value)
