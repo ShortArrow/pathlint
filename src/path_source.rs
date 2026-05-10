@@ -99,7 +99,11 @@ fn read_process() -> PathRead {
 ///
 /// Pure: no I/O, no allocation beyond the cloned `Vec<PathEntry>`.
 /// Lives outside `cfg(windows)` so it can be unit-tested on every
-/// platform; only the `read_process` Windows branch calls it.
+/// platform; only the `read_process` Windows branch calls it. The
+/// `allow(dead_code)` is needed for non-Windows lib builds where
+/// the call site is gated out — the function is still exercised by
+/// the cross-platform `overlay_tests` module.
+#[allow(dead_code)]
 pub(crate) fn reconcile_process_with_registry(
     process: &[PathEntry],
     user_reg: &[PathEntry],
@@ -118,6 +122,7 @@ pub(crate) fn reconcile_process_with_registry(
         .collect()
 }
 
+#[allow(dead_code)]
 fn find_expanded_match(p: &PathEntry, reg: &[PathEntry]) -> Option<String> {
     let key = expand::normalize(&p.expanded);
     reg.iter()
