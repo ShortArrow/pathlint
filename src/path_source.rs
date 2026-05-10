@@ -20,6 +20,7 @@
 //! run `expand::expand_env` once — so every platform follows the same
 //! "raw at the source, expanded at the boundary" rule.
 
+use crate::expand;
 use crate::path_entry::PathEntry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,13 +38,96 @@ pub struct PathRead {
 
 pub fn read_path(target: Target) -> PathRead {
     match target {
-        Target::Process => PathRead {
-            entries: split_into_entries(&std::env::var("PATH").unwrap_or_default()),
-            warning: None,
-        },
+        Target::Process => read_process(),
         Target::User => read_registry(target),
         Target::Machine => read_registry(target),
     }
+}
+
+#[cfg(not(windows))]
+fn read_process() -> PathRead {
+    PathRead {
+        entries: split_into_entries(&std::env::var("PATH").unwrap_or_default()),
+        warning: None,
+    }
+}
+
+/// Windows: read the process PATH, then overlay HKCU / HKLM raw
+/// forms onto the entries whose `expanded` matches a registry
+/// entry. The OS expands `REG_EXPAND_SZ` before handing PATH to a
+/// child process, so `getenv` gives detectors a literal even when
+/// the user wrote `%LocalAppData%\...` in `regedit`. The reconciler
+/// restores user intent without changing what `--target` means.
+///
+/// Registry read failures (key missing, decode error, unsupported
+/// type) downgrade to a `warning` and skip the overlay; the process
+/// observed PATH is still returned so doctor / sort / where stay
+/// usable.
+#[cfg(windows)]
+fn read_process() -> PathRead {
+    let process = split_into_entries(&std::env::var("PATH").unwrap_or_default());
+    let user_reg = read_registry(Target::User);
+    let machine_reg = read_registry(Target::Machine);
+    let entries =
+        reconcile_process_with_registry(&process, &user_reg.entries, &machine_reg.entries);
+
+    // Bubble up registry warnings under a clear prefix so the user
+    // can tell process-target ran but the overlay was incomplete.
+    let mut warnings: Vec<String> = Vec::new();
+    if let Some(w) = user_reg.warning {
+        warnings.push(format!("user-registry overlay: {w}"));
+    }
+    if let Some(w) = machine_reg.warning {
+        warnings.push(format!("machine-registry overlay: {w}"));
+    }
+    let warning = if warnings.is_empty() {
+        None
+    } else {
+        Some(warnings.join("; "))
+    };
+
+    PathRead { entries, warning }
+}
+
+/// Pure overlay: for each `process` entry, find the first registry
+/// entry whose `expand::normalize`d expanded matches, prefer HKCU
+/// over HKLM, and attach its `raw` as `provenance_raw` only when
+/// it differs from the process raw (REG_SZ entries don't need
+/// overlays). When no match is found, leave `provenance_raw` as
+/// `None` — codex's safety rule: false-negative is preferable to
+/// false suppression.
+///
+/// Pure: no I/O, no allocation beyond the cloned `Vec<PathEntry>`.
+/// Lives outside `cfg(windows)` so it can be unit-tested on every
+/// platform; only the `read_process` Windows branch calls it. The
+/// `allow(dead_code)` is needed for non-Windows lib builds where
+/// the call site is gated out — the function is still exercised by
+/// the cross-platform `overlay_tests` module.
+#[allow(dead_code)]
+pub(crate) fn reconcile_process_with_registry(
+    process: &[PathEntry],
+    user_reg: &[PathEntry],
+    machine_reg: &[PathEntry],
+) -> Vec<PathEntry> {
+    process
+        .iter()
+        .map(|p| {
+            let candidate =
+                find_expanded_match(p, user_reg).or_else(|| find_expanded_match(p, machine_reg));
+            match candidate {
+                Some(reg_raw) if reg_raw != p.raw => p.clone().with_provenance(reg_raw),
+                _ => p.clone(),
+            }
+        })
+        .collect()
+}
+
+#[allow(dead_code)]
+fn find_expanded_match(p: &PathEntry, reg: &[PathEntry]) -> Option<String> {
+    let key = expand::normalize(&p.expanded);
+    reg.iter()
+        .find(|r| expand::normalize(&r.expanded) == key)
+        .map(|r| r.raw.clone())
 }
 
 /// Split a raw PATH string on the platform's separator and lift each
@@ -164,6 +248,168 @@ pub(crate) fn decode_reg_string(v: &winreg::RegValue) -> Result<String, &'static
             Ok(String::from_utf16_lossy(trimmed))
         }
         _ => Err("unexpected registry value type"),
+    }
+}
+
+#[cfg(test)]
+mod overlay_tests {
+    //! 0.0.24: provenance overlay is a pure operation over
+    //! `Vec<PathEntry>` slices, so the reconciler is tested on every
+    //! OS. The Windows-only registry I/O that *feeds* the reconciler
+    //! is exercised separately in the `tests` module below (gated on
+    //! `cfg(all(test, windows))`).
+
+    use super::*;
+
+    fn raw_entry(raw: &str, expanded: &str) -> PathEntry {
+        PathEntry {
+            raw: raw.into(),
+            expanded: expanded.into(),
+            provenance_raw: None,
+        }
+    }
+
+    #[test]
+    fn reconcile_overlays_user_provenance_when_expanded_matches() {
+        // process side: OS handed us an expanded literal.
+        let process = vec![raw_entry(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        // user registry: same expanded path, but raw is `%VAR%`.
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+        );
+    }
+
+    #[test]
+    fn reconcile_prefers_user_over_machine_when_both_match() {
+        // codex decision rule: HKCU before HKLM.
+        let process = vec![raw_entry(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let machine_reg = vec![raw_entry(
+            r"%MACHINE_VAR%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+            "HKCU must win over HKLM when expanded matches both",
+        );
+    }
+
+    #[test]
+    fn reconcile_skips_when_process_expanded_has_no_registry_match() {
+        // Process entry that's not in either registry source (e.g.
+        // injected by `set PATH=...` at runtime, or registry was
+        // mutated since session start). Overlay must not fire.
+        let process = vec![raw_entry(
+            r"C:\runtime\injected\bin",
+            r"C:\runtime\injected\bin",
+        )];
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(out.len(), 1);
+        assert!(
+            out[0].provenance_raw.is_none(),
+            "no expanded match in either registry; provenance must stay None",
+        );
+    }
+
+    #[test]
+    fn reconcile_no_overlay_when_raw_already_matches_registry() {
+        // REG_SZ case: registry stored a literal, OS did not expand.
+        // process raw == registry raw → nothing to overlay.
+        let process = vec![raw_entry(
+            r"C:\Program Files\PowerShell\7",
+            r"C:\Program Files\PowerShell\7",
+        )];
+        let user_reg = vec![raw_entry(
+            r"C:\Program Files\PowerShell\7",
+            r"C:\Program Files\PowerShell\7",
+        )];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert!(
+            out[0].provenance_raw.is_none(),
+            "raw already matches; provenance overlay would be redundant",
+        );
+    }
+
+    #[test]
+    fn reconcile_first_occurrence_wins_within_user_registry() {
+        // Pathological registry with two raws that expand to the same
+        // path. The reconciler must pick the first occurrence so the
+        // result is deterministic across runs.
+        let process = vec![raw_entry(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let user_reg = vec![
+            raw_entry(
+                r"%LocalAppData%\Microsoft\WindowsApps",
+                r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            ),
+            raw_entry(
+                r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps",
+                r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            ),
+        ];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+            "first occurrence must win",
+        );
+    }
+
+    #[test]
+    fn reconcile_uses_normalized_expanded_for_match() {
+        // Process expanded uses backslashes + mixed case; registry
+        // expanded happens to use forward slashes + lowercase. After
+        // `expand::normalize` they are the same path, so the overlay
+        // should fire.
+        let process = vec![raw_entry(
+            r"C:\Users\Me\AppData\Local\X",
+            r"C:\Users\Me\AppData\Local\X",
+        )];
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\X",
+            "c:/users/me/appdata/local/x",
+        )];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\X"),
+            "match must use expand::normalize on both sides",
+        );
     }
 }
 

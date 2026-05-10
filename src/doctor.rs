@@ -528,9 +528,15 @@ where
 {
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
+        // User-intent detectors read `effective_raw_for_user_intent`
+        // so a Windows process entry whose registry form is `%VAR%`
+        // (carried in `provenance_raw` by the path_source reconciler)
+        // is treated as the user's authored form, not the
+        // OS-expanded literal `getenv` returned.
+        let effective_raw = entry.effective_raw_for_user_intent();
         // Malformed reads the raw form: NUL bytes / illegal characters
         // are user-input concerns, not filesystem concerns.
-        if let Some(d) = check_malformed(i, &entry.raw) {
+        if let Some(d) = check_malformed(i, effective_raw) {
             out.push(d);
             // If the entry is malformed, skip the other checks for it
             // — they're going to be noisy or wrong.
@@ -542,13 +548,13 @@ where
             out.push(d);
         }
         // TrailingSlash reads the raw form: the user wrote it.
-        if let Some(d) = check_trailing_slash(i, &entry.raw) {
+        if let Some(d) = check_trailing_slash(i, effective_raw) {
             out.push(d);
         }
         if os == Os::Windows {
             // ShortName reads the raw form: 8.3 short-name segments
             // appear in raw paths if anywhere.
-            if let Some(d) = check_short_name(i, &entry.raw) {
+            if let Some(d) = check_short_name(i, effective_raw) {
                 out.push(d);
             }
         }
@@ -606,7 +612,7 @@ fn add_relative_path_entry_diagnostics(entries: &[PathEntry], os: Os, out: &mut 
         if !is_absolute_for_os(&entry.expanded, os) {
             out.push(Diagnostic {
                 index: i,
-                entry: entry.raw.clone(),
+                entry: entry.effective_raw_for_user_intent().to_string(),
                 severity: Severity::Warn,
                 kind: Kind::RelativePathEntry,
             });
@@ -637,7 +643,7 @@ fn add_writeable_path_dir_diagnostics<W>(
         if is_writable_dir(&entry.expanded) {
             out.push(Diagnostic {
                 index: i,
-                entry: entry.raw.clone(),
+                entry: entry.effective_raw_for_user_intent().to_string(),
                 severity: Severity::Warn,
                 kind: Kind::WriteablePathDir,
             });
@@ -717,7 +723,7 @@ fn add_duplicate_but_shadowed_diagnostics<L, V>(
         let shadowed_indexes = sorted[1..].to_vec();
         out.push(Diagnostic {
             index: winning,
-            entry: entries[winning].raw.clone(),
+            entry: entries[winning].effective_raw_for_user_intent().to_string(),
             severity: Severity::Warn,
             kind: Kind::DuplicateButShadowed {
                 command: cmd,
@@ -900,8 +906,10 @@ fn check_malformed(index: usize, entry: &str) -> Option<Diagnostic> {
 /// Reads `entry.expanded` because the filesystem cannot evaluate
 /// `%LocalAppData%` etc. — that work was done once at the
 /// `path_source` boundary by `PathEntry::from_raw`. The
-/// user-facing `Diagnostic.entry` keeps `entry.raw` so the report
-/// matches what the user has in their environment.
+/// user-facing `Diagnostic.entry` uses
+/// [`PathEntry::effective_raw_for_user_intent`] so the report
+/// matches what the user authored (registry `%VAR%` form on
+/// Windows process target, observed raw elsewhere).
 fn check_missing<F>(index: usize, entry: &PathEntry, fs_exists: &F) -> Option<Diagnostic>
 where
     F: Fn(&str) -> bool,
@@ -911,7 +919,7 @@ where
     }
     Some(Diagnostic {
         index,
-        entry: entry.raw.clone(),
+        entry: entry.effective_raw_for_user_intent().to_string(),
         severity: Severity::Warn,
         kind: Kind::Missing,
     })
@@ -982,15 +990,23 @@ fn looks_like_8dot3(segment: &str) -> bool {
 
 /// Suggest shortening a literal path the user could write more
 /// portably with `%LocalAppData%` / `$HOME` / etc. Reads
-/// `entry.raw` (not `entry.expanded`) so an entry the user
-/// already wrote in `%VAR%`-form is left alone — the whole point
-/// of the detector is "you typed a long literal, would `%VAR%`
-/// be shorter?", not "expand-then-suggest". A future change that
-/// tries to read the expanded form would re-introduce the
-/// 0.0.22 regression where Windows registry `REG_EXPAND_SZ`
-/// entries (always pre-expanded by `winreg::get_value`) tripped
-/// the suggestion despite the user already having shortened
-/// them.
+/// [`PathEntry::effective_raw_for_user_intent`] (not `expanded`)
+/// so an entry the user already wrote in `%VAR%`-form is left
+/// alone — the whole point of the detector is "you typed a long
+/// literal, would `%VAR%` be shorter?", not "expand-then-suggest".
+/// A future change that tries to read the expanded form would
+/// re-introduce the 0.0.22 regression where Windows registry
+/// `REG_EXPAND_SZ` entries (always pre-expanded by
+/// `winreg::get_value`) tripped the suggestion despite the user
+/// already having shortened them.
+///
+/// 0.0.24 extends the same rule across the process / registry
+/// boundary: when `--target process` runs on Windows, the OS
+/// hands us literals via `getenv`, but the `path_source`
+/// reconciler can recover the original `%VAR%` form via
+/// `provenance_raw`. The accessor returns provenance when
+/// present, so this detector skips registry-authored entries
+/// even though `raw` itself is a literal.
 fn check_shortenable<V>(
     index: usize,
     entry: &PathEntry,
@@ -1000,17 +1016,18 @@ fn check_shortenable<V>(
 where
     V: Fn(&str) -> Option<String>,
 {
+    let effective_raw = entry.effective_raw_for_user_intent();
     // Skip if the user already wrote a variable form. We read the
-    // *raw* side here on purpose: on Windows, `path_source` keeps
-    // REG_EXPAND_SZ values un-expanded (`%LocalAppData%\...`) so the
-    // detector sees what the user actually stored.
-    if entry.raw.contains('%') || entry.raw.contains('$') {
+    // *effective raw* (provenance overlay or observed raw) here on
+    // purpose: pre-expanded literals whose registry form is `%VAR%`
+    // must be left alone.
+    if effective_raw.contains('%') || effective_raw.contains('$') {
         return None;
     }
     // Match on normalized form (lowercased + slash-unified) but reuse
-    // the raw entry's tail so the suggestion preserves the user's
+    // the effective raw's tail so the suggestion preserves the user's
     // capitalization and slash style.
-    let normalized_entry = expand::normalize(&entry.raw);
+    let normalized_entry = expand::normalize(effective_raw);
     for (var, prefer_style) in candidate_vars(os) {
         let Some(raw) = env_lookup(var) else {
             continue;
@@ -1024,15 +1041,15 @@ where
         }
         // The raw entry begins with the same prefix length (in chars)
         // because normalize is char-preserving — only case and slashes
-        // change. Cut the same number of bytes off the raw entry.
-        let suffix = entry.raw.get(normalized_var.len()..).unwrap_or("");
+        // change. Cut the same number of bytes off the effective raw.
+        let suffix = effective_raw.get(normalized_var.len()..).unwrap_or("");
         let suggestion = match prefer_style {
             VarStyle::Percent => format!("%{var}%{suffix}"),
             VarStyle::Dollar => format!("${var}{suffix}"),
         };
         return Some(Diagnostic {
             index,
-            entry: entry.raw.clone(),
+            entry: effective_raw.to_string(),
             severity: Severity::Warn,
             kind: Kind::Shortenable { suggestion },
         });
@@ -1076,7 +1093,7 @@ fn add_duplicate_diagnostics(
         if let Some(&first) = first_seen.get(n.as_str()) {
             out.push(Diagnostic {
                 index: i,
-                entry: entries[i].raw.clone(),
+                entry: entries[i].effective_raw_for_user_intent().to_string(),
                 severity: Severity::Warn,
                 kind: Kind::Duplicate { first_index: first },
             });
@@ -1124,7 +1141,7 @@ fn add_relation_conflict_diagnostics(
             .expect("at least two groups are non-empty");
         out.push(Diagnostic {
             index: anchor,
-            entry: entries[anchor].raw.clone(),
+            entry: entries[anchor].effective_raw_for_user_intent().to_string(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: diagnostic.to_string(),
@@ -1182,15 +1199,19 @@ fn add_case_variant_diagnostics(entries: &[PathEntry], out: &mut Vec<Diagnostic>
         let first = indices[0];
         for &i in &indices[1..] {
             // Skip exact-verbatim duplicates — Duplicate covers them.
+            // Compare on the *observed* raw, not the user-intent
+            // accessor: two entries that differ verbatim in `raw`
+            // but happen to share a registry overlay are still
+            // distinct as the user wrote them.
             if entries[i].raw == entries[first].raw {
                 continue;
             }
             out.push(Diagnostic {
                 index: i,
-                entry: entries[i].raw.clone(),
+                entry: entries[i].effective_raw_for_user_intent().to_string(),
                 severity: Severity::Warn,
                 kind: Kind::CaseVariant {
-                    canonical: entries[first].raw.clone(),
+                    canonical: entries[first].effective_raw_for_user_intent().to_string(),
                 },
             });
         }
@@ -2383,6 +2404,7 @@ mod tests {
         let pe = PathEntry {
             raw: raw.to_string(),
             expanded: expanded.to_string(),
+            provenance_raw: None,
         };
         let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
         let diags = analyze(
@@ -2440,6 +2462,7 @@ mod tests {
         let pe = PathEntry {
             raw: r"%LocalAppData%\NopeDir".into(),
             expanded: r"C:\Users\me\AppData\Local\NopeDir".into(),
+            provenance_raw: None,
         };
         // fs_exists returns true only for the literal `%LocalAppData%`
         // string (which the fs would never see in practice). Expanded
@@ -2474,6 +2497,7 @@ mod tests {
         let pe = PathEntry {
             raw: r"%LocalAppData%\Some\WhereThatDoesNotExist".into(),
             expanded: r"C:\Users\me\AppData\Local\Some\WhereThatDoesNotExist".into(),
+            provenance_raw: None,
         };
         let diags = analyze(
             &[pe],
@@ -2491,6 +2515,105 @@ mod tests {
             hits[0].entry.contains('%'),
             "Diagnostic.entry must keep the raw `%VAR%` form; got: {:?}",
             hits[0].entry
+        );
+    }
+
+    // -- 0.0.24: provenance overlay (Windows process target) --------
+
+    /// 0.0.24 regression gate: even when the entry's `raw` is the
+    /// fully-expanded literal that the OS handed us through
+    /// `getenv("PATH")`, an attached provenance (= the original
+    /// registry `%LocalAppData%\...` form) must suppress Shortenable.
+    /// The reconciler in `path_source` is responsible for setting
+    /// that provenance; this test pins the detector contract.
+    #[test]
+    fn shortenable_skipped_when_provenance_has_percent_var() {
+        let pe = PathEntry {
+            raw: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            expanded: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            provenance_raw: Some(r"%LocalAppData%\Microsoft\WindowsApps".into()),
+        };
+        let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = shortenable_kinds(&diags);
+        assert!(
+            hits.is_empty(),
+            "provenance carries %LocalAppData%; Shortenable must not fire. got: {hits:?}"
+        );
+    }
+
+    /// 0.0.24: when a diagnostic does fire on a process entry that
+    /// has a provenance overlay, the user-facing `entry` text must
+    /// be the registry raw form (`%LocalAppData%\...`), not the
+    /// OS-expanded literal. Otherwise the user can't connect what
+    /// pathlint says with what they see in `regedit`.
+    #[test]
+    fn diagnostic_entry_text_prefers_provenance_over_raw() {
+        // Force `Missing` to fire on the entry so something goes into
+        // `Diagnostic.entry`. The entry is missing on disk, but its
+        // raw side is the OS-expanded literal and provenance carries
+        // the registry `%VAR%` form.
+        let pe = PathEntry {
+            raw: r"C:\Users\me\AppData\Local\Vanished".into(),
+            expanded: r"C:\Users\me\AppData\Local\Vanished".into(),
+            provenance_raw: Some(r"%LocalAppData%\Vanished".into()),
+        };
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_no,
+            env_none,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = missing_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(
+            hits[0].entry, r"%LocalAppData%\Vanished",
+            "Diagnostic.entry must reflect provenance when present; got: {:?}",
+            hits[0].entry
+        );
+    }
+
+    /// 0.0.24 anti-regression: an entry without provenance and whose
+    /// raw is the OS-expanded literal SHOULD still trip Shortenable.
+    /// Without this, the new "skip when provenance has %VAR%" rule
+    /// could be silently widened into "skip whenever raw is a
+    /// literal", which is wrong.
+    #[test]
+    fn shortenable_still_fires_when_provenance_is_none_and_raw_is_literal() {
+        let pe = PathEntry {
+            raw: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            expanded: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            provenance_raw: None,
+        };
+        let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = shortenable_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "no provenance overlay → literal path should still fire Shortenable. got: {hits:?}"
         );
     }
 }
