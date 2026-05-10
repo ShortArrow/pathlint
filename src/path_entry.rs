@@ -126,4 +126,41 @@ mod tests {
         assert_eq!(e.raw, "$STUB/bin");
         assert_eq!(e.expanded, "/from-closure/bin");
     }
+
+    /// 0.0.24: with no provenance overlay, the accessor returns the
+    /// observed raw form. This is the path every non-Windows entry
+    /// and every `--target user` / `--target machine` entry takes.
+    #[test]
+    fn effective_raw_for_user_intent_falls_back_to_raw_when_none() {
+        let e = PathEntry::from_raw(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            |_| -> Option<String> { None },
+        );
+        assert!(e.provenance_raw.is_none());
+        assert_eq!(
+            e.effective_raw_for_user_intent(),
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        );
+    }
+
+    /// 0.0.24: when the path_source reconciler attaches a registry
+    /// raw form via `with_provenance`, the accessor returns that
+    /// form so raw-aware detectors and the human renderer see the
+    /// `%VAR%` shape the user actually wrote in the registry.
+    #[test]
+    fn effective_raw_for_user_intent_returns_provenance_when_present() {
+        let e = PathEntry::from_raw(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            |_| -> Option<String> { None },
+        )
+        .with_provenance(r"%LocalAppData%\Microsoft\WindowsApps".to_string());
+        assert_eq!(
+            e.provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+        );
+        assert_eq!(
+            e.effective_raw_for_user_intent(),
+            r"%LocalAppData%\Microsoft\WindowsApps",
+        );
+    }
 }

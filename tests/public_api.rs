@@ -150,3 +150,24 @@ fn expand_env_with_pinned_on_public_surface() {
     let out = expand_env_with("$X", |k| (k == "X").then(|| "ok".to_string()));
     assert_eq!(out, "ok");
 }
+
+#[test]
+fn path_entry_provenance_raw_pinned_on_public_surface() {
+    // 0.0.24 BREAKING: PathEntry gains a third public field
+    // `provenance_raw: Option<String>` for the Windows process-target
+    // registry overlay. Pin both the field default and the accessor
+    // shape so a future change can't silently revert.
+    let pe = PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None });
+    assert_eq!(pe.provenance_raw, None);
+    assert_eq!(pe.effective_raw_for_user_intent(), "/usr/bin");
+
+    // `with_provenance` is the only public way for an embedder to set
+    // the overlay; production code goes through the path_source
+    // reconciler.
+    let with_prov = pe.with_provenance("%CUSTOM%/bin".to_string());
+    assert_eq!(
+        with_prov.provenance_raw.as_deref(),
+        Some("%CUSTOM%/bin")
+    );
+    assert_eq!(with_prov.effective_raw_for_user_intent(), "%CUSTOM%/bin");
+}

@@ -167,6 +167,165 @@ pub(crate) fn decode_reg_string(v: &winreg::RegValue) -> Result<String, &'static
     }
 }
 
+#[cfg(test)]
+mod overlay_tests {
+    //! 0.0.24: provenance overlay is a pure operation over
+    //! `Vec<PathEntry>` slices, so the reconciler is tested on every
+    //! OS. The Windows-only registry I/O that *feeds* the reconciler
+    //! is exercised separately in the `tests` module below (gated on
+    //! `cfg(all(test, windows))`).
+
+    use super::*;
+
+    fn raw_entry(raw: &str, expanded: &str) -> PathEntry {
+        PathEntry {
+            raw: raw.into(),
+            expanded: expanded.into(),
+            provenance_raw: None,
+        }
+    }
+
+    #[test]
+    fn reconcile_overlays_user_provenance_when_expanded_matches() {
+        // process side: OS handed us an expanded literal.
+        let process = vec![raw_entry(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        // user registry: same expanded path, but raw is `%VAR%`.
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+        );
+    }
+
+    #[test]
+    fn reconcile_prefers_user_over_machine_when_both_match() {
+        // codex decision rule: HKCU before HKLM.
+        let process = vec![raw_entry(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let machine_reg = vec![raw_entry(
+            r"%MACHINE_VAR%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+            "HKCU must win over HKLM when expanded matches both",
+        );
+    }
+
+    #[test]
+    fn reconcile_skips_when_process_expanded_has_no_registry_match() {
+        // Process entry that's not in either registry source (e.g.
+        // injected by `set PATH=...` at runtime, or registry was
+        // mutated since session start). Overlay must not fire.
+        let process = vec![raw_entry(
+            r"C:\runtime\injected\bin",
+            r"C:\runtime\injected\bin",
+        )];
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(out.len(), 1);
+        assert!(
+            out[0].provenance_raw.is_none(),
+            "no expanded match in either registry; provenance must stay None",
+        );
+    }
+
+    #[test]
+    fn reconcile_no_overlay_when_raw_already_matches_registry() {
+        // REG_SZ case: registry stored a literal, OS did not expand.
+        // process raw == registry raw → nothing to overlay.
+        let process = vec![raw_entry(
+            r"C:\Program Files\PowerShell\7",
+            r"C:\Program Files\PowerShell\7",
+        )];
+        let user_reg = vec![raw_entry(
+            r"C:\Program Files\PowerShell\7",
+            r"C:\Program Files\PowerShell\7",
+        )];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert!(
+            out[0].provenance_raw.is_none(),
+            "raw already matches; provenance overlay would be redundant",
+        );
+    }
+
+    #[test]
+    fn reconcile_first_occurrence_wins_within_user_registry() {
+        // Pathological registry with two raws that expand to the same
+        // path. The reconciler must pick the first occurrence so the
+        // result is deterministic across runs.
+        let process = vec![raw_entry(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        )];
+        let user_reg = vec![
+            raw_entry(
+                r"%LocalAppData%\Microsoft\WindowsApps",
+                r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            ),
+            raw_entry(
+                r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps",
+                r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            ),
+        ];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+            "first occurrence must win",
+        );
+    }
+
+    #[test]
+    fn reconcile_uses_normalized_expanded_for_match() {
+        // Process expanded uses backslashes + mixed case; registry
+        // expanded happens to use forward slashes + lowercase. After
+        // `expand::normalize` they are the same path, so the overlay
+        // should fire.
+        let process = vec![raw_entry(
+            r"C:\Users\Me\AppData\Local\X",
+            r"C:\Users\Me\AppData\Local\X",
+        )];
+        let user_reg = vec![raw_entry(r"%LocalAppData%\X", "c:/users/me/appdata/local/x")];
+        let machine_reg: Vec<PathEntry> = Vec::new();
+
+        let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
+        assert_eq!(
+            out[0].provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\X"),
+            "match must use expand::normalize on both sides",
+        );
+    }
+}
+
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;

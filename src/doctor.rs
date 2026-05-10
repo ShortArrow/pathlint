@@ -2383,6 +2383,7 @@ mod tests {
         let pe = PathEntry {
             raw: raw.to_string(),
             expanded: expanded.to_string(),
+            provenance_raw: None,
         };
         let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
         let diags = analyze(
@@ -2440,6 +2441,7 @@ mod tests {
         let pe = PathEntry {
             raw: r"%LocalAppData%\NopeDir".into(),
             expanded: r"C:\Users\me\AppData\Local\NopeDir".into(),
+            provenance_raw: None,
         };
         // fs_exists returns true only for the literal `%LocalAppData%`
         // string (which the fs would never see in practice). Expanded
@@ -2474,6 +2476,7 @@ mod tests {
         let pe = PathEntry {
             raw: r"%LocalAppData%\Some\WhereThatDoesNotExist".into(),
             expanded: r"C:\Users\me\AppData\Local\Some\WhereThatDoesNotExist".into(),
+            provenance_raw: None,
         };
         let diags = analyze(
             &[pe],
@@ -2491,6 +2494,106 @@ mod tests {
             hits[0].entry.contains('%'),
             "Diagnostic.entry must keep the raw `%VAR%` form; got: {:?}",
             hits[0].entry
+        );
+    }
+
+    // -- 0.0.24: provenance overlay (Windows process target) --------
+
+    /// 0.0.24 regression gate: even when the entry's `raw` is the
+    /// fully-expanded literal that the OS handed us through
+    /// `getenv("PATH")`, an attached provenance (= the original
+    /// registry `%LocalAppData%\...` form) must suppress Shortenable.
+    /// The reconciler in `path_source` is responsible for setting
+    /// that provenance; this test pins the detector contract.
+    #[test]
+    fn shortenable_skipped_when_provenance_has_percent_var() {
+        let pe = PathEntry {
+            raw: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            expanded: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            provenance_raw: Some(r"%LocalAppData%\Microsoft\WindowsApps".into()),
+        };
+        let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = shortenable_kinds(&diags);
+        assert!(
+            hits.is_empty(),
+            "provenance carries %LocalAppData%; Shortenable must not fire. got: {hits:?}"
+        );
+    }
+
+    /// 0.0.24: when a diagnostic does fire on a process entry that
+    /// has a provenance overlay, the user-facing `entry` text must
+    /// be the registry raw form (`%LocalAppData%\...`), not the
+    /// OS-expanded literal. Otherwise the user can't connect what
+    /// pathlint says with what they see in `regedit`.
+    #[test]
+    fn diagnostic_entry_text_prefers_provenance_over_raw() {
+        // Force `Missing` to fire on the entry so something goes into
+        // `Diagnostic.entry`. The entry is missing on disk, but its
+        // raw side is the OS-expanded literal and provenance carries
+        // the registry `%VAR%` form.
+        let pe = PathEntry {
+            raw: r"C:\Users\me\AppData\Local\Vanished".into(),
+            expanded: r"C:\Users\me\AppData\Local\Vanished".into(),
+            provenance_raw: Some(r"%LocalAppData%\Vanished".into()),
+        };
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_no,
+            env_none,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = missing_kinds(&diags);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(
+            hits[0].entry,
+            r"%LocalAppData%\Vanished",
+            "Diagnostic.entry must reflect provenance when present; got: {:?}",
+            hits[0].entry
+        );
+    }
+
+    /// 0.0.24 anti-regression: an entry without provenance and whose
+    /// raw is the OS-expanded literal SHOULD still trip Shortenable.
+    /// Without this, the new "skip when provenance has %VAR%" rule
+    /// could be silently widened into "skip whenever raw is a
+    /// literal", which is wrong.
+    #[test]
+    fn shortenable_still_fires_when_provenance_is_none_and_raw_is_literal() {
+        let pe = PathEntry {
+            raw: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            expanded: r"C:\Users\me\AppData\Local\Microsoft\WindowsApps".into(),
+            provenance_raw: None,
+        };
+        let env = env_map(&[("LocalAppData", r"C:\Users\me\AppData\Local")]);
+        let diags = analyze(
+            &[pe],
+            &empty_sources(),
+            &[],
+            Os::Windows,
+            fs_yes,
+            env,
+            fs_list_empty,
+            fs_writable_no,
+        );
+        let hits = shortenable_kinds(&diags);
+        assert_eq!(
+            hits.len(),
+            1,
+            "no provenance overlay → literal path should still fire Shortenable. got: {hits:?}"
         );
     }
 }
