@@ -20,6 +20,7 @@
 //! run `expand::expand_env` once — so every platform follows the same
 //! "raw at the source, expanded at the boundary" rule.
 
+use crate::expand;
 use crate::path_entry::PathEntry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,13 +38,91 @@ pub struct PathRead {
 
 pub fn read_path(target: Target) -> PathRead {
     match target {
-        Target::Process => PathRead {
-            entries: split_into_entries(&std::env::var("PATH").unwrap_or_default()),
-            warning: None,
-        },
+        Target::Process => read_process(),
         Target::User => read_registry(target),
         Target::Machine => read_registry(target),
     }
+}
+
+#[cfg(not(windows))]
+fn read_process() -> PathRead {
+    PathRead {
+        entries: split_into_entries(&std::env::var("PATH").unwrap_or_default()),
+        warning: None,
+    }
+}
+
+/// Windows: read the process PATH, then overlay HKCU / HKLM raw
+/// forms onto the entries whose `expanded` matches a registry
+/// entry. The OS expands `REG_EXPAND_SZ` before handing PATH to a
+/// child process, so `getenv` gives detectors a literal even when
+/// the user wrote `%LocalAppData%\...` in `regedit`. The reconciler
+/// restores user intent without changing what `--target` means.
+///
+/// Registry read failures (key missing, decode error, unsupported
+/// type) downgrade to a `warning` and skip the overlay; the process
+/// observed PATH is still returned so doctor / sort / where stay
+/// usable.
+#[cfg(windows)]
+fn read_process() -> PathRead {
+    let process = split_into_entries(&std::env::var("PATH").unwrap_or_default());
+    let user_reg = read_registry(Target::User);
+    let machine_reg = read_registry(Target::Machine);
+    let entries =
+        reconcile_process_with_registry(&process, &user_reg.entries, &machine_reg.entries);
+
+    // Bubble up registry warnings under a clear prefix so the user
+    // can tell process-target ran but the overlay was incomplete.
+    let mut warnings: Vec<String> = Vec::new();
+    if let Some(w) = user_reg.warning {
+        warnings.push(format!("user-registry overlay: {w}"));
+    }
+    if let Some(w) = machine_reg.warning {
+        warnings.push(format!("machine-registry overlay: {w}"));
+    }
+    let warning = if warnings.is_empty() {
+        None
+    } else {
+        Some(warnings.join("; "))
+    };
+
+    PathRead { entries, warning }
+}
+
+/// Pure overlay: for each `process` entry, find the first registry
+/// entry whose `expand::normalize`d expanded matches, prefer HKCU
+/// over HKLM, and attach its `raw` as `provenance_raw` only when
+/// it differs from the process raw (REG_SZ entries don't need
+/// overlays). When no match is found, leave `provenance_raw` as
+/// `None` — codex's safety rule: false-negative is preferable to
+/// false suppression.
+///
+/// Pure: no I/O, no allocation beyond the cloned `Vec<PathEntry>`.
+/// Lives outside `cfg(windows)` so it can be unit-tested on every
+/// platform; only the `read_process` Windows branch calls it.
+pub(crate) fn reconcile_process_with_registry(
+    process: &[PathEntry],
+    user_reg: &[PathEntry],
+    machine_reg: &[PathEntry],
+) -> Vec<PathEntry> {
+    process
+        .iter()
+        .map(|p| {
+            let candidate =
+                find_expanded_match(p, user_reg).or_else(|| find_expanded_match(p, machine_reg));
+            match candidate {
+                Some(reg_raw) if reg_raw != p.raw => p.clone().with_provenance(reg_raw),
+                _ => p.clone(),
+            }
+        })
+        .collect()
+}
+
+fn find_expanded_match(p: &PathEntry, reg: &[PathEntry]) -> Option<String> {
+    let key = expand::normalize(&p.expanded);
+    reg.iter()
+        .find(|r| expand::normalize(&r.expanded) == key)
+        .map(|r| r.raw.clone())
 }
 
 /// Split a raw PATH string on the platform's separator and lift each
@@ -314,7 +393,10 @@ mod overlay_tests {
             r"C:\Users\Me\AppData\Local\X",
             r"C:\Users\Me\AppData\Local\X",
         )];
-        let user_reg = vec![raw_entry(r"%LocalAppData%\X", "c:/users/me/appdata/local/x")];
+        let user_reg = vec![raw_entry(
+            r"%LocalAppData%\X",
+            "c:/users/me/appdata/local/x",
+        )];
         let machine_reg: Vec<PathEntry> = Vec::new();
 
         let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);

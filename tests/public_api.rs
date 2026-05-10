@@ -165,9 +165,6 @@ fn path_entry_provenance_raw_pinned_on_public_surface() {
     // the overlay; production code goes through the path_source
     // reconciler.
     let with_prov = pe.with_provenance("%CUSTOM%/bin".to_string());
-    assert_eq!(
-        with_prov.provenance_raw.as_deref(),
-        Some("%CUSTOM%/bin")
-    );
+    assert_eq!(with_prov.provenance_raw.as_deref(), Some("%CUSTOM%/bin"));
     assert_eq!(with_prov.effective_raw_for_user_intent(), "%CUSTOM%/bin");
 }

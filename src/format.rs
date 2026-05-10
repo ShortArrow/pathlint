@@ -53,11 +53,12 @@ pub fn doctor_line(d: &Diagnostic, entries: &[PathEntry], style: Style) -> Strin
     // escapes into doctor's human output (Z16-L1).
     let detail = match &d.kind {
         Kind::Duplicate { first_index } => {
-            // Display the raw form of the referenced entry — that is
-            // what the user wrote and recognises.
+            // Display the form the user authored — registry `%VAR%`
+            // form on Windows process target (provenance overlay),
+            // observed raw elsewhere.
             let first_path = entries
                 .get(*first_index)
-                .map(|e| e.raw.clone())
+                .map(|e| e.effective_raw_for_user_intent().to_string())
                 .unwrap_or_default();
             format!(
                 "duplicate of entry #{first} ({first_path})",
@@ -138,7 +139,10 @@ fn doctor_conflict(entries: &[PathEntry], diagnostic: &str, groups: &[Vec<usize>
     for (idx, group) in groups.iter().enumerate() {
         buf.push_str(&format!("      group #{idx}:\n"));
         for &i in group {
-            let entry = entries.get(i).map(|e| e.raw.clone()).unwrap_or_default();
+            let entry = entries
+                .get(i)
+                .map(|e| e.effective_raw_for_user_intent().to_string())
+                .unwrap_or_default();
             buf.push_str(&format!(
                 "        #{i:>3} {}\n",
                 strip_control_chars(&entry)
