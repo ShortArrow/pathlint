@@ -767,6 +767,60 @@ closure が `expand::expand_env_with` にも流れる (これが従来の
 `expand::expand_env` の公開 form、 `expand_env` 自体は
 process env を読む薄い wrapper として残る)。
 
+**observed と provenance (0.0.24+、 Windows process target)。**
+`raw` / `expanded` は **同一 source** から見た entry の 2 形式を
+表す。 Windows には 2 つの source が食い違う 1 ケースがある:
+`--target process` は `getenv("PATH")` を読むが、 OS が
+`REG_EXPAND_SZ` の registry 値を `ExpandEnvironmentStringsW` で
+**子プロセスに渡す前に展開してしまう**。 そのため process
+entry の `raw` は常に literal — HKCU に
+`%LocalAppData%\Microsoft\WindowsApps` と書いてあっても、
+process target からは展開後の literal しか見えない。 0.0.23 の
+raw 保持 fix は `--target user` / `--target machine` (registry
+直読) には効くが、 default の `--target process` には効かない。
+
+0.0.24 で `PathEntry` に `provenance_raw: Option<String>` を
+追加。 Windows process target では `path_source::read_process` が
+起動時に HKCU と HKLM の raw を併読し、 純粋な
+`reconcile_process_with_registry` overlay が、 process entry の
+`expanded` と registry entry の `expanded` が一致した entry に
+対して `provenance_raw` を付与する。 ユーザ意図を見る検出器
+(`Shortenable`、 `Malformed`、 `TrailingSlash`、 `ShortName`、
+および `Diagnostic.entry` の表示) は
+`PathEntry::effective_raw_for_user_intent()` 経由で
+`provenance_raw` を優先参照する。 ファイルシステム側の検出器
+(`Missing`、 `WriteablePathDir`、 resolver) は引き続き
+`expanded` を読む — file system はユーザが書いた文字列に
+関心がないので。
+
+overlay の契約:
+
+- match 条件: 両側の `expanded` を `expand::normalize` した
+  上での equality (大文字小文字無視 + slash 統一)。
+  `C:\Users\Me\X` と `c:/users/me/x` は同 entry。
+- tie-break: HKCU が HKLM に優先、 同一 source 内では先に
+  現れたものを採用。 実行ごとに決定的。
+- 一致しない entry は overlay 不採用。 codex の安全側方針:
+  false-suppress (本来出すべき diagnostic を消す) より
+  false-negative (literal を literal のまま扱い Shortenable は
+  発火する) を選ぶ。 子 shell の `set PATH=...` や Python
+  supervisor の `os.environ['PATH']` 改変など runtime injection
+  された PATH は registry に対応物が無いので、 そのまま観測通り
+  に扱う。
+- registry の raw が process の raw と verbatim 一致する場合
+  も overlay 不採用 (REG_SZ なので展開が起きておらず、
+  overlay する必要が無い)。
+- `provenance_raw` はそれ以外の経路で常に `None`:
+  `--target user` / `--target machine` (raw が source で
+  authoritative)、 Unix / macOS (registry 自体が無い)、
+  registry に対応 entry が無い process entry。
+
+`--target` の意味自体は変わらない — 3 値はあくまで *pathlint が
+どこから読むか* を表す。 overlay は cross-source の補助情報で、
+`process` が「raw を復元できるならする」ためのもの。 overlay の
+結果として process が user+machine の merge view に化けるわけ
+ではない。
+
 ## 11. CLI 表面
 
 ```
@@ -817,7 +871,11 @@ trace` の alias) と `--rules` (`--config` の alias) は 0.0.14 から
   CI で確認。Termux は端末上の `cargo install` 経由のみ — `dotfm`
   と同じ方針でビルド済み配布はしない。
 - **起動時間。** PATH 約 100 件、expectation 約 20 件で
-  `pathlint check` が warm cache 50 ms 以内。
+  `pathlint check` が warm cache 50 ms 以内。 0.0.24 の Windows
+  process target では provenance overlay のために起動時に HKCU と
+  HKLM を併読する (`RegQueryValueEx` × 2 hive + `O(n*m)` の
+  expanded-equality reconcile、 通常 `m ≈ 30`)。 実測で数 ms 単位
+  のオーバーヘッドに収まり、 50 ms 予算は維持される。
 - **安定した exit code。** `0` クリーン、`1` expectation 失敗、`2`
   config / I/O エラー。
 - **エンコーディング。** どの OS でも path は UTF-8 文字列として扱う。

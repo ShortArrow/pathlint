@@ -835,6 +835,58 @@ through `expand::expand_env_with`, which is the public-facing
 form of the previous `expand::expand_env` (kept as a thin
 wrapper over `expand_env_with` with the live process env).
 
+**Observed vs. provenance (0.0.24+, Windows process target).**
+`raw` / `expanded` describe a single entry as observed at one
+source. There is one Windows case where two sources disagree:
+`--target process` calls `getenv("PATH")`, but the OS expands
+`REG_EXPAND_SZ` registry values via `ExpandEnvironmentStringsW`
+before handing PATH to the child process. So `raw` on a process
+entry is always a literal — even when HKCU has
+`%LocalAppData%\Microsoft\WindowsApps`. The 0.0.23 raw-preservation
+fix protects `--target user` / `--target machine` (which read
+the registry directly) but does nothing for the default
+`--target process`.
+
+0.0.24 introduces `provenance_raw: Option<String>` on `PathEntry`.
+On Windows process target, `path_source::read_process` reads HKCU
+and HKLM raw at start-up, then a pure
+`reconcile_process_with_registry` overlay sets `provenance_raw`
+on each process entry whose `expanded` matches a registry entry's
+`expanded`. Detectors that reason about user intent
+(`Shortenable`, `Malformed`, `TrailingSlash`, `ShortName`, plus
+the human-facing `Diagnostic.entry`) go through
+`PathEntry::effective_raw_for_user_intent()`, which prefers
+`provenance_raw` over the observed `raw`. Filesystem-side
+detectors (`Missing`, `WriteablePathDir`, the resolver) keep
+reading `expanded` — the filesystem doesn't care what the user
+typed.
+
+The overlay's contract:
+
+- Match condition: `expand::normalize` equality on the two
+  `expanded` strings (case-insensitive + slash-unify), so
+  `C:\Users\Me\X` and `c:/users/me/x` count as the same entry.
+- Tie-break: HKCU before HKLM, then first occurrence within a
+  source. Deterministic across runs.
+- Skipped when no expanded match is found in either registry
+  source. This is the codex-recommended safety stance —
+  false-negative (literal stays literal, Shortenable still
+  fires) is preferable to false-suppression on a runtime-injected
+  PATH (`set PATH=...` in a child shell, `os.environ['PATH']`
+  in a Python supervisor, etc.).
+- Skipped when registry raw equals process raw verbatim. REG_SZ
+  registry entries do not need overlays; only REG_EXPAND_SZ
+  values whose `%VAR%` form was expanded by the OS get one.
+- `provenance_raw` stays `None` on every other code path:
+  `--target user` / `--target machine` (raw is already
+  authoritative at the source), Unix / macOS (no registry to
+  overlay), and process entries with no registry counterpart.
+
+`--target` itself is unchanged: the three values still describe
+*which source pathlint reads*. The overlay is a cross-source
+hint that lets `process` recover the original raw form when it
+can without renaming process to "the doctor display mode".
+
 ## 11. CLI surface
 
 ```
@@ -883,7 +935,13 @@ will reject the legacy spellings as unknown arguments otherwise.
   Termux runs from `cargo install` on the device — no prebuilt
   Termux binary, mirroring `dotfm`'s policy.
 - **Startup time.** `pathlint check` < 50 ms on a warm cache for a
-  PATH of ~100 entries and ~20 expectations.
+  PATH of ~100 entries and ~20 expectations. Windows process target
+  reads HKCU and HKLM at start-up for the 0.0.24 provenance
+  overlay (one `RegQueryValueEx` per hive plus an `O(n*m)`
+  expanded-equality reconcile, where `n` is process entries and
+  `m` is registry entries — typically `m ≈ 30`); empirical cost
+  is in the low single-digit milliseconds and stays inside the
+  budget.
 - **Stable exit codes.** `0` clean, `1` expectation failure, `2`
   config / I/O error.
 - **Encoding.** All paths are treated as UTF-8 strings on every OS.

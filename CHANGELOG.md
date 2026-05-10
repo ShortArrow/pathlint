@@ -12,6 +12,57 @@ when 0.0.x graduates to 0.1.0 is undecided.
 
 ## [Unreleased]
 
+## [0.0.24] — 2026-05-10
+
+### Breaking
+
+- **`pathlint::path_entry::PathEntry` gains a third public field
+  `provenance_raw: Option<String>`.** Embedders that construct a
+  `PathEntry` by struct literal (`PathEntry { raw, expanded }`)
+  must add `provenance_raw: None` to keep compiling.
+  `PathEntry::from_raw(raw, env_lookup)` stays source-compatible
+  and remains the recommended construction path; it leaves
+  `provenance_raw = None` on every newly-built entry.
+
+### Added
+
+- `pathlint::path_entry::PathEntry::effective_raw_for_user_intent(&self) -> &str`
+  returns `provenance_raw` when set, otherwise `raw`. Detectors
+  that reason about *what the user typed* (`Shortenable`,
+  `Malformed`, `TrailingSlash`, `ShortName`) and human-facing
+  renderers (`Diagnostic.entry`, the `Duplicate` first-path
+  reference, the per-group entry in `Conflict` output) all go
+  through this accessor so a Windows process-target entry whose
+  registry form is `%LocalAppData%\...` is treated as the user's
+  authored form, not the OS-expanded literal.
+- `pathlint::path_entry::PathEntry::with_provenance(self, registry_raw: String) -> Self`
+  is a chainable setter used by the `path_source` reconciler. Idempotent.
+- `pathlint::path_source::reconcile_process_with_registry(process, user_reg, machine_reg)`
+  is a pure function (no I/O, no env access) that overlays the
+  registry raw form onto a process entry whose `expanded` matches
+  a registry entry's `expanded`. Match rule: `expand::normalize`
+  equality (case-insensitive + slash-unify). Tie-break: HKCU
+  before HKLM, then first occurrence within a source. Skipped
+  silently when a process entry has no expanded match (false-
+  negative is preferred over false-suppression for race / runtime
+  PATH injection).
+
+### Fixed
+
+- **Windows: `pathlint doctor` with the default `--target process`
+  no longer mis-suggests shortening registry-authored PATH
+  entries.** Before 0.0.24, `getenv("PATH")` returned the OS-expanded
+  literal (`C:\Users\me\AppData\Local\Microsoft\WindowsApps`),
+  bypassing the 0.0.23 raw-preservation fix that protects
+  `--target user` / `--target machine`. The new path_source
+  reconciler reads HKCU and HKLM raw at process-target start-up
+  and overlays the registry's `%VAR%` form onto matching entries
+  via `provenance_raw`, so `Shortenable` (and the other user-intent
+  detectors) see what the user wrote in `regedit`. Entries with
+  no registry counterpart — typically PATH injected at runtime via
+  `set PATH=...` or by a child shell — keep their literal form
+  and continue to trip `Shortenable` when applicable.
+
 ## [0.0.23] — 2026-05-10
 
 ### Breaking
