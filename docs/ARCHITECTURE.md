@@ -17,7 +17,7 @@ tools can embed it.
 
 ```
 src/                    library + binary source
-  lib.rs                  public API surface (9 supported modules)
+  lib.rs                  public API surface (10 supported modules)
   bin/pathlint/           binary entry point + CLI plumbing
     main.rs               main() — clap parse, dispatch, exit code
     cli.rs                clap derive structs (Cli, GlobalOpts, ...)
@@ -45,9 +45,9 @@ Cargo.toml                crate metadata + [[bin]] declaration
 README.md                 user-facing entry point
 ```
 
-## Library: 9 public modules
+## Library: 10 public modules
 
-`src/lib.rs` declares exactly nine `pub mod` entries — that is the
+`src/lib.rs` declares exactly ten `pub mod` entries — that is the
 supported library surface. `tests/public_api.rs` pins them by
 import + a callability check; moving or renaming a listed symbol
 fails CI.
@@ -62,7 +62,8 @@ fails CI.
 | `catalog` | built-in source catalog | `builtin`, `builtin_relations`, `merge_with_user`, `merge_with_user_relations`, `check_acyclic`, `version_check`, `embedded_version`, `RelationIndex` |
 | `source_match` | path → source matching | `find`, `names_only`, `validate_sources`, `Match`, `SourceWarning` |
 | `os_detect` | runtime OS dispatch | `Os`, `os_filter_applies` |
-| `expand` | env-var expansion + slash normalisation | `expand_env`, `normalize`, `expand_and_normalize` |
+| `expand` | env-var expansion + slash normalisation | `expand_env`, `expand_env_with`, `normalize`, `expand_and_normalize` |
+| `path_entry` | PATH entry raw/expanded/provenance carrier (0.0.23+) | `PathEntry`, `PathEntry::from_raw`, `PathEntry::with_provenance`, `PathEntry::effective_raw_for_user_intent` |
 
 The crate-level rustdoc (`src/lib.rs`) carries the authoritative
 list with examples. Embedders should treat docs.rs as the
@@ -70,7 +71,7 @@ contract; everything not mentioned there is internal.
 
 ## Internal modules
 
-Everything outside the nine listed above is **not** part of the
+Everything outside the ten listed above is **not** part of the
 public contract.
 
 | Module | Visibility | Role |
@@ -147,13 +148,13 @@ gates:
 
 | Test | What it pins |
 |---|---|
-| `tests/public_api.rs` | nine-module surface, with callability checks (not just `use`) |
+| `tests/public_api.rs` | ten-module surface, with callability checks (not just `use`) |
 | `tests/help_contract.rs` | `--version` / `--help` output (subcommand list, alias visibility) |
 | `tests/{schema,check_schema,doctor_schema,sort_schema,trace_schema}.rs` | schemas/ files match the generators byte-for-byte |
 | `tests/plugin_validation.rs` | every `plugins/*.toml` parses against runtime `PluginFileShape` and is `catalog_version`-free |
 | `tests/security.rs` | hostile `pathlint.toml` cases (TOCTOU symlinks, oversized files, root-needle sources, relation cycles, `catalog_version` reject) |
 | `tests/cli_global_options.rs` | `--color` and `--no-glyphs` route through every renderer |
-| `tests/cli_strings.rs` | `--rules` alias still works + diagnostics use canonical `--config` |
+| `tests/cli_strings.rs` | canonical `--config` diagnostics (alias `--rules` removed in 0.0.22) |
 
 CI runs `cargo test` on Ubuntu + macOS + Windows. The
 `fmt + clippy` job is its own gate (`cargo fmt --check` +

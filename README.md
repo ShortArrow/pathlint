@@ -160,7 +160,12 @@ kind    = "executable"
 - `pathlint --target user` / `--target machine` — Windows-only;
   read PATH from the per-user or per-machine registry instead of
   the inherited process env. The other subcommands accept the same
-  flag.
+  flag. On Windows, the default `--target process` additionally
+  reads HKCU + HKLM raw at start-up and overlays the registry's
+  authored form (`%LocalAppData%\...`) on each matching entry,
+  so doctor displays what the user typed in `regedit` rather than
+  the OS-expanded literal — see [docs/PRD.md §10.1](docs/PRD.md#101-path-entry-rawexpanded-duality-0023)
+  for the full rule.
 - `pathlint check --json | jq '.[] | select(.kind != "ok")'` and
   similar machine pipelines — every JSON-emitting subcommand has a
   stable `kind` discriminator (since 0.0.15).
