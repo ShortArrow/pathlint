@@ -355,4 +355,34 @@ mod tests {
         };
         assert_eq!(expand_env_with("%A%/${B}/c", lookup), "AA/BB/c");
     }
+
+    // ---- 0.0.26: expand_and_normalize_with closure injection -------
+
+    /// 0.0.26: pin that `expand_and_normalize_with` runs the input
+    /// through `expand_env_with` (so `$VAR` resolves through the
+    /// closure) and then through `normalize` (so backslashes flip
+    /// to forward slashes and ASCII letters lowercase).
+    #[test]
+    fn expand_and_normalize_with_uses_closure_only() {
+        let lookup = |k: &str| (k == "ROOT").then(|| "/Var".to_string());
+        let out = expand_and_normalize_with(r"$ROOT\BIN", lookup);
+        assert_eq!(out, "/var/bin");
+    }
+
+    /// 0.0.26: pin that `expand_and_normalize_with` does *not*
+    /// fall back to the live process env when the closure says
+    /// `None`. Without this guard the wrapper-vs-non-wrapper
+    /// distinction collapses.
+    #[test]
+    fn expand_and_normalize_with_does_not_leak_process_env() {
+        with_var("PATHLINT_TEST_NORMALIZE_LEAK", "leaked", || {
+            let out = expand_and_normalize_with(
+                "$PATHLINT_TEST_NORMALIZE_LEAK/x",
+                |_| -> Option<String> { None },
+            );
+            // Closure returned None, so the variable stays verbatim
+            // through expand_env_with and only normalize touches it.
+            assert_eq!(out, "$pathlint_test_normalize_leak/x");
+        });
+    }
 }
