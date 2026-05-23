@@ -31,7 +31,7 @@
 use std::collections::BTreeMap;
 
 use crate::config::SourceDef;
-use crate::expand::expand_and_normalize;
+use crate::expand::expand_and_normalize_with;
 use crate::os_detect::Os;
 
 /// One source matched against the haystack. `needle_len` is the
@@ -55,12 +55,34 @@ pub struct Match {
 /// `/home/u/.cargo/bin` was reported as a match for paths under
 /// `/home/u/.cargo/binx/...` purely because `contains` is byte-wise.
 pub fn find(haystack: &str, sources: &BTreeMap<String, SourceDef>, os: Os) -> Vec<Match> {
+    find_with(haystack, sources, os, |v| std::env::var(v).ok())
+}
+
+/// Same as [`find`], but takes a caller-supplied env lookup so the
+/// source's path is expanded through `env_lookup` instead of the
+/// live process environment.
+///
+/// 0.0.26+: introduced so embedders can run pathlint without
+/// touching `std::env` at all. [`find`] is now a thin wrapper
+/// that passes `|v| std::env::var(v).ok()` here. The closure
+/// flows through [`crate::expand::expand_and_normalize_with`] to
+/// resolve every `$VAR` / `%VAR%` / `~` in the catalog's source
+/// paths.
+pub fn find_with<V>(
+    haystack: &str,
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    env_lookup: V,
+) -> Vec<Match>
+where
+    V: Fn(&str) -> Option<String>,
+{
     let mut hits: Vec<Match> = Vec::new();
     for (name, def) in sources {
         let Some(raw) = def.path_for(os) else {
             continue;
         };
-        let needle = expand_and_normalize(raw);
+        let needle = expand_and_normalize_with(raw, &env_lookup);
         if needle.is_empty() {
             continue;
         }
@@ -136,12 +158,30 @@ pub enum SourceWarningReason {
 /// caller can choose whether to fail (`run.rs` does, with exit 2)
 /// or report-and-continue.
 pub fn validate_sources(sources: &BTreeMap<String, SourceDef>, os: Os) -> Vec<SourceWarning> {
+    validate_sources_with(sources, os, |v| std::env::var(v).ok())
+}
+
+/// Same as [`validate_sources`], but takes a caller-supplied env
+/// lookup so each source's path is expanded through `env_lookup`
+/// instead of the live process environment.
+///
+/// 0.0.26+: introduced for the same reason as [`find_with`].
+/// [`validate_sources`] now delegates here with the live-env
+/// closure baked in.
+pub fn validate_sources_with<V>(
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    env_lookup: V,
+) -> Vec<SourceWarning>
+where
+    V: Fn(&str) -> Option<String>,
+{
     let mut warnings = Vec::new();
     for (name, def) in sources {
         let Some(raw) = def.path_for(os) else {
             continue;
         };
-        let needle = expand_and_normalize(raw);
+        let needle = expand_and_normalize_with(raw, &env_lookup);
         if needle.is_empty() {
             continue;
         }
@@ -192,7 +232,24 @@ fn is_windows_drive_root(needle: &str) -> bool {
 /// Convenience: just the names from `find`, in rank order. Callers
 /// that don't need the specificity score reach for this.
 pub fn names_only(haystack: &str, sources: &BTreeMap<String, SourceDef>, os: Os) -> Vec<String> {
-    find(haystack, sources, os)
+    names_only_with(haystack, sources, os, |v| std::env::var(v).ok())
+}
+
+/// Same as [`names_only`], but threads `env_lookup` through to
+/// [`find_with`] so the source paths are resolved without touching
+/// the process env.
+///
+/// 0.0.26+.
+pub fn names_only_with<V>(
+    haystack: &str,
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    env_lookup: V,
+) -> Vec<String>
+where
+    V: Fn(&str) -> Option<String>,
+{
+    find_with(haystack, sources, os, env_lookup)
         .into_iter()
         .map(|m| m.name)
         .collect()
@@ -372,5 +429,74 @@ mod tests {
         let sources = cat(&[("winget", def)]);
         let warnings = validate_sources(&sources, Os::Linux);
         assert!(warnings.is_empty());
+    }
+
+    // ---- 0.0.26: _with closure injection contract pins -------------
+
+    /// 0.0.26: pin that `find_with` resolves `$VAR` in the source's
+    /// `unix` path through the caller-supplied closure, not through
+    /// `std::env::var`. Pre-0.0.26 the only public `find` always
+    /// went through `expand_and_normalize` which read the process
+    /// env directly — this test forces the closure path.
+    #[test]
+    fn find_with_uses_closure_for_source_path_expansion() {
+        let sources = cat(&[("stub", src(r"$STUB_HOME/.cargo/bin"))]);
+        let env_lookup = |k: &str| (k == "STUB_HOME").then(|| "/home/stub".to_string());
+        let hits = find_with(
+            "/home/stub/.cargo/bin/runex",
+            &sources,
+            Os::Linux,
+            env_lookup,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "stub");
+    }
+
+    /// 0.0.26: when the closure refuses to resolve `$STUB_HOME`,
+    /// `find_with` must leave the needle unresolved (still containing
+    /// `$stub_home` after normalize lowercases it) and produce zero
+    /// hits against a literal haystack — proving the closure is the
+    /// sole env oracle.
+    #[test]
+    fn find_with_does_not_leak_process_env() {
+        let sources = cat(&[("stub", src(r"$STUB_HOME/.cargo/bin"))]);
+        let hits = find_with(
+            "/home/stub/.cargo/bin/runex",
+            &sources,
+            Os::Linux,
+            |_| -> Option<String> { None },
+        );
+        assert!(
+            hits.is_empty(),
+            "closure returned None; needle should stay verbatim and not match. got: {hits:?}"
+        );
+    }
+
+    /// 0.0.26: `validate_sources_with` consults the closure too,
+    /// so a needle that *would* expand to `/` only fires the
+    /// RootPath warning when the closure cooperates.
+    #[test]
+    fn validate_sources_with_uses_closure() {
+        let sources = cat(&[("evil", src("$EVIL_ROOT"))]);
+        let env_lookup = |k: &str| (k == "EVIL_ROOT").then(|| "/".to_string());
+        let warnings = validate_sources_with(&sources, Os::Linux, env_lookup);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].name, "evil");
+        assert!(matches!(warnings[0].reason, SourceWarningReason::RootPath));
+    }
+
+    /// 0.0.26: `names_only_with` chains through `find_with` and
+    /// preserves the same closure-only env-oracle contract.
+    #[test]
+    fn names_only_with_uses_closure() {
+        let sources = cat(&[("stub", src(r"$STUB_HOME/.cargo/bin"))]);
+        let env_lookup = |k: &str| (k == "STUB_HOME").then(|| "/home/stub".to_string());
+        let names = names_only_with(
+            "/home/stub/.cargo/bin/runex",
+            &sources,
+            Os::Linux,
+            env_lookup,
+        );
+        assert_eq!(names, vec!["stub".to_string()]);
     }
 }

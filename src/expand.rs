@@ -63,9 +63,36 @@ pub fn normalize(input: &str) -> String {
     input.replace('\\', "/").to_ascii_lowercase()
 }
 
+/// Expand env vars then normalize, against a caller-supplied env
+/// lookup. Pure — every env reference goes through `env_lookup`,
+/// never through the process environment directly.
+///
+/// 0.0.26+: the injection-aware form. [`expand_and_normalize`] is
+/// now a thin wrapper. Production callers that don't need a
+/// custom oracle pass `|v| std::env::var(v).ok()`; lib embedders
+/// and tests pass deterministic closures so behaviour is
+/// independent of the host environment. The internal
+/// `source_match::find_with` / `validate_sources_with` /
+/// `names_only_with` entry points thread the closure all the way
+/// through, so an embedder can resolve catalog source paths
+/// without ever touching `std::env`.
+pub fn expand_and_normalize_with<V>(input: &str, env_lookup: V) -> String
+where
+    V: Fn(&str) -> Option<String>,
+{
+    normalize(&expand_env_with(input, env_lookup))
+}
+
 /// Convenience: expand env vars then normalize.
+///
+/// 0.0.26+: thin wrapper over [`expand_and_normalize_with`] that
+/// reads the live process env. The actual expansion-then-normalize
+/// logic lives in `expand_and_normalize_with`; this entry point
+/// exists for callers (the lib's own internal callers, doctests,
+/// and embedders happy to read the host env) who don't need to
+/// inject a custom lookup.
 pub fn expand_and_normalize(input: &str) -> String {
-    normalize(&expand_env(input))
+    expand_and_normalize_with(input, |v| env::var(v).ok())
 }
 
 /// Read PATHEXT and split into the literal extension tokens
@@ -354,5 +381,35 @@ mod tests {
             _ => None,
         };
         assert_eq!(expand_env_with("%A%/${B}/c", lookup), "AA/BB/c");
+    }
+
+    // ---- 0.0.26: expand_and_normalize_with closure injection -------
+
+    /// 0.0.26: pin that `expand_and_normalize_with` runs the input
+    /// through `expand_env_with` (so `$VAR` resolves through the
+    /// closure) and then through `normalize` (so backslashes flip
+    /// to forward slashes and ASCII letters lowercase).
+    #[test]
+    fn expand_and_normalize_with_uses_closure_only() {
+        let lookup = |k: &str| (k == "ROOT").then(|| "/Var".to_string());
+        let out = expand_and_normalize_with(r"$ROOT\BIN", lookup);
+        assert_eq!(out, "/var/bin");
+    }
+
+    /// 0.0.26: pin that `expand_and_normalize_with` does *not*
+    /// fall back to the live process env when the closure says
+    /// `None`. Without this guard the wrapper-vs-non-wrapper
+    /// distinction collapses.
+    #[test]
+    fn expand_and_normalize_with_does_not_leak_process_env() {
+        with_var("PATHLINT_TEST_NORMALIZE_LEAK", "leaked", || {
+            let out = expand_and_normalize_with(
+                "$PATHLINT_TEST_NORMALIZE_LEAK/x",
+                |_| -> Option<String> { None },
+            );
+            // Closure returned None, so the variable stays verbatim
+            // through expand_env_with and only normalize touches it.
+            assert_eq!(out, "$pathlint_test_normalize_leak/x");
+        });
     }
 }

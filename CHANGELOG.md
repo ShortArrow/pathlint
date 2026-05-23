@@ -16,6 +16,42 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.26] — 2026-05-23
+
+Additive-only release. No BREAKING. Closes the env-injection
+scope of ADR-0002 by giving the `expand` and `source_match` layers
+`_with` variants that take a caller-supplied env lookup. Embedders
+that exclusively call the `_with` family can now resolve catalog
+source paths without ever touching `std::env::var`. See
+[ADR-0006](docs/decisions/0006-source-match-env-closure-injection.md)
+for the rationale, the four alternatives that were rejected, and
+the follow-up tied to the `AnalyzeDeps` work (Step 3 of the
+0.0.25-0.1.0 roadmap).
+
+### Added
+
+- `pathlint::expand::expand_and_normalize_with(input, env_lookup)`
+  is the new injection-aware form. The existing
+  `expand::expand_and_normalize(input)` becomes a thin wrapper
+  that passes `|v| std::env::var(v).ok()` — same shape as the
+  0.0.23 `expand_env` / `expand_env_with` pair.
+- `pathlint::source_match::find_with(haystack, sources, os, env_lookup)`,
+  `pathlint::source_match::validate_sources_with(sources, os, env_lookup)`,
+  and `pathlint::source_match::names_only_with(haystack, sources, os, env_lookup)`
+  let the catalog source's path be resolved through the closure
+  instead of the live process environment. The existing
+  `find` / `validate_sources` / `names_only` become wrappers.
+
+### Fixed
+
+- ADR-0002 Follow-up (codex 2026-05-17 audit, FP H severity):
+  the lib's public boundary now closes the env-injection scope.
+  Internal callers (`lint::evaluate_one`, `trace::locate`,
+  `sort::sort_path`, the `doctor` matchers, the binary's
+  `enforce_source_validation`) still read the process env via
+  the wrappers in production, but every public entry point on
+  the matching surface accepts an explicit env closure.
+
 ## [0.0.25] — 2026-05-17
 
 Docs-only release. No public API change. The 0.0.24 → 0.0.25 bump

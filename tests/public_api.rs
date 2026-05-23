@@ -22,7 +22,9 @@ use pathlint::doctor::{
     analyze_real, env_lookup_real, fs_exists_real, fs_list_dir_real, has_error, kind_name,
     user_diagnostic_names, validate_filter_names,
 };
-use pathlint::expand::{expand_and_normalize, expand_env, expand_env_with, normalize};
+use pathlint::expand::{
+    expand_and_normalize, expand_and_normalize_with, expand_env, expand_env_with, normalize,
+};
 use pathlint::lint::{
     CheckOutcomeView, Diagnosis, Outcome, Status, check_shape_filesystem, diagnose, evaluate,
     exit_code, has_config_error, is_failure,
@@ -31,7 +33,8 @@ use pathlint::os_detect::{Os, os_filter_applies};
 use pathlint::path_entry::PathEntry;
 use pathlint::sort::{EntryMove, SortNote, SortPlan, sort_path};
 use pathlint::source_match::{
-    Match, SourceWarning, SourceWarningReason, find, names_only, validate_sources,
+    Match, SourceWarning, SourceWarningReason, find, find_with, names_only, names_only_with,
+    validate_sources, validate_sources_with,
 };
 use pathlint::trace::{Found, Provenance, TraceOutcome, UninstallHint, locate};
 
@@ -167,4 +170,65 @@ fn path_entry_provenance_raw_pinned_on_public_surface() {
     let with_prov = pe.with_provenance("%CUSTOM%/bin".to_string());
     assert_eq!(with_prov.provenance_raw.as_deref(), Some("%CUSTOM%/bin"));
     assert_eq!(with_prov.effective_raw_for_user_intent(), "%CUSTOM%/bin");
+}
+
+#[test]
+fn expand_and_normalize_with_pinned_on_public_surface() {
+    // 0.0.26: pin expand::expand_and_normalize_with as a public
+    // surface entry point. The closure-receiving form lets embedders
+    // run pathlint without ever touching `std::env::var` themselves;
+    // the existing `expand_and_normalize` stays as a wrapper that
+    // reads the process env.
+    let out =
+        expand_and_normalize_with(r"$ROOT\BIN", |k| (k == "ROOT").then(|| "/Var".to_string()));
+    // normalize() lowercases + slash-unifies, and expand_env_with
+    // resolved $ROOT through the closure.
+    assert_eq!(out, "/var/bin");
+}
+
+#[test]
+fn source_match_with_variants_pinned_on_public_surface() {
+    // 0.0.26: pin source_match::{find_with, validate_sources_with,
+    // names_only_with} as part of the lib boundary so embedders can
+    // resolve catalog source paths without leaking the process env.
+    use pathlint::config::SourceDef;
+    use std::collections::BTreeMap;
+
+    let mut sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    sources.insert(
+        "stub".into(),
+        SourceDef {
+            unix: Some(r"$STUB_HOME/.cargo/bin".into()),
+            ..Default::default()
+        },
+    );
+
+    let env_lookup =
+        |k: &str| -> Option<String> { (k == "STUB_HOME").then(|| "/home/stub".to_string()) };
+
+    // find_with expands the source's `unix` path via the closure, so
+    // the haystack matches only when the closure provides $STUB_HOME.
+    let hits = find_with(
+        "/home/stub/.cargo/bin/runex",
+        &sources,
+        Os::Linux,
+        env_lookup,
+    );
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].name, "stub");
+
+    // names_only_with chains through find_with.
+    let names = names_only_with(
+        "/home/stub/.cargo/bin/runex",
+        &sources,
+        Os::Linux,
+        env_lookup,
+    );
+    assert_eq!(names, vec!["stub".to_string()]);
+
+    // validate_sources_with sees the same closure. With $STUB_HOME
+    // resolved, the needle is long enough to clear the
+    // NeedleTooShort heuristic, so no warnings fire.
+    let warnings = validate_sources_with(&sources, Os::Linux, env_lookup);
+    assert!(warnings.is_empty(), "got: {warnings:?}");
 }
