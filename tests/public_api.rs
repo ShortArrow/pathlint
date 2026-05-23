@@ -179,9 +179,8 @@ fn expand_and_normalize_with_pinned_on_public_surface() {
     // run pathlint without ever touching `std::env::var` themselves;
     // the existing `expand_and_normalize` stays as a wrapper that
     // reads the process env.
-    let out = expand_and_normalize_with(r"$ROOT\BIN", |k| {
-        (k == "ROOT").then(|| "/Var".to_string())
-    });
+    let out =
+        expand_and_normalize_with(r"$ROOT\BIN", |k| (k == "ROOT").then(|| "/Var".to_string()));
     // normalize() lowercases + slash-unifies, and expand_env_with
     // resolved $ROOT through the closure.
     assert_eq!(out, "/var/bin");
@@ -204,9 +203,8 @@ fn source_match_with_variants_pinned_on_public_surface() {
         },
     );
 
-    let env_lookup = |k: &str| -> Option<String> {
-        (k == "STUB_HOME").then(|| "/home/stub".to_string())
-    };
+    let env_lookup =
+        |k: &str| -> Option<String> { (k == "STUB_HOME").then(|| "/home/stub".to_string()) };
 
     // find_with expands the source's `unix` path via the closure, so
     // the haystack matches only when the closure provides $STUB_HOME.

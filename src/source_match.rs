@@ -31,7 +31,7 @@
 use std::collections::BTreeMap;
 
 use crate::config::SourceDef;
-use crate::expand::expand_and_normalize;
+use crate::expand::expand_and_normalize_with;
 use crate::os_detect::Os;
 
 /// One source matched against the haystack. `needle_len` is the
@@ -55,12 +55,34 @@ pub struct Match {
 /// `/home/u/.cargo/bin` was reported as a match for paths under
 /// `/home/u/.cargo/binx/...` purely because `contains` is byte-wise.
 pub fn find(haystack: &str, sources: &BTreeMap<String, SourceDef>, os: Os) -> Vec<Match> {
+    find_with(haystack, sources, os, |v| std::env::var(v).ok())
+}
+
+/// Same as [`find`], but takes a caller-supplied env lookup so the
+/// source's path is expanded through `env_lookup` instead of the
+/// live process environment.
+///
+/// 0.0.26+: introduced so embedders can run pathlint without
+/// touching `std::env` at all. [`find`] is now a thin wrapper
+/// that passes `|v| std::env::var(v).ok()` here. The closure
+/// flows through [`crate::expand::expand_and_normalize_with`] to
+/// resolve every `$VAR` / `%VAR%` / `~` in the catalog's source
+/// paths.
+pub fn find_with<V>(
+    haystack: &str,
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    env_lookup: V,
+) -> Vec<Match>
+where
+    V: Fn(&str) -> Option<String>,
+{
     let mut hits: Vec<Match> = Vec::new();
     for (name, def) in sources {
         let Some(raw) = def.path_for(os) else {
             continue;
         };
-        let needle = expand_and_normalize(raw);
+        let needle = expand_and_normalize_with(raw, &env_lookup);
         if needle.is_empty() {
             continue;
         }
@@ -136,12 +158,30 @@ pub enum SourceWarningReason {
 /// caller can choose whether to fail (`run.rs` does, with exit 2)
 /// or report-and-continue.
 pub fn validate_sources(sources: &BTreeMap<String, SourceDef>, os: Os) -> Vec<SourceWarning> {
+    validate_sources_with(sources, os, |v| std::env::var(v).ok())
+}
+
+/// Same as [`validate_sources`], but takes a caller-supplied env
+/// lookup so each source's path is expanded through `env_lookup`
+/// instead of the live process environment.
+///
+/// 0.0.26+: introduced for the same reason as [`find_with`].
+/// [`validate_sources`] now delegates here with the live-env
+/// closure baked in.
+pub fn validate_sources_with<V>(
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    env_lookup: V,
+) -> Vec<SourceWarning>
+where
+    V: Fn(&str) -> Option<String>,
+{
     let mut warnings = Vec::new();
     for (name, def) in sources {
         let Some(raw) = def.path_for(os) else {
             continue;
         };
-        let needle = expand_and_normalize(raw);
+        let needle = expand_and_normalize_with(raw, &env_lookup);
         if needle.is_empty() {
             continue;
         }
@@ -192,7 +232,24 @@ fn is_windows_drive_root(needle: &str) -> bool {
 /// Convenience: just the names from `find`, in rank order. Callers
 /// that don't need the specificity score reach for this.
 pub fn names_only(haystack: &str, sources: &BTreeMap<String, SourceDef>, os: Os) -> Vec<String> {
-    find(haystack, sources, os)
+    names_only_with(haystack, sources, os, |v| std::env::var(v).ok())
+}
+
+/// Same as [`names_only`], but threads `env_lookup` through to
+/// [`find_with`] so the source paths are resolved without touching
+/// the process env.
+///
+/// 0.0.26+.
+pub fn names_only_with<V>(
+    haystack: &str,
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    env_lookup: V,
+) -> Vec<String>
+where
+    V: Fn(&str) -> Option<String>,
+{
+    find_with(haystack, sources, os, env_lookup)
         .into_iter()
         .map(|m| m.name)
         .collect()

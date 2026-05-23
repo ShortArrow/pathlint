@@ -63,9 +63,36 @@ pub fn normalize(input: &str) -> String {
     input.replace('\\', "/").to_ascii_lowercase()
 }
 
+/// Expand env vars then normalize, against a caller-supplied env
+/// lookup. Pure — every env reference goes through `env_lookup`,
+/// never through the process environment directly.
+///
+/// 0.0.26+: the injection-aware form. [`expand_and_normalize`] is
+/// now a thin wrapper. Production callers that don't need a
+/// custom oracle pass `|v| std::env::var(v).ok()`; lib embedders
+/// and tests pass deterministic closures so behaviour is
+/// independent of the host environment. The internal
+/// `source_match::find_with` / `validate_sources_with` /
+/// `names_only_with` entry points thread the closure all the way
+/// through, so an embedder can resolve catalog source paths
+/// without ever touching `std::env`.
+pub fn expand_and_normalize_with<V>(input: &str, env_lookup: V) -> String
+where
+    V: Fn(&str) -> Option<String>,
+{
+    normalize(&expand_env_with(input, env_lookup))
+}
+
 /// Convenience: expand env vars then normalize.
+///
+/// 0.0.26+: thin wrapper over [`expand_and_normalize_with`] that
+/// reads the live process env. The actual expansion-then-normalize
+/// logic lives in `expand_and_normalize_with`; this entry point
+/// exists for callers (the lib's own internal callers, doctests,
+/// and embedders happy to read the host env) who don't need to
+/// inject a custom lookup.
 pub fn expand_and_normalize(input: &str) -> String {
-    normalize(&expand_env(input))
+    expand_and_normalize_with(input, |v| env::var(v).ok())
 }
 
 /// Read PATHEXT and split into the literal extension tokens
