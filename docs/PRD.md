@@ -861,7 +861,7 @@ on a registry value whose type pathlint doesn't understand.
 **Env-lookup injection.** `PathEntry::from_raw(raw, env_lookup)`
 takes a `Fn(&str) -> Option<String>` so the constructor reads
 the env exclusively through the caller's closure — pathlint
-never touches `std::env::var` from inside `from_raw`. The two
+never touches `std::env::var` from inside `from_raw`. The
 infrastructure boundary points (`path_source::read_path` and
 `resolve::split_path`) inject `|v| std::env::var(v).ok()`; lib
 embedders and tests inject deterministic closures so behaviour
@@ -869,6 +869,23 @@ is independent of the host environment. The same closure flows
 through `expand::expand_env_with`, which is the public-facing
 form of the previous `expand::expand_env` (kept as a thin
 wrapper over `expand_env_with` with the live process env).
+
+0.0.26+ extends the closure-injection pattern across the rest of
+the lib's public matching surface (ADR-0006). `expand` exposes
+`expand_and_normalize_with(input, env_lookup)` alongside the
+existing `expand_and_normalize(input)` wrapper, and `source_match`
+exposes `find_with(haystack, sources, os, env_lookup)`,
+`validate_sources_with(sources, os, env_lookup)`, and
+`names_only_with(haystack, sources, os, env_lookup)` alongside
+their wrappers. An embedder that calls the `_with` variants
+exclusively can resolve catalog source paths without ever
+reading the process env — closure injection is complete at the
+lib boundary. The internal call sites (`lint::evaluate_one`,
+`trace::locate`, `sort::sort_path`, `doctor`-side matchers,
+`bin/pathlint/run::enforce_source_validation`) still go through
+the wrappers and so the binary keeps reading `std::env::var`
+behind the scenes; threading the closure through them is a
+future change tied to the `AnalyzeDeps` work.
 
 **Observed vs. provenance (0.0.24+, Windows process target).**
 `raw` / `expanded` describe a single entry as observed at one

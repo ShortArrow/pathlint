@@ -789,13 +789,27 @@ invalid UTF-16 surrogate pair に対して **lossy** に
 は `Fn(&str) -> Option<String>` を取り、 constructor は
 caller の closure のみ env oracle として参照する — pathlint は
 `from_raw` の中から `std::env::var` を呼ばない。 infrastructure
-境界の 2 箇所 (`path_source::read_path` と
-`resolve::split_path`) のみ `|v| std::env::var(v).ok()` を
-inject する。 lib embedder と test は決定論的 closure を
-inject することで、 host 環境に依存しない動作を得る。 同じ
-closure が `expand::expand_env_with` にも流れる (これが従来の
-`expand::expand_env` の公開 form、 `expand_env` 自体は
-process env を読む薄い wrapper として残る)。
+境界 (`path_source::read_path` と `resolve::split_path`) のみ
+`|v| std::env::var(v).ok()` を inject する。 lib embedder と
+test は決定論的 closure を inject することで、 host 環境に
+依存しない動作を得る。 同じ closure が `expand::expand_env_with`
+にも流れる (これが従来の `expand::expand_env` の公開 form、
+`expand_env` 自体は process env を読む薄い wrapper として残る)。
+
+0.0.26+ で公開 matching surface にも同 pattern を展開 (ADR-0006)。
+`expand` 層は `expand_and_normalize_with(input, env_lookup)` を、
+`source_match` 層は `find_with(...)` / `validate_sources_with(...)` /
+`names_only_with(...)` を公開し、 既存 4 関数 (`expand_and_normalize`,
+`find`, `validate_sources`, `names_only`) は wrapper として残す。
+embedder が `_with` 系のみを呼べば、 catalog source path の
+展開でも `std::env::var` を一切経由せずに pathlint を動かせる
+— lib 公開境界で injection は完成。 内部 caller
+(`lint::evaluate_one`, `trace::locate`, `sort::sort_path`,
+`doctor` 側の matcher 群、 `bin/pathlint/run::enforce_source_validation`)
+は依然 wrapper 経由で process env を読むため、 binary CLI の
+production 挙動は変わらない。 内部 caller に closure を流す
+作業は `AnalyzeDeps` 導入と一緒の future change として
+切り出す。
 
 **observed と provenance (0.0.24+、 Windows process target)。**
 `raw` / `expanded` は **同一 source** から見た entry の 2 形式を
