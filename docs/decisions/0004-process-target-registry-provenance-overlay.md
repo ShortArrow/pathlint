@@ -3,6 +3,7 @@
 - **Status**: Accepted (supersedes part of ADR-0001 — `PathEntry`'s concept purity is now traded against the cross-source overlay)
 - **Date**: 2026-05-10
 - **Release**: 0.0.24
+- **Category**: 1. Public API surface (and 5. Architectural style — `--target process` Windows semantics gained an overlay)
 
 ## Context
 

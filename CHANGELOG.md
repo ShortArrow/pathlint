@@ -26,19 +26,24 @@ ADRs from their `### Breaking` entries.
 ### Added
 
 - `docs/decisions/` directory with an
-  [README](docs/decisions/README.md) describing when to write an
-  ADR, the template, and supersession rules.
+  [README](docs/decisions/README.md) and a meta-ADR
+  ([ADR-0000](docs/decisions/0000-adr-categories.md)) that
+  defines the eight categories pathlint recognises, the
+  positive criteria for writing an ADR (PA1-PA8), and the
+  negative criteria for *not* writing one (NA1-NA4). Subsequent
+  ADRs must declare a `Category: N. <name>` metadata line so
+  the index can sort by topic.
 - ADRs covering five load-bearing past decisions:
   [ADR-0001](docs/decisions/0001-pathentry-as-tenth-public-module.md)
-  (PathEntry as the 10th public module, 0.0.23),
+  (PathEntry as the 10th public module, 0.0.23 — category 1+4),
   [ADR-0002](docs/decisions/0002-from-raw-closure-injection.md)
-  (`from_raw` closure injection, 0.0.23),
+  (`from_raw` closure injection, 0.0.23 — category 3+1),
   [ADR-0003](docs/decisions/0003-reg-expand-sz-raw-decode.md)
-  (registry `REG_EXPAND_SZ` raw decode, 0.0.23),
+  (registry `REG_EXPAND_SZ` raw decode, 0.0.23 — category 4),
   [ADR-0004](docs/decisions/0004-process-target-registry-provenance-overlay.md)
-  (process-target provenance overlay, 0.0.24),
+  (process-target provenance overlay, 0.0.24 — category 1+5),
   [ADR-0005](docs/decisions/0005-pre-1-0-breaking-policy.md)
-  (pre-1.0 BREAKING policy).
+  (pre-1.0 BREAKING policy — category 8).
 - [`docs/SECURITY.md`](docs/SECURITY.md) — trust boundaries,
   sanitisation pointers, security non-goals, threat model, and
   vulnerability reporting channel.

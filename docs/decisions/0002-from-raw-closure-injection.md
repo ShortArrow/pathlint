@@ -3,6 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-05-10
 - **Release**: 0.0.23
+- **Category**: 3. Cross-cutting concern (env injection policy) — also touches Category 1 because the constructor signature changed
 
 ## Context
 

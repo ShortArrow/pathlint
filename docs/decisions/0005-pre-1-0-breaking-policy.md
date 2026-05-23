@@ -3,6 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-05-10
 - **Release**: 0.0.x (policy in force from 0.0.1 onward, recorded retroactively in the ADR system)
+- **Category**: 8. Process / governance (versioning policy)
 
 ## Context
 

@@ -3,6 +3,7 @@
 - **Status**: Accepted (partially superseded by ADR-0004 [provenance overlay] and slated for further change in a future ADR that splits raw/expanded from provenance)
 - **Date**: 2026-05-10
 - **Release**: 0.0.23
+- **Category**: 1. Public API surface (and 4. Trust / security — registry decoding boundary)
 
 ## Context
 

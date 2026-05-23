@@ -3,6 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-05-10
 - **Release**: 0.0.23
+- **Category**: 4. Trust / security boundary (Windows registry decode policy)
 
 ## Context
 
