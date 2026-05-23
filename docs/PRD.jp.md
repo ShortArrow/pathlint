@@ -105,6 +105,36 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
   `cargo install` したのか `mise use cargo:tool` したのか思い出せ
   ないときに役立つ。
 
+### 3.1 0.1.0 graduation 基準
+
+0.0.x → 0.1.0 への昇格は以下 7 項目を満たした時点で行う。「十分
+できた」 ではなく、 reviewer が機械的に / 文書的に検証できる
+具体的 pin として定義する。 ADR-0005 は pre-1.0 で BREAKING を
+許す方針を記録しており、 この gate がその方針を retire する。
+
+1. **lib 公開 API の凍結。** `tests/public_api.rs` で pin された
+   10 module の surface が、 2 release 連続で `CHANGELOG.md` に
+   `### Breaking` を出していない。
+2. **CLI 表面の凍結。** `pathlint <subcommand>` と global flag が
+   §11 の表と一致した状態で 2 release 連続を経過。
+3. **Schemars 1.0 migration を評価済み。** 移行するか、
+   移行を見送る ADR を書く (理由付き)。
+4. **Trust model が文書化されている。**
+   [`docs/SECURITY.md`](SECURITY.md) が全 boundary を網羅し、
+   sanitisation pointer がコードを指す形で実装と同期。
+5. **ADR completeness。** `CHANGELOG.md` の各 release の
+   `### Breaking` で公開型 / 関数を名指ししているエントリには、
+   `docs/decisions/NNNN-*.md` 上の対応 ADR が必ず link される。
+6. **EN ↔ JP PRD の parity。** semantic な差分が < 50 行
+   (目次のみ / link のみの差分は除外)。
+7. **codex audit の H severity 未解決が無い。** 解決済か、
+   H 評価が当てはまらなくなった理由を ADR に書いて downgrade
+   済み。
+
+1, 2, 5, 6, 7 は機械的 (countable) gate、 3 と 4 は narrative
+gate。 0.1.0 を切る瞬間の verification は ADR-0009 (planned) に
+書く。
+
 ## 4. 非ゴール
 
 役割を絞ったぶん、明示的な非役割も決まる：
@@ -1122,306 +1152,29 @@ trace` の alias) と `--rules` (`--config` の alias) は 0.0.14 から
 
 ## 17. 0.0.x 変更履歴（累積）
 
-0.0.x 線は破壊を許容する（Cargo は `0.0.x → 0.0.(x+1)` を MAJOR 相当
-として扱う）。各リリースは対応する release notes で告知する。本
-section は累積一覧と移行手段。0.0.x が 0.1.0 に上がるかどうか、
-上がるならいつかは未定。
+リリース別の変更履歴はリポジトリルートの
+[`CHANGELOG.md`](../CHANGELOG.md) に
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 形式で
+集約している。各エントリは `### Breaking` / `### Added` /
+`### Changed` 下に逆時系列で並ぶ。
 
-変更履歴は以下の 2 つに分かれる:
+0.0.x 線は各 `0.0.x → 0.0.(x+1)` の bump を MAJOR 相当として
+扱う (Cargo の pre-1.0 慣例。ADR-0005 参照)。Breaking change は
+0.0.x 内で許容され、`CHANGELOG.md` の `### Breaking` で告知する。
+0.0.x が 0.1.0 に上がる時期は未定 (PRD §3 の graduation 基準を
+満たした時点で切る)。
 
-- **§17.1 — 累積的な破壊的変更。** 既存の TOML shape / JSON wire 形 /
-  lib API / CLI flag を破ったリリース。移行手順はここ。
-- **§17.2 — 累積的な追加（破壊なし）。** 既存入力を破らずに振る舞いを
-  追加したリリース。何が増えたかの記録のみで、移行は不要。
+設計判断 (「なぜそうしたか」) は
+[`docs/decisions/`](decisions/) の ADR (Architecture Decision
+Record) に蓄積する。`CHANGELOG.md` の `### Breaking` で公開
+型 / 関数 を名指しするエントリには、対応する ADR が必ずある
+(これは graduation 基準の一つ)。
 
-### 17.1 累積的な破壊的変更
-
-#### 0.0.23
-
-- **PATH entry を `PathEntry { raw, expanded }` 型に格上げ。**
-  `pathlint::doctor::analyze` / `analyze_real`、
-  `pathlint::sort::sort_path`、 および doc-hidden な
-  `path_source::PathRead` / `resolve::resolve` /
-  `resolve::split_path` が `&[String]` 受けから
-  `&[PathEntry]` 受けに変わった。 env 展開が動く境界点が
-  `PathEntry::from_raw` に集約され (`path_source::read_path` と
-  `resolve::split_path` から呼ばれる)、 *ユーザが書いた文字列*
-  を見る検出器 (Shortenable / RelativePathEntry) は
-  `entry.raw` を、 *ファイルシステム上のディレクトリ* を見る
-  検出器 (Missing / WriteablePathDir / 他) と resolver は
-  `entry.expanded` を読むようになった。
-- **`PathEntry::from_raw` が `(raw, env_lookup)` を取る形に。**
-  constructor は closure 受け化されており、 pathlint は内部
-  から `std::env::var` を呼ばない。 production caller は 2 つの
-  infrastructure 境界点で `|v| std::env::var(v).ok()` を
-  inject、 lib embedder と test は決定論的 closure を inject。
-  移行：未リリースの 1 引数版 `PathEntry::from_raw(s)` を
-  `PathEntry::from_raw(s, |v| std::env::var(v).ok())` に置換
-  (production)、 または独自 closure を渡す (test / 決定論的)。
-
-#### 0.0.22
-
-- **`pathlint where` と `--rules` alias を削除。** 0.0.14 で
-  rename した時の deprecation runway (0.0.20 で warning phase、
-  0.0.21 で 1 release 経過) が終わり、 0.0.22 で完全に削除。
-  clap が `where` subcommand alias と `--rules` long-flag alias
-  を accept しなくなり、 unknown argument の error で exit 2。
-  Migration: `pathlint trace` と `--config` に rename。 stderr
-  で deprecation warning を grep していた script は warning ごと
-  消えるので grep そのものを撤去。
-
-#### 0.0.21
-
-- **`doctor::analyze` に `is_writable_dir` closure 引数を追加。**
-  新 `WriteablePathDir` 検出器のために 8 番目の引数
-  `Fn(&str) -> bool` が増えた。 各 PATH dir が owner 以外に書き込み
-  可能かを問い合わせる。 自前で resolver loop を組んでいる embedder
-  は closure を追加する必要がある (production wiring の参考は
-  `pathlint::doctor::is_writable_dir_real`、 Unix は others-write
-  bit、 Windows は DACL を `GetEffectiveRightsFromAclW` で読む)。
-  `analyze_real` は CLI のみの caller には透過。
-
-#### 0.0.19
-
-- **`doctor::analyze` に `fs_list_dir` closure 引数を追加。**
-  新 `DuplicateButShadowed` 検出器のために 7 番目の引数
-  `Fn(&str) -> Vec<String>` が増えた。 自前で resolver loop を
-  組んでいる embedder は closure を追加する必要がある (production
-  wiring の参考は `pathlint::doctor::fs_list_dir_real`)。
-  `analyze_real` は CLI のみの caller には透過。
-
-#### 0.0.17
-
-- **`Status` enum を unit-only 化、`Outcome` に `reason` 追加。**
-  `Status::NgNotExecutable(String)` / `Status::ConfigError(String)`
-  の payload に乗っていた reason 文字列を `Outcome::reason:
-  Option<String>` に分離。`pathlint check --json` の出力が
-  `{"kind": {"ng_not_executable": "..."}}` から
-  `{"kind": "ng_not_executable", "reason": "..."}` に変わる。
-  consumer は `kind` を常に string として分岐できる。
-- **`pathlint::cli` と `pathlint::run` を lib から削除。** 旧
-  `#[doc(hidden)] pub mod` だった両 module が `src/bin/pathlint/`
-  配下に move、binary-only に。pathlint を library として
-  embed するときに `pathlint::cli` / `pathlint::run` を import
-  できなくなる (元から supported surface ではない)。
-- **lib 内部 module を `#[doc(hidden)] pub` に。** `catalog_view`
-  / `format` / `init` / `path_source` / `report` / `resolve` が
-  `pub(crate)` から `#[doc(hidden)] pub` に変更。docs.rs には
-  出ないが crate boundary を越えて binary から呼べる形に。
-  cli/run が pre-0.0.17 にしていたのと同じ妥協。
-- **`check.schema.json` の `required` から `prefer` / `avoid`
-  / `reason` / `diagnosis` / `resolved` を除外。** 元から
-  runtime は `skip_serializing_if` でこれらを省略していたのに
-  schema は required 扱いだった。schema が wire form と一致。
-- **shell quoting を internal `shell_quote` module に分離。**
-  `pathlint::format::quote_for` 等が pub から pub(crate) に。
-  元から supported でなかったが embed 利用者は注意。代わりに
-  `trace --json uninstall.command` の quoted 文字列を読む。
-- **`--color` flag が actually 効くように。** pre-0.0.17 は
-  parse のみで silent ignore だったが、0.0.17 で human 出力の
-  status tag に色が付く（`auto`/`always`/`never`）。`pathlint
-  check` の stdout を pipe で取っている script は `--color
-  never` を明示するか tty 判定の自動 disable に頼ること。
-
-#### 0.0.16
-
-- **lib resolver シグネチャ簡素化。** `pathlint::lint::evaluate` と
-  `pathlint::trace::locate` の resolver closure が
-  `Option<std::path::PathBuf>` を返す形に変わった（旧 internal の
-  `Resolution { full_path: PathBuf }` ラッパー経由を撤廃）。自前
-  resolver closure を書いていた埋め込み利用者は
-  `Some(Resolution { full_path: pb })` → `Some(pb)` に直す。
-- **`Resolution` 型を削除。** `pathlint::resolve::resolve()` が
-  `Option<PathBuf>` を直接返すように。元から非公開の型なので
-  影響範囲は内部のみだが、`git` 依存で取り込んでいた consumer は
-  注意。
-
-#### 0.0.15
-
-- **`pathlint check --json` の discriminator 名変更。** 各 outcome
-  の top-level discriminator が `kind` (doctor / trace / sort /
-  catalog relations と一致) に。値自体は変わらず。`status` で
-  分岐していた consumer は `kind` に切り替える。
-- **lib 公開面を 9 module に narrow。** `config` / `lint` / `trace`
-  / `sort` / `doctor` / `catalog` / `source_match` / `os_detect` /
-  `expand`。内部 module は `pub(crate)` または `#[doc(hidden)] pub`
-  (後者は `src/main.rs` から到達可能な `cli` / `run` のみ)。以前
-  公開だった `format` / `report` 等を embed 利用していた場合は移行
-  が必要。
-- **UserConfig と embedded catalog file が別型に。** user
-  `pathlint.toml` で `catalog_version` を宣言すると 0.0.14 では
-  post-parse error、0.0.15 からは structural parse error
-  (deny_unknown_fields)。
-
-#### 0.0.14
-
-- **`pathlint where` → `pathlint trace`。** `where` は 0.0.x 線では
-  clap visible alias として残る。
-- **`--rules` → `--config`。** `--rules` も 0.0.x 線では visible alias。
-- **source rename、alias なし。** `WindowsApps` → `windows_apps`。
-  `system_windows` / `system_macos` / `system_linux` →
-  `os_baseline_windows` / `os_baseline_macos` / `os_baseline_linux`。
-  `/usr/sbin` 用に `os_baseline_linux_sbin` を新設。移行例：
-  ```sh
-  sed -i \
-    -e 's/WindowsApps/windows_apps/g' \
-    -e 's/system_windows/os_baseline_windows/g' \
-    -e 's/system_macos/os_baseline_macos/g' \
-    -e 's/system_linux/os_baseline_linux/g' \
-    pathlint.toml
-  ```
-- **`trace --json` の shape 変更。** トップレベル `kind` discriminator
-  （`"found"` / `"not_found"`）が旧 `found: bool` を置換。`found` で
-  分岐していた consumer は `kind` に切り替える。
-- **`Provenance::MiseInstallerPlugin` → `Provenance::WrapperInstaller`。**
-  `trace --json` 上では `provenance.kind = "wrapper_installer"` として
-  見える。`installer` / `plugin_segment` payload field は変更なし。
-- **`sort --dry-run` が opt-in 必須。** `pathlint sort` 単体は exit 2 で
-  flag 名を案内する。post-1.0 の `--apply` で override 予定。今は
-  `--dry-run` のみ shipped。
-- **user `pathlint.toml` の `catalog_version = N` を reject。** 元から
-  embedded catalog 用の予約 field。`Config::from_path` で user TOML が
-  これを設定したら exit 2。（0.0.15 からは post-parse ではなく
-  structural parse error に格上げ。）
-- **`depends_on` は descriptive only。** `pathlint catalog relations` で
-  表示されるが doctor / trace / sort 挙動には影響しない。PRD §9.1 で
-  以前あった「Surfaced by `pathlint where`」記述との矛盾を解消。
-- **`build.rs` の referential-integrity 検査が違反を集約。** 一回の
-  CI 失敗で全違反 plugin を確認できる。
-
-### 17.2 累積的な追加（破壊なし）
-
-#### 0.0.23
-
-- **Windows registry の `REG_EXPAND_SZ` false positive を修正。**
-  0.0.22 までは `winreg` の `RegKey::get_value::<String, _>` が
-  内部で `ExpandEnvironmentStringsW` を呼んで REG_EXPAND_SZ を
-  自動展開していたため、 user が `%LocalAppData%\WindowsApps`
-  と registry に書いた entry に対して `pathlint doctor` が
-  「`%LocalAppData%` で短縮できる」と誤った Shortenable 警告を
-  出していた (entry が `%` を含むかの skip 判定が、 既に展開
-  された string を見ていたため発火しなかった)。 0.0.23 で
-  `RegKey::get_raw_value` 経由で raw bytes を読み、
-  `path_source::decode_reg_string` で UTF-16 LE を decode し、
-  `expand_env` を `PathEntry::from_raw` で 1 度だけ呼ぶ形に
-  統一した。 raw form が lint pipeline 全体で保持され、 doctor
-  の human / JSON 出力でも `%LocalAppData%`-style entry が
-  registry に書かれたままの形で表示される。
-- **`pathlint::path_entry::PathEntry { raw, expanded }` を
-  公開 module として追加 (10 番目)。** `PathEntry::from_raw(raw,
-  env_lookup)` は closure 受け、 caller が env oracle を制御する。
-- **`pathlint::expand::expand_env_with(input, env_lookup)`** を
-  公開 API に追加。 既存 `expand_env` は process env を読む薄い
-  wrapper として残置 (`expand_env_with(input, |v| std::env::var(v).ok())`)。
-- **`pathlint::path_source::decode_reg_string`** (Windows-only、
-  crate-internal): `REG_SZ` / `REG_EXPAND_SZ` 用の UTF-16 LE
-  decoder。 invalid surrogate は U+FFFD (lossy)、 unsupported
-  registry type (`REG_MULTI_SZ` / `REG_BINARY` / `REG_DWORD` 等)
-  は `Err`、 panic しない。 失敗時は `read_path` が warning + 空
-  `entries` を返す。
-- **PRD §10.1 で raw/expanded duality + env injection +
-  decoder failure policy を明文化。**
-
-#### 0.0.22
-
-- **`WriteablePathDir` の Windows 実装が Authenticated Users と
-  BUILTIN\\Users も check するように。** 0.0.21 は Everyone SID
-  のみ check していたが、 Windows host では Everyone より group
-  経由 (`BUILTIN\\Users` / `Authenticated Users`) の write が
-  圧倒的に多く、 false negative の典型例だった。 0.0.22 で 3 SID
-  を順次 check し、 最初に effective `FILE_GENERIC_WRITE` /
-  `FILE_APPEND_DATA` を見つけた時点で fire するように変更。 Unix
-  挙動 / closure 契約は変わらず。 まだ approximation (DENY ACE や
-  この 3 group の外の per-user 直接 grant は modelling していない)。
-
-#### 0.0.21
-
-- **`pathlint doctor` に `writeable_path_dir` 検出器追加。**
-  PATH entry が指す dir が owner 以外のユーザに書き込み可能な
-  ときに発火。 Unix では others-write bit (`mode & 0o002`)、
-  Windows では DACL を取得し、 well-known "Everyone" SID に
-  effective `FILE_GENERIC_WRITE` / `FILE_APPEND_DATA` が立って
-  いれば発火。 approximation: group 継承 (Authenticated Users 経由
-  等) はまだ check していない。 抑制は
-  `--exclude writeable_path_dir`。
-- **`pathlint::doctor::is_writable_dir_real`** を新 closure 引数の
-  production wrapper として公開。 permission error / 不在 dir /
-  非 dir / winapi 失敗時はすべて `false` を返す。
-- **plugin description の文体を 7 source で統一**
-  (mise / mise_installs / os_baseline_linux_sbin / npm_global /
-  pip_user / asdf。 mise_shims は既に短いので変更なし)。
-  `pathlint catalog list` 出力の一覧走査性が向上、 distro / 実装
-  詳細は TOML コメントに移動。 codex post-0.0.19 review finding 10。
-- **windows-sys = 0.59** を `[target.'cfg(windows)'.dependencies]`
-  に追加 (Windows の DACL / SID API 用)。 Linux / macOS / Termux
-  ビルドには影響なし。
-
-#### 0.0.20
-
-- **`pathlint doctor` に `relative_path_entry` 検出器追加。**
-  PATH entry が env 展開後も相対 path のまま (`.`、 `./bin`、
-  bare `bin`、 …) のときに発火。 shell は呼出時の cwd 基準で
-  resolve するため、 走る binary が user の居場所に依存する
-  security と可搬性の footgun。 env 変数は先に展開するので
-  HOME 設定済の `$HOME/bin` は発火しない。 未解決の `$VAR/bin`
-  は verbatim 残るので発火 (それ自体が設定 bug)。 「absolute
-  かどうか」は host ではなく target OS で判定。 抑制は
-  `--exclude relative_path_entry`。
-- **`pathlint where` と `--rules` 使用時に stderr へ deprecation
-  warning を 1 行出力。** canonical 名 (`trace` / `--config`) は
-  従来通り。 削除は将来の breaking release で予定、 warning は
-  移行 runway として用意した。
-- **5 schema top-level description を hover 向けに短文化。**
-  実装用語 (`deny_unknown_fields`、 「discriminated union」 等) を
-  除外、 checked-in schema を再生成。 drift gate 緑。
-- **`source_match` rustdoc 例**を tautology から `/usr/bin/ls`
-  に対する具体的な `find()` 呼び出しに差し替え。 doctest が API
-  挙動を実際に検証するように。
-- **RELEASE checklist** に `docs/ARCHITECTURE.md` は意図的に
-  英語のみで EN/JP parity check の対象外、 と明記。
-
-#### 0.0.19
-
-- **`pathlint doctor` に `duplicate_but_shadowed` 検出器追加。**
-  同じ command basename が PATH の異なる dir に実体として 2 つ
-  以上存在するときに発火。winning PATH index、shadowed indices、
-  command 名を報告する。Windows では PATHEXT 拡張子を剥いだ後で
-  case-insensitive に比較するので `python.exe` と `python.bat` は
-  同じ command 扱い。`--exclude duplicate_but_shadowed` で抑制可。
-
-  Design choice — alias フィルタは入れない。 mise activate の
-  典型的な shims+installs レイアウトを「予期した noise」として
-  見逃すべきではない: mise の標準的な使い方では shims か installs
-  どちらか一方しか PATH に出ない (`mise activate` は shims、
-  `mise hook-env` は installs を露出する)。 両方が PATH にあるのは
-  それ自体が設定ミスで、 既存の `mise_activate_both` Conflict
-  detector が relation の角度から既に警告している。 同じ状況を
-  別 detector で隠すと、 同じミスを別角度から見逃すことになる。
-  host 側で本当に noise が問題な場合は `--exclude` で個別抑制。
-
-- **`pathlint::doctor::fs_list_dir_real`** を新 closure 引数の
-  production wrapper として公開。
-
-#### 0.0.18
-
-- **`pathlint doctor` に `per_source_missing_required` 検出器を追加。**
-  user の `pathlint.toml` で declared された `[source.<name>]` の
-  per-OS path が host 上に存在しないとき発火。built-in catalog
-  source は意図的に skip (ほとんどの host は catalog の 80% を
-  欠いている設計のため)。
-- **`--no-glyphs` が `doctor` / `trace` / `sort` の出力にも効く
-  ように。** pre-0.0.18 は `report.rs` (check の OK/NG tag) だけに
-  routed されていた。em-dash と rightwards-arrow が全ての human
-  renderer で `-` / `->` に fallback する。
-- **`pathlint::catalog::RelationIndex` typed accessor view。**
-  内部 only の refactor、`[[relation]] kind=...` の TOML shape は
-  不変。consumer (sort / doctor / trace / cycle check) が
-  `iter_aliases()` / `iter_conflicts()` / `iter_provenances()` /
-  `iter_depends_on()` / `iter_prefer_orders()` 経由で読むように
-  なり、open match `Relation { ... }` が消えた。
-- **`scripts/bench.sh` startup-time baseline。** hyperfine wrapper、
-  release notes に table を貼って PRD §12 の `<50 ms` claim を
-  host 上で verify する。
+PRD §17 はかつて累積 changelog を inline で持っていたが、
+0.0.22-0.0.23 で `CHANGELOG.md` に移行し、0.0.25 で JP 側も
+EN parity のため CHANGELOG 参照のみに縮小した。release 履歴は
+プロジェクトルートで読者が期待する場所に置き、PRD は仕様に
+専念する分担になっている。
 
 ## 18. 他ツールとの関係
 

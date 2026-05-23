@@ -176,7 +176,11 @@ pub struct InitArgs {
 #[derive(Debug, clap::Args)]
 pub struct GlobalOpts {
     /// PATH source: process (default) / user / machine. user / machine
-    /// are Windows-only.
+    /// are Windows-only. On Windows, the default `process` target
+    /// additionally overlays HKCU + HKLM raw forms on each entry whose
+    /// expanded path matches the registry, so `%LocalAppData%\...`
+    /// authored entries display in their raw form and Shortenable
+    /// does not mis-suggest re-shortening them (see PRD §10.1).
     #[arg(long, value_enum, default_value_t = TargetArg::Process)]
     pub target: TargetArg,
 

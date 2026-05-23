@@ -7,10 +7,63 @@ and the project follows
 
 The 0.0.x line treats each `0.0.x → 0.0.(x+1)` bump as
 MAJOR-equivalent (Cargo's pre-1.0 convention). Breaking changes are
-allowed within 0.0.x and announced under `### Breaking`. Whether and
-when 0.0.x graduates to 0.1.0 is undecided.
+allowed within 0.0.x and announced under `### Breaking`. The
+0.0.x → 0.1.0 graduation gate (when this licence retires) is
+defined in [PRD §3.1](docs/PRD.md#31-graduation-to-010); see also
+[ADR-0005](docs/decisions/0005-pre-1-0-breaking-policy.md).
+Design decisions behind BREAKING entries accumulate in
+[`docs/decisions/`](docs/decisions/).
 
 ## [Unreleased]
+
+## [0.0.25] — 2026-05-17
+
+Docs-only release. No public API change. The 0.0.24 → 0.0.25 bump
+introduces the architecture-decision system that anchors the 0.0.x
+→ 0.1.0 design-concept overhaul; subsequent releases will reference
+ADRs from their `### Breaking` entries.
+
+### Added
+
+- `docs/decisions/` directory with an
+  [README](docs/decisions/README.md) and a meta-ADR
+  ([ADR-0000](docs/decisions/0000-adr-categories.md)) that
+  defines the eight categories pathlint recognises, the
+  positive criteria for writing an ADR (PA1-PA8), and the
+  negative criteria for *not* writing one (NA1-NA4). Subsequent
+  ADRs must declare a `Category: N. <name>` metadata line so
+  the index can sort by topic.
+- ADRs covering five load-bearing past decisions:
+  [ADR-0001](docs/decisions/0001-pathentry-as-tenth-public-module.md)
+  (PathEntry as the 10th public module, 0.0.23 — category 1+4),
+  [ADR-0002](docs/decisions/0002-from-raw-closure-injection.md)
+  (`from_raw` closure injection, 0.0.23 — category 3+1),
+  [ADR-0003](docs/decisions/0003-reg-expand-sz-raw-decode.md)
+  (registry `REG_EXPAND_SZ` raw decode, 0.0.23 — category 4),
+  [ADR-0004](docs/decisions/0004-process-target-registry-provenance-overlay.md)
+  (process-target provenance overlay, 0.0.24 — category 1+5),
+  [ADR-0005](docs/decisions/0005-pre-1-0-breaking-policy.md)
+  (pre-1.0 BREAKING policy — category 8).
+- [`docs/SECURITY.md`](docs/SECURITY.md) — trust boundaries,
+  sanitisation pointers, security non-goals, threat model, and
+  vulnerability reporting channel.
+- [PRD §3.1](docs/PRD.md#31-graduation-to-010) — the 7-criteria
+  graduation gate that 0.0.x must satisfy before 0.1.0 ships.
+  Mirrored in JP PRD §3.1.
+
+### Fixed (docs drift)
+
+- `docs/ARCHITECTURE.md` updated from "9 public modules" to "10
+  public modules"; `path_entry` row added to the public-module
+  table; the `tests/cli_strings.rs` description was corrected to
+  reflect the 0.0.22 alias removal.
+- JP PRD §17 reduced from ~303 lines of inline cumulative
+  changelog to a 25-line pointer at `CHANGELOG.md` and
+  `docs/decisions/`, matching the EN PRD §17 structure that
+  was already pointer-only.
+- CLI `--target` help text and README `--target` section now
+  call out the Windows-only registry overlay (the 0.0.24
+  semantics that previously lived only in PRD §10.1).
 
 ## [0.0.24] — 2026-05-10
 

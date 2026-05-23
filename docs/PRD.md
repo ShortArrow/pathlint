@@ -4,7 +4,9 @@
 
 **Status:** 0.0.x in progress. Schema and CLI surface remain in
 motion through 0.1.0; the current crate version is whatever
-`Cargo.toml` (and the crates.io badge in the README) say.
+`Cargo.toml` (and the crates.io badge in the README) say. The
+0.0.x → 0.1.0 graduation criteria are listed in §3.1; design
+decisions accumulate in [`docs/decisions/`](decisions/).
 
 ---
 
@@ -113,6 +115,39 @@ Per-role:
   it most plausibly came from, and the corresponding uninstall
   command. Useful when the user can't remember whether they ran
   `cargo install` or `mise use cargo:tool` six months ago.
+
+### 3.1 Graduation to 0.1.0
+
+The 0.0.x → 0.1.0 bump is gated on the following criteria. None
+of them is "implemented enough"; each is a concrete pin a
+reviewer can verify. ADR-0005 records the pre-1.0 BREAKING
+licence that this gate retires.
+
+1. **Public API freeze (lib).** The 10 modules listed in
+   `tests/public_api.rs` keep their surfaces for ≥ 2 consecutive
+   releases without a `### Breaking` entry in `CHANGELOG.md`.
+2. **CLI surface freeze.** `pathlint <subcommand>` and the
+   global flag set match the table in §11 for ≥ 2 consecutive
+   releases.
+3. **Schemars 1.0 migration evaluated.** Either migrated, or an
+   ADR rejects the migration for 0.1.0 with a written reason.
+4. **Trust model documented.** [`docs/SECURITY.md`](SECURITY.md)
+   describes every boundary, with sanitisation pointers into
+   code, and is kept in sync with the implementation.
+5. **ADR completeness.** Every release in the 0.0.x line whose
+   `### Breaking` section in `CHANGELOG.md` names a publicly
+   visible type or function has at least one ADR linked from
+   the corresponding `docs/decisions/NNNN-*.md` file.
+6. **Documentation parity.** EN ↔ JP PRD diff is < 50 lines of
+   semantic content (table-of-contents-only and link-only diffs
+   excluded).
+7. **No open H severity codex audit findings.** Either resolved
+   or downgraded with an ADR that explains why the H rating no
+   longer applies.
+
+Criteria 1, 2, 5, 6, 7 are mechanical (countable). 3 and 4 are
+narrative gates. ADR-0009 (planned) will be the verification
+record at the moment 0.1.0 cuts.
 
 ## 4. Non-goals
 
