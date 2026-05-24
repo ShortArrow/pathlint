@@ -24,6 +24,7 @@ directory belongs to one or more of those categories.
 | [0005](0005-pre-1-0-breaking-policy.md) | 0.0.x line allows MAJOR-equivalent BREAKING | 8 | Accepted | 0.0.x |
 | [0006](0006-source-match-env-closure-injection.md) | `_with` env-lookup closures on `expand_and_normalize` and `source_match` | 3 (+1) | Accepted | 0.0.26 |
 | [0007](0007-deps-bag-layered.md) | layered `*Deps` carriers + per-function production wrappers | 2 (+1) | Accepted | 0.0.27 |
+| [0008](0008-attribution-type-split.md) | split `Attribution` out of `PathEntry` | 1 (+2) | Accepted (closes ADR-0001 & 0004 Follow-up) | 0.0.28 |
 
 ## Index by category (topical view)
 
@@ -38,10 +39,12 @@ is **not** a universal ADR hierarchy.
 - [ADR-0004](0004-process-target-registry-provenance-overlay.md) — provenance overlay on `--target process`
 - [ADR-0006](0006-source-match-env-closure-injection.md) — secondary (Added `_with` variants on `expand` / `source_match`)
 - [ADR-0007](0007-deps-bag-layered.md) — secondary (4 BREAKING signature changes on `analyze` / `evaluate` / `locate` / `sort_path`)
+- [ADR-0008](0008-attribution-type-split.md) — split `Attribution` out of `PathEntry`; entry-list parameters now take `&[Attribution]`
 
 ### 2. Module boundary / dependency direction
 
 - [ADR-0007](0007-deps-bag-layered.md) — layered `*Deps` carriers across `doctor::analyze`, `lint::evaluate`, `trace::locate`, `sort::sort_path`
+- [ADR-0008](0008-attribution-type-split.md) — secondary (Attribution carrier hosted at the crate root next to `CommonDeps`)
 
 ### 3. Cross-cutting concern
 

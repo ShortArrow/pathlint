@@ -818,9 +818,9 @@ wrapper を残す唯一の call site は
 `bin/pathlint/run::enforce_source_validation` — これは binary
 側で常に live env を読む役割。
 
-**observed と provenance (0.0.24+、 Windows process target)。**
-`raw` / `expanded` は **同一 source** から見た entry の 2 形式を
-表す。 Windows には 2 つの source が食い違う 1 ケースがある:
+**observed と provenance (0.0.24+、 Windows process target; 型分離は 0.0.28)。**
+`PathEntry { raw, expanded }` は **同一 source** から見た entry の 2
+形式を表す。 Windows には 2 つの source が食い違う 1 ケースがある:
 `--target process` は `getenv("PATH")` を読むが、 OS が
 `REG_EXPAND_SZ` の registry 値を `ExpandEnvironmentStringsW` で
 **子プロセスに渡す前に展開してしまう**。 そのため process
@@ -830,19 +830,29 @@ process target からは展開後の literal しか見えない。 0.0.23 の
 raw 保持 fix は `--target user` / `--target machine` (registry
 直読) には効くが、 default の `--target process` には効かない。
 
-0.0.24 で `PathEntry` に `provenance_raw: Option<String>` を
-追加。 Windows process target では `path_source::read_process` が
-起動時に HKCU と HKLM の raw を併読し、 純粋な
-`reconcile_process_with_registry` overlay が、 process entry の
-`expanded` と registry entry の `expanded` が一致した entry に
-対して `provenance_raw` を付与する。 ユーザ意図を見る検出器
+0.0.24 で cross-source overlay を導入、 0.0.28 (ADR-0008) で
+`PathEntry` から専用 carrier `pathlint::Attribution` に切り出した:
+
+```rust
+pub struct Attribution {
+    pub observed: PathEntry,
+    pub provenance_raw: Option<String>,
+}
+```
+
+Windows process target では `path_source::read_process` が起動時に
+HKCU と HKLM の raw を併読し、 純粋な
+`reconcile_process_with_registry` overlay が、 process 側の
+`Attribution.observed.expanded` と registry 側の
+`Attribution.observed.expanded` が一致した entry に対して
+`provenance_raw` を付与する。 ユーザ意図を見る検出器
 (`Shortenable`、 `Malformed`、 `TrailingSlash`、 `ShortName`、
 および `Diagnostic.entry` の表示) は
-`PathEntry::effective_raw_for_user_intent()` 経由で
+`Attribution::effective_raw_for_user_intent()` 経由で
 `provenance_raw` を優先参照する。 ファイルシステム側の検出器
 (`Missing`、 `WriteablePathDir`、 resolver) は引き続き
-`expanded` を読む — file system はユーザが書いた文字列に
-関心がないので。
+`attrib.observed.expanded` を読む — file system はユーザが書いた
+文字列に関心がないので。
 
 overlay の契約:
 

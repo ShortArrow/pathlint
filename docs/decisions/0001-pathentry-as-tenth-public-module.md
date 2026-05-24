@@ -1,6 +1,6 @@
 # ADR-0001: PathEntry as the 10th public module
 
-- **Status**: Accepted (partially superseded by ADR-0004 [provenance overlay] and slated for further change in a future ADR that splits raw/expanded from provenance)
+- **Status**: Accepted (partially superseded by ADR-0004 [provenance overlay] and further superseded by ADR-0008 [type split])
 - **Date**: 2026-05-10
 - **Release**: 0.0.23
 - **Category**: 1. Public API surface (and 4. Trust / security — registry decoding boundary)

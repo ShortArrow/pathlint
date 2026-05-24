@@ -1,6 +1,6 @@
 # ADR-0004: Process-target registry provenance overlay
 
-- **Status**: Accepted (supersedes part of ADR-0001 — `PathEntry`'s concept purity is now traded against the cross-source overlay)
+- **Status**: Accepted (supersedes part of ADR-0001, later superseded by ADR-0008 for PathEntry concept purity)
 - **Date**: 2026-05-10
 - **Release**: 0.0.24
 - **Category**: 1. Public API surface (and 5. Architectural style — `--target process` Windows semantics gained an overlay)
