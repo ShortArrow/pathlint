@@ -23,6 +23,7 @@ directory belongs to one or more of those categories.
 | [0004](0004-process-target-registry-provenance-overlay.md) | Process-target registry provenance overlay | 1 (+5) | Accepted (supersedes part of 0001) | 0.0.24 |
 | [0005](0005-pre-1-0-breaking-policy.md) | 0.0.x line allows MAJOR-equivalent BREAKING | 8 | Accepted | 0.0.x |
 | [0006](0006-source-match-env-closure-injection.md) | `_with` env-lookup closures on `expand_and_normalize` and `source_match` | 3 (+1) | Accepted | 0.0.26 |
+| [0007](0007-deps-bag-layered.md) | layered `*Deps` carriers + per-function production wrappers | 2 (+1) | Accepted | 0.0.27 |
 
 ## Index by category (topical view)
 
@@ -36,10 +37,11 @@ is **not** a universal ADR hierarchy.
 - [ADR-0001](0001-pathentry-as-tenth-public-module.md) — PathEntry as the 10th public module
 - [ADR-0004](0004-process-target-registry-provenance-overlay.md) — provenance overlay on `--target process`
 - [ADR-0006](0006-source-match-env-closure-injection.md) — secondary (Added `_with` variants on `expand` / `source_match`)
+- [ADR-0007](0007-deps-bag-layered.md) — secondary (4 BREAKING signature changes on `analyze` / `evaluate` / `locate` / `sort_path`)
 
 ### 2. Module boundary / dependency direction
 
-*(none yet — planned for Step 3 of the 0.0.25-0.1.0 roadmap when `AnalyzeDeps` is introduced, and Step 4 when `Attribution` splits provenance out of `PathEntry`)*
+- [ADR-0007](0007-deps-bag-layered.md) — layered `*Deps` carriers across `doctor::analyze`, `lint::evaluate`, `trace::locate`, `sort::sort_path`
 
 ### 3. Cross-cutting concern
 

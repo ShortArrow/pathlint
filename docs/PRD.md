@@ -880,12 +880,19 @@ exposes `find_with(haystack, sources, os, env_lookup)`,
 their wrappers. An embedder that calls the `_with` variants
 exclusively can resolve catalog source paths without ever
 reading the process env — closure injection is complete at the
-lib boundary. The internal call sites (`lint::evaluate_one`,
-`trace::locate`, `sort::sort_path`, `doctor`-side matchers,
-`bin/pathlint/run::enforce_source_validation`) still go through
-the wrappers and so the binary keeps reading `std::env::var`
-behind the scenes; threading the closure through them is a
-future change tied to the `AnalyzeDeps` work.
+lib boundary.
+
+0.0.27+ closes the internal call-graph threading (ADR-0007). The
+four headline entry points — `doctor::analyze`, `lint::evaluate`,
+`trace::locate`, `sort::sort_path` — now take typed `*Deps<'_>`
+carriers (`AnalyzeDeps`, `EvaluateDeps`, `LocateDeps`, `SortDeps`)
+that embed a shared `CommonDeps` holding the env oracle. Every
+internal matcher inside those entry points threads
+`deps.common.env_lookup` to `source_match::*_with`, so an
+embedder that constructs a deterministic carrier never touches
+`std::env`. The only remaining wrapper call site in the repo is
+`bin/pathlint/run::enforce_source_validation`, which is
+binary-side and always wants the live env.
 
 **Observed vs. provenance (0.0.24+, Windows process target).**
 `raw` / `expanded` describe a single entry as observed at one

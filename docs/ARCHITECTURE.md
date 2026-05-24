@@ -55,15 +55,19 @@ fails CI.
 | Module | Role | Headline symbols |
 |---|---|---|
 | `config` | `pathlint.toml` schema | `Config`, `Expectation`, `SourceDef`, `Relation`, `Severity`, `Kind` |
-| `lint` | core PATH evaluation | `evaluate`, `exit_code`, `Outcome`, `Status`, `Diagnosis`, `CheckOutcomeView` |
-| `trace` | provenance lookup | `locate`, `TraceOutcome`, `Found`, `Provenance`, `UninstallHint` |
-| `sort` | PATH repair proposals | `sort_path`, `SortPlan`, `EntryMove`, `SortNote` |
-| `doctor` | PATH hygiene | `analyze`, `analyze_real`, `fs_list_dir_real`, `Diagnostic`, `Filter`, `Kind`, `Severity` |
+| `lint` | core PATH evaluation | `evaluate`, `evaluate_real`, `EvaluateDeps`, `exit_code`, `Outcome`, `Status`, `Diagnosis`, `CheckOutcomeView` |
+| `trace` | provenance lookup | `locate`, `locate_real`, `LocateDeps`, `TraceOutcome`, `Found`, `Provenance`, `UninstallHint` |
+| `sort` | PATH repair proposals | `sort_path`, `sort_path_real`, `SortDeps`, `SortPlan`, `EntryMove`, `SortNote` |
+| `doctor` | PATH hygiene | `analyze`, `analyze_real`, `AnalyzeDeps`, `fs_list_dir_real`, `is_writable_dir_real`, `Diagnostic`, `Filter`, `Kind`, `Severity` |
 | `catalog` | built-in source catalog | `builtin`, `builtin_relations`, `merge_with_user`, `merge_with_user_relations`, `check_acyclic`, `version_check`, `embedded_version`, `RelationIndex` |
 | `source_match` | path → source matching | `find`, `names_only`, `validate_sources`, `Match`, `SourceWarning` |
 | `os_detect` | runtime OS dispatch | `Os`, `os_filter_applies` |
 | `expand` | env-var expansion + slash normalisation | `expand_env`, `expand_env_with`, `normalize`, `expand_and_normalize` |
 | `path_entry` | PATH entry raw/expanded/provenance carrier (0.0.23+) | `PathEntry`, `PathEntry::from_raw`, `PathEntry::with_provenance`, `PathEntry::effective_raw_for_user_intent` |
+
+The crate root also exposes `pathlint::CommonDeps` (0.0.27+), the
+shared env-oracle carrier embedded in `AnalyzeDeps` / `EvaluateDeps`
+/ `LocateDeps` / `SortDeps`.
 
 The crate-level rustdoc (`src/lib.rs`) carries the authoritative
 list with examples. Embedders should treat docs.rs as the

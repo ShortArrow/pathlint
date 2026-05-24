@@ -803,13 +803,20 @@ test は決定論的 closure を inject することで、 host 環境に
 `find`, `validate_sources`, `names_only`) は wrapper として残す。
 embedder が `_with` 系のみを呼べば、 catalog source path の
 展開でも `std::env::var` を一切経由せずに pathlint を動かせる
-— lib 公開境界で injection は完成。 内部 caller
-(`lint::evaluate_one`, `trace::locate`, `sort::sort_path`,
-`doctor` 側の matcher 群、 `bin/pathlint/run::enforce_source_validation`)
-は依然 wrapper 経由で process env を読むため、 binary CLI の
-production 挙動は変わらない。 内部 caller に closure を流す
-作業は `AnalyzeDeps` 導入と一緒の future change として
-切り出す。
+— lib 公開境界で injection は完成。
+
+0.0.27+ で内部 call-graph の threading も完了 (ADR-0007)。
+4 つの公開 entry point — `doctor::analyze` / `lint::evaluate` /
+`trace::locate` / `sort::sort_path` — はそれぞれ typed `*Deps<'_>`
+carrier (`AnalyzeDeps` / `EvaluateDeps` / `LocateDeps` /
+`SortDeps`) を受ける形になり、 carrier は共通 `CommonDeps` を
+embed して env oracle を 1 箇所に集約する。 各 entry point 内の
+matcher は `deps.common.env_lookup` を `source_match::*_with` に
+流すので、 deterministic な carrier を組む embedder は
+`std::env` を 1 度も触らずに pathlint を動かせる。 repo 内で
+wrapper を残す唯一の call site は
+`bin/pathlint/run::enforce_source_validation` — これは binary
+側で常に live env を読む役割。
 
 **observed と provenance (0.0.24+、 Windows process target)。**
 `raw` / `expanded` は **同一 source** から見た entry の 2 形式を
