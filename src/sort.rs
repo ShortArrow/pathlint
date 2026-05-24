@@ -45,7 +45,13 @@
 //!     PathEntry::from_raw("/usr/local/bin", null_env),
 //!     PathEntry::from_raw("/usr/bin", null_env),
 //! ];
-//! let plan = sort::sort_path(&entries, &cfg.expectations, &sources, &relations, Os::Linux);
+//! let plan = sort::sort_path_real(
+//!     &entries,
+//!     &cfg.expectations,
+//!     &sources,
+//!     &relations,
+//!     Os::Linux,
+//! );
 //! // No expectations → no moves proposed.
 //! assert!(plan.moves.is_empty());
 //! ```
@@ -120,13 +126,36 @@ impl SortPlan {
 /// to break ties within the same preferred / neutral / avoided
 /// bucket. Only `prefer_order_over` participates here; other kinds
 /// are ignored by sort.
+/// Dependency carrier for [`sort_path`]. Today this only embeds
+/// [`crate::CommonDeps`] (the shared env oracle), but the carrier
+/// exists so future cross-cutting deps (e.g. a deterministic clock
+/// for stable ordering, a logger) can be added as additive fields
+/// without breaking the `sort_path` signature again.
+///
+/// 0.0.27+.
+pub struct SortDeps<'a> {
+    /// Shared env oracle. See [`crate::CommonDeps`].
+    pub common: crate::CommonDeps<'a>,
+}
+
+impl SortDeps<'static> {
+    /// Production wiring: env_lookup reads the live process env.
+    pub fn production() -> Self {
+        SortDeps {
+            common: crate::CommonDeps::production(),
+        }
+    }
+}
+
 pub fn sort_path(
     entries: &[PathEntry],
     expectations: &[Expectation],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
+    deps: SortDeps<'_>,
 ) -> SortPlan {
+    let env_lookup = deps.common.env_lookup;
     let original: Vec<String> = entries.iter().map(|e| e.raw.clone()).collect();
 
     // Index every entry by which sources it matches. Source matching
@@ -134,7 +163,7 @@ pub fn sort_path(
     // (`$HOME/.cargo/bin`) only line up after env expansion.
     let entry_sources: Vec<Vec<String>> = entries
         .iter()
-        .map(|e| source_match::names_only(&normalize(&e.expanded), sources, os))
+        .map(|e| source_match::names_only_with(&normalize(&e.expanded), sources, os, &*env_lookup))
         .collect();
 
     // Walk every applicable expectation and gather both promotion
@@ -219,6 +248,28 @@ pub fn sort_path(
 /// algorithm is O(N^2 * R) which is fine for the realistic input
 /// size (a few dozen PATH entries, a handful of relations).
 ///
+/// Production wrapper: build [`SortDeps::production`] and call
+/// [`sort_path`]. Mirrors [`crate::doctor::analyze_real`],
+/// [`crate::lint::evaluate_real`], and [`crate::trace::locate_real`].
+///
+/// 0.0.27+.
+pub fn sort_path_real(
+    entries: &[PathEntry],
+    expectations: &[Expectation],
+    sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
+    os: Os,
+) -> SortPlan {
+    sort_path(
+        entries,
+        expectations,
+        sources,
+        relations,
+        os,
+        SortDeps::production(),
+    )
+}
+
 /// Pure: mutates the bucket in place but takes no I/O. Called
 /// once per bucket (preferred / neutral / avoided), so bucket
 /// boundaries never cross.
@@ -381,7 +432,18 @@ mod tests {
 
     #[test]
     fn empty_input_produces_noop_plan() {
-        let plan = sort_path(&[], &[], &BTreeMap::new(), &[], Os::Linux);
+        let plan = sort_path(
+            &[],
+            &[],
+            &BTreeMap::new(),
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert!(plan.is_noop());
         assert_eq!(plan.original, plan.sorted);
         assert!(plan.moves.is_empty());
@@ -398,7 +460,18 @@ mod tests {
         ]);
         let path = entries(&["/home/u/.cargo/bin", "/usr/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert!(plan.is_noop(), "plan was: {plan:?}");
     }
 
@@ -412,7 +485,18 @@ mod tests {
         ]);
         let path = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert!(!plan.is_noop());
         assert_eq!(
             plan.sorted,
@@ -445,7 +529,18 @@ mod tests {
         ]);
         let path = entries(&["/usr/bin", "/usr/local/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert!(plan.is_noop());
         assert_eq!(plan.notes.len(), 1);
         match &plan.notes[0] {
@@ -468,7 +563,18 @@ mod tests {
         let path = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
         let mut e = expect_simple("rg", &["cargo"]);
         e.os = Some(vec!["windows".into()]);
-        let plan = sort_path(&path, &[e], &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &[e],
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert!(plan.is_noop());
     }
 
@@ -491,7 +597,18 @@ mod tests {
             expect_simple("rg", &["cargo"]),
             expect_simple("python", &["mise_shims"]),
         ];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         // cargo and mise_shims should both move up, keeping their
         // relative order (cargo before mise_shims, since cargo
         // appeared earlier in the original).
@@ -521,7 +638,18 @@ mod tests {
         let sources = cat(&[("cargo", src("/home/u/.cargo/bin"))]);
         let path = entries(&["/opt/custom", "/home/u/.cargo/bin"]);
         let expects = vec![expect_simple("rg", &["cargo"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         // /home/u/.cargo/bin floats to position 0; /opt/custom
         // stays at the back.
         assert_eq!(plan.sorted[0], "/home/u/.cargo/bin");
@@ -551,7 +679,18 @@ mod tests {
         ]);
         let path = entries(&["/winget/links", "/usr/local/bin"]);
         let expects = vec![expect_prefer_avoid("rg", &[], &["winget"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         // winget entry sinks below plain entry.
         assert_eq!(
             plan.sorted,
@@ -578,7 +717,18 @@ mod tests {
             "/usr/bin",
         ]);
         let expects = vec![expect_prefer_avoid("python", &["mise"], &["dangerous"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         // The mise/dangerous entry sinks past /usr/bin.
         assert_eq!(plan.sorted[0], "/usr/bin");
         assert!(plan.sorted[1].contains("dangerous") || plan.sorted[1].contains("python/3.10"));
@@ -594,7 +744,18 @@ mod tests {
         ]);
         let path = entries(&["/home/u/.cargo/bin", "/usr/bin"]);
         let expects = vec![expect_prefer_avoid("rg", &["cargo"], &["winget"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert!(plan.is_noop(), "plan was: {plan:?}");
     }
 
@@ -610,7 +771,18 @@ mod tests {
         ]);
         let path = entries(&["/winget/links", "/usr/bin", "/home/u/.cargo/bin"]);
         let expects = vec![expect_prefer_avoid("rg", &["cargo"], &["winget"])];
-        let plan = sort_path(&path, &expects, &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert_eq!(
             plan.sorted,
             vec![
@@ -636,7 +808,18 @@ mod tests {
             earlier: "cargo".into(),
             later: "usr_bin".into(),
         }];
-        let plan = sort_path(&path, &[], &sources, &relations, Os::Linux);
+        let plan = sort_path(
+            &path,
+            &[],
+            &sources,
+            &relations,
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert_eq!(
             plan.sorted,
             vec!["/home/u/.cargo/bin".to_string(), "/usr/bin".to_string()],
@@ -659,7 +842,18 @@ mod tests {
             earlier: "cargo".into(),
             later: "usr_bin".into(),
         }];
-        let plan = sort_path(&path, &expects, &sources, &relations, Os::Linux);
+        let plan = sort_path(
+            &path,
+            &expects,
+            &sources,
+            &relations,
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         assert_eq!(
             plan.sorted,
             vec!["/usr/bin".to_string(), "/home/u/.cargo/bin".to_string()],
@@ -675,7 +869,18 @@ mod tests {
             ("usr_bin", src("/usr/bin")),
         ]);
         let path = entries(&["/usr/bin", "/home/u/.cargo/bin"]);
-        let plan = sort_path(&path, &[], &sources, &[], Os::Linux);
+        let plan = sort_path(
+            &path,
+            &[],
+            &sources,
+            &[],
+            Os::Linux,
+            SortDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+            },
+        );
         // No expectations + no relations + no avoid: every entry is
         // neutral and order is preserved.
         assert!(plan.is_noop());

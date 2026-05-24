@@ -12,12 +12,12 @@
 
 #![allow(unused_imports)]
 
+use pathlint::CommonDeps;
 use pathlint::catalog::{
     builtin, builtin_relations, check_acyclic, embedded_version, merge_with_user,
     merge_with_user_relations, version_check,
 };
 use pathlint::config::{Config, Expectation, Kind, Relation, Severity, SourceDef};
-use pathlint::CommonDeps;
 use pathlint::doctor::{
     AnalyzeDeps, Diagnostic, Filter, Kind as DoctorKind, Severity as DoctorSeverity,
     all_kind_names, analyze, analyze_real, env_lookup_real, fs_exists_real, fs_list_dir_real,
@@ -57,10 +57,12 @@ fn evaluate_callable_with_evaluate_deps() {
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let deps = EvaluateDeps {
         common: CommonDeps {
-            env_lookup: |_var: &str| -> Option<String> { None },
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
         },
-        resolver: |_cmd: &str| -> Option<std::path::PathBuf> { None },
-        shape_check: |_path: &std::path::Path, _kind: Kind| -> Result<(), String> { Ok(()) },
+        resolver: Box::new(|_cmd: &str| -> Option<std::path::PathBuf> { None }),
+        shape_check: Box::new(
+            |_path: &std::path::Path, _kind: Kind| -> Result<(), String> { Ok(()) },
+        ),
     };
     let outcomes = evaluate(&[], &sources, Os::Linux, deps);
     assert!(outcomes.is_empty());
@@ -75,9 +77,9 @@ fn locate_callable_with_locate_deps() {
     let relations: Vec<Relation> = Vec::new();
     let deps = LocateDeps {
         common: CommonDeps {
-            env_lookup: |_var: &str| -> Option<String> { None },
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
         },
-        resolver: |_cmd: &str| -> Option<std::path::PathBuf> { None },
+        resolver: Box::new(|_cmd: &str| -> Option<std::path::PathBuf> { None }),
     };
     let outcome = locate(
         "definitely_no_such_command",
@@ -99,11 +101,11 @@ fn analyze_callable_with_analyze_deps() {
     let relations: Vec<Relation> = Vec::new();
     let deps = AnalyzeDeps {
         common: CommonDeps {
-            env_lookup: |_var: &str| -> Option<String> { None },
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
         },
-        fs_exists: |_path: &str| -> bool { false },
-        fs_list_dir: |_path: &str| -> Vec<String> { Vec::new() },
-        is_writable_dir: |_path: &str| -> bool { false },
+        fs_exists: Box::new(|_path: &str| -> bool { false }),
+        fs_list_dir: Box::new(|_path: &str| -> Vec<String> { Vec::new() }),
+        is_writable_dir: Box::new(|_path: &str| -> bool { false }),
     };
     let diags = analyze(&[], &sources, &relations, Os::Linux, deps);
     assert!(diags.is_empty());
@@ -140,11 +142,11 @@ fn analyze_signature_pinned_with_pathentry_slice() {
     let relations: Vec<Relation> = Vec::new();
     let deps = AnalyzeDeps {
         common: CommonDeps {
-            env_lookup: |_var: &str| -> Option<String> { None },
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
         },
-        fs_exists: |_path: &str| -> bool { true },
-        fs_list_dir: |_path: &str| -> Vec<String> { Vec::new() },
-        is_writable_dir: |_path: &str| -> bool { false },
+        fs_exists: Box::new(|_path: &str| -> bool { true }),
+        fs_list_dir: Box::new(|_path: &str| -> Vec<String> { Vec::new() }),
+        is_writable_dir: Box::new(|_path: &str| -> bool { false }),
     };
     let diags = analyze(&entries, &sources, &relations, Os::Linux, deps);
     // No expectations / no detectors that fire on an existing single
@@ -245,8 +247,10 @@ fn source_match_with_variants_pinned_on_public_surface() {
 fn common_deps_production_pinned_on_public_surface() {
     // 0.0.27: the shared CommonDeps carrier lives at the crate
     // root so every *Deps variant can embed it. Pin both the type
-    // and the production() constructor.
-    let _common: CommonDeps<fn(&str) -> Option<String>> = CommonDeps::production();
+    // and the production() constructor (ADR-0007: closures are
+    // type-erased through Box<dyn> so the carrier itself is not
+    // generic).
+    let _common: CommonDeps = CommonDeps::production();
 }
 
 #[test]
@@ -254,15 +258,7 @@ fn analyze_deps_production_pinned_on_public_surface() {
     // 0.0.27: AnalyzeDeps::production() bundles the four `_real`
     // closures so the CLI binary can keep calling analyze_real
     // without re-wiring them.
-    let deps = AnalyzeDeps::production();
-    // The type can be assigned to a concrete fn-pointer-shaped
-    // alias so external callers see the production wiring shape.
-    let _typed: AnalyzeDeps<
-        fn(&str) -> Option<String>,
-        fn(&str) -> bool,
-        fn(&str) -> Vec<String>,
-        fn(&str) -> bool,
-    > = deps;
+    let _deps: AnalyzeDeps = AnalyzeDeps::production();
 }
 
 #[test]
@@ -316,7 +312,7 @@ fn sort_path_callable_with_sort_deps() {
     let relations: Vec<Relation> = Vec::new();
     let deps = SortDeps {
         common: CommonDeps {
-            env_lookup: |_var: &str| -> Option<String> { None },
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
         },
     };
     let _plan = sort_path(&entries, &[], &sources, &relations, Os::Linux, deps);
