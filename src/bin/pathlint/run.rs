@@ -8,6 +8,7 @@ use crate::cli::{
     CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
     InitArgs, SortArgs, TraceArgs,
 };
+use pathlint::Attribution;
 use pathlint::catalog;
 use pathlint::catalog_view::{self, ListStyle};
 use pathlint::config::Config;
@@ -16,7 +17,6 @@ use pathlint::format;
 use pathlint::init::{self, InitOptions, InitOutcome};
 use pathlint::lint;
 use pathlint::os_detect::Os;
-use pathlint::path_entry::PathEntry;
 use pathlint::path_source::{self, Target};
 use pathlint::report;
 use pathlint::source_match::{self, SourceWarningReason};
@@ -28,7 +28,7 @@ use pathlint::trace::{self, TraceOutcome};
 /// sequence; centralising it keeps the warning prefix consistent
 /// and the boundary point single (raw + expanded captured exactly
 /// once, in `path_source::read_path`).
-fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<PathEntry> {
+fn read_path_entries(global: &crate::cli::GlobalOpts) -> Vec<Attribution> {
     let target: Target = global.target.into();
     let path_read = path_source::read_path(target);
     if let Some(w) = &path_read.warning {
@@ -128,7 +128,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         }
         eprintln!("pathlint: PATH entries ({}):", path_entries.len());
         for entry in &path_entries {
-            eprintln!("  {}", entry.raw);
+            eprintln!("  {}", entry.observed.raw);
         }
     }
 

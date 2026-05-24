@@ -16,6 +16,62 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.28] — 2026-05-24
+
+Step 4 of the 0.0.25-0.1.0 roadmap, and the last intentionally
+BREAKING release in the line. Closes the ADR-0001 and ADR-0004
+Follow-up notes by splitting the 0.0.24 `PathEntry` into a pure
+observation type plus a new cross-source carrier. See
+[ADR-0008](docs/decisions/0008-attribution-type-split.md) for the
+rationale, the four alternatives that were rejected, and the
+consequence of resetting the criterion 1 counter one more time
+before Step 5's additive-only window.
+
+### Breaking
+
+- **`pathlint::path_entry::PathEntry` is back to `{ raw, expanded }`**.
+  `provenance_raw` field removed; `with_provenance` and
+  `effective_raw_for_user_intent` methods removed. PathEntry is
+  again a pure single-source observation.
+- **`pathlint::Attribution` is the new cross-source carrier** at
+  the crate root (next to `CommonDeps`). It wraps a `PathEntry`
+  plus an `Option<String>` provenance and owns
+  `with_provenance` / `effective_raw_for_user_intent`.
+- **Entry-list parameters switch from `&[PathEntry]` to `&[Attribution]`**
+  across every public entry point: `doctor::analyze` /
+  `analyze_real`, `sort::sort_path` / `sort_path_real`,
+  `lint::EvaluateDeps::production` / `evaluate_real`,
+  `trace::LocateDeps::production` / `locate_real`,
+  `resolve::resolve` / `split_path`, `format::doctor_line`. The
+  `path_source::PathRead.entries` field and
+  `reconcile_process_with_registry` move to `Vec<Attribution>`.
+
+Migration:
+```rust
+// before
+PathEntry { raw, expanded, provenance_raw: None }
+pe.effective_raw_for_user_intent()
+pe.with_provenance(reg_raw)
+
+// after
+Attribution::new(PathEntry::from_raw(raw, env_lookup))
+attrib.effective_raw_for_user_intent()
+attrib.with_provenance(reg_raw)
+```
+
+### Added
+
+- `pathlint::Attribution { observed, provenance_raw }` at the
+  crate root.
+- `Attribution::new(PathEntry)`, `Attribution::with_provenance(String) -> Self`,
+  `Attribution::effective_raw_for_user_intent(&self) -> &str`.
+
+### Fixed
+
+- ADR-0001 Follow-up closed: PathEntry's concept purity restored.
+- ADR-0004 Follow-up closed: cross-source overlay moved to its
+  own type.
+
 ## [0.0.27] — 2026-05-24
 
 Step 3 of the 0.0.25-0.1.0 roadmap. Closes the codex 2026-05-17 audit's

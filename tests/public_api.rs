@@ -12,7 +12,6 @@
 
 #![allow(unused_imports)]
 
-use pathlint::CommonDeps;
 use pathlint::catalog::{
     builtin, builtin_relations, check_acyclic, embedded_version, merge_with_user,
     merge_with_user_relations, version_check,
@@ -40,6 +39,7 @@ use pathlint::source_match::{
 use pathlint::trace::{
     Found, LocateDeps, Provenance, TraceOutcome, UninstallHint, locate, locate_real,
 };
+use pathlint::{Attribution, CommonDeps};
 
 #[test]
 fn public_api_compiles() {
@@ -94,11 +94,12 @@ fn locate_callable_with_locate_deps() {
 #[test]
 fn analyze_callable_with_analyze_deps() {
     // 0.0.27 BREAKING: doctor::analyze now takes an AnalyzeDeps
-    // carrier instead of 4 positional closures. The carrier groups
-    // the 4 detectors' deps + the shared env_lookup (in CommonDeps).
+    // carrier instead of 4 positional closures. 0.0.28 swapped
+    // the entry slice from `&[PathEntry]` to `&[Attribution]`.
     use std::collections::BTreeMap;
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
+    let entries: Vec<Attribution> = Vec::new();
     let deps = AnalyzeDeps {
         common: CommonDeps {
             env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
@@ -107,7 +108,7 @@ fn analyze_callable_with_analyze_deps() {
         fs_list_dir: Box::new(|_path: &str| -> Vec<String> { Vec::new() }),
         is_writable_dir: Box::new(|_path: &str| -> bool { false }),
     };
-    let diags = analyze(&[], &sources, &relations, Os::Linux, deps);
+    let diags = analyze(&entries, &sources, &relations, Os::Linux, deps);
     assert!(diags.is_empty());
     // Real wrappers are also part of the surface.
     let _real: Vec<String> = fs_list_dir_real("/this/path/does/not/exist");
@@ -128,16 +129,17 @@ fn path_entry_from_raw_takes_env_lookup_closure() {
 }
 
 #[test]
-fn analyze_signature_pinned_with_pathentry_slice() {
-    // 0.0.23 BREAKING: doctor::analyze takes &[PathEntry]. A bare
-    // `&[]` would still type-check via inference, so pin the slice
-    // type explicitly here. 0.0.27 updated the trailing closures
-    // into an AnalyzeDeps carrier; the PathEntry slice pin is
-    // unchanged.
+fn analyze_signature_pinned_with_attribution_slice() {
+    // 0.0.23 BREAKING: doctor::analyze takes a typed entry slice.
+    // 0.0.28 swapped that slice from `&[PathEntry]` to
+    // `&[Attribution]` (ADR-0008). A bare `&[]` would still
+    // type-check via inference, so pin the slice type explicitly
+    // here.
     use std::collections::BTreeMap;
-    let entries: Vec<PathEntry> = vec![PathEntry::from_raw("/usr/bin", |_| -> Option<String> {
-        None
-    })];
+    let entries: Vec<Attribution> = vec![Attribution::new(PathEntry::from_raw(
+        "/usr/bin",
+        |_| -> Option<String> { None },
+    ))];
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
     let deps = AnalyzeDeps {
@@ -165,21 +167,35 @@ fn expand_env_with_pinned_on_public_surface() {
 }
 
 #[test]
-fn path_entry_provenance_raw_pinned_on_public_surface() {
-    // 0.0.24 BREAKING: PathEntry gains a third public field
-    // `provenance_raw: Option<String>` for the Windows process-target
-    // registry overlay. Pin both the field default and the accessor
-    // shape so a future change can't silently revert.
+fn path_entry_is_pure_observation() {
+    // 0.0.28 BREAKING: PathEntry no longer carries provenance.
+    // After ADR-0008 split, PathEntry is a pure (raw, expanded)
+    // observation. Cross-source overlay moved to `Attribution`.
     let pe = PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None });
-    assert_eq!(pe.provenance_raw, None);
-    assert_eq!(pe.effective_raw_for_user_intent(), "/usr/bin");
+    assert_eq!(pe.raw, "/usr/bin");
+    assert_eq!(pe.expanded, "/usr/bin");
+    // PathEntry no longer has provenance_raw / with_provenance /
+    // effective_raw_for_user_intent. Those moved to Attribution.
+}
 
-    // `with_provenance` is the only public way for an embedder to set
-    // the overlay; production code goes through the path_source
-    // reconciler.
-    let with_prov = pe.with_provenance("%CUSTOM%/bin".to_string());
+#[test]
+fn attribution_pinned_on_public_surface() {
+    // 0.0.28 BREAKING: Attribution lives at the crate root next to
+    // CommonDeps. It carries the cross-source overlay that used to
+    // be a PathEntry field. See ADR-0008.
+    let pe = PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None });
+    let attrib = Attribution::new(pe.clone());
+    assert_eq!(attrib.observed.raw, "/usr/bin");
+    assert_eq!(attrib.observed.expanded, "/usr/bin");
+    assert!(attrib.provenance_raw.is_none());
+    assert_eq!(attrib.effective_raw_for_user_intent(), "/usr/bin");
+
+    // with_provenance attaches the registry raw form (Windows
+    // process-target overlay; see ADR-0004).
+    let with_prov = attrib.with_provenance("%CUSTOM%/bin".to_string());
     assert_eq!(with_prov.provenance_raw.as_deref(), Some("%CUSTOM%/bin"));
     assert_eq!(with_prov.effective_raw_for_user_intent(), "%CUSTOM%/bin");
+    assert_eq!(with_prov.observed.raw, "/usr/bin");
 }
 
 #[test]
@@ -267,7 +283,7 @@ fn evaluate_real_pinned_on_public_surface() {
     // mirroring analyze_real / locate_real / sort_path_real.
     use std::collections::BTreeMap;
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
-    let entries: Vec<PathEntry> = Vec::new();
+    let entries: Vec<Attribution> = Vec::new();
     let outcomes = evaluate_real(&[], &sources, Os::Linux, &entries);
     assert!(outcomes.is_empty());
 }
@@ -278,7 +294,7 @@ fn locate_real_pinned_on_public_surface() {
     use std::collections::BTreeMap;
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
-    let entries: Vec<PathEntry> = Vec::new();
+    let entries: Vec<Attribution> = Vec::new();
     let outcome = locate_real(
         "definitely_no_such_command",
         &sources,
@@ -293,7 +309,7 @@ fn locate_real_pinned_on_public_surface() {
 fn sort_path_real_pinned_on_public_surface() {
     // 0.0.27 Added.
     use std::collections::BTreeMap;
-    let entries: Vec<PathEntry> = Vec::new();
+    let entries: Vec<Attribution> = Vec::new();
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
     let plan = sort_path_real(&entries, &[], &sources, &relations, Os::Linux);
@@ -307,7 +323,7 @@ fn sort_path_callable_with_sort_deps() {
     // (env_lookup only). The pin makes the closure-only carrier
     // explicit so future field additions are caught here.
     use std::collections::BTreeMap;
-    let entries: Vec<PathEntry> = Vec::new();
+    let entries: Vec<Attribution> = Vec::new();
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
     let deps = SortDeps {

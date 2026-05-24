@@ -63,11 +63,18 @@ fails CI.
 | `source_match` | path → source matching | `find`, `names_only`, `validate_sources`, `Match`, `SourceWarning` |
 | `os_detect` | runtime OS dispatch | `Os`, `os_filter_applies` |
 | `expand` | env-var expansion + slash normalisation | `expand_env`, `expand_env_with`, `normalize`, `expand_and_normalize` |
-| `path_entry` | PATH entry raw/expanded/provenance carrier (0.0.23+) | `PathEntry`, `PathEntry::from_raw`, `PathEntry::with_provenance`, `PathEntry::effective_raw_for_user_intent` |
+| `path_entry` | PATH entry raw/expanded carrier (0.0.23+, purified in 0.0.28) | `PathEntry`, `PathEntry::from_raw` |
 
-The crate root also exposes `pathlint::CommonDeps` (0.0.27+), the
-shared env-oracle carrier embedded in `AnalyzeDeps` / `EvaluateDeps`
-/ `LocateDeps` / `SortDeps`.
+The crate root also exposes:
+
+- `pathlint::CommonDeps` (0.0.27+) — shared env-oracle carrier
+  embedded in `AnalyzeDeps` / `EvaluateDeps` / `LocateDeps` /
+  `SortDeps`.
+- `pathlint::Attribution` (0.0.28+) — cross-source carrier
+  wrapping a `PathEntry` together with an optional
+  `provenance_raw`. Every entry-list parameter on the lib's
+  public surface (`analyze`, `evaluate_real`, etc.) takes
+  `&[Attribution]`.
 
 The crate-level rustdoc (`src/lib.rs`) carries the authoritative
 list with examples. Embedders should treat docs.rs as the

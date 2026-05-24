@@ -5,10 +5,10 @@
 //! the returned string. Keeping the formatters pure makes them
 //! unit-testable without an `assert_cmd`-style integration harness.
 
+use crate::Attribution;
 use crate::config::Relation;
 use crate::doctor::{Diagnostic, Kind, Severity};
 use crate::lint::Outcome;
-use crate::path_entry::PathEntry;
 use crate::sort::{SortNote, SortPlan};
 use crate::trace::{Found, Provenance, TraceOutcome, UninstallHint};
 
@@ -38,7 +38,7 @@ fn glyph(style: Style, unicode: &'static str, ascii: &'static str) -> &'static s
 /// Render a single doctor diagnostic into a multi-line block
 /// (header line + indented detail). The trailing newline is
 /// omitted; the caller decides whether to add one.
-pub fn doctor_line(d: &Diagnostic, entries: &[PathEntry], style: Style) -> String {
+pub fn doctor_line(d: &Diagnostic, entries: &[Attribution], style: Style) -> String {
     if let Kind::Conflict { diagnostic, groups } = &d.kind {
         return doctor_conflict(entries, diagnostic, groups);
     }
@@ -124,7 +124,7 @@ pub fn doctor_line(d: &Diagnostic, entries: &[PathEntry], style: Style) -> Strin
 /// built-in conflicts (`mise_activate_both`); everything else falls
 /// back to a generic "two sources collide" message that still names
 /// the diagnostic so the user can grep for it.
-fn doctor_conflict(entries: &[PathEntry], diagnostic: &str, groups: &[Vec<usize>]) -> String {
+fn doctor_conflict(entries: &[Attribution], diagnostic: &str, groups: &[Vec<usize>]) -> String {
     // diagnostic is user-supplied via [[relation]] when not a
     // built-in name. Strip + match against the built-in literal
     // first so hostile diagnostics still land in the generic
@@ -493,11 +493,12 @@ fn is_disallowed_byte(b: u8) -> bool {
 mod tests {
     use super::*;
     use crate::lint::Status;
+    use crate::path_entry::PathEntry;
     use std::path::PathBuf;
 
-    fn entries(strs: &[&str]) -> Vec<PathEntry> {
+    fn entries(strs: &[&str]) -> Vec<Attribution> {
         strs.iter()
-            .map(|s| PathEntry::from_raw(*s, |_| -> Option<String> { None }))
+            .map(|s| Attribution::new(PathEntry::from_raw(*s, |_| -> Option<String> { None })))
             .collect()
     }
 
@@ -896,7 +897,7 @@ mod tests {
         let entries = entries(&["/foo/a\x1b[31m_evil", "/foo/b"]);
         let d = Diagnostic {
             index: 0,
-            entry: entries[0].raw.clone(),
+            entry: entries[0].observed.raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: "evil\x1b[31mlabel\rFAKE".into(),
@@ -1065,7 +1066,7 @@ mod tests {
         ]);
         let d = Diagnostic {
             index: 0,
-            entry: entries[0].raw.clone(),
+            entry: entries[0].observed.raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: "mise_activate_both".into(),
@@ -1116,7 +1117,7 @@ mod tests {
         let entries = entries(&["/foo/a", "/foo/b"]);
         let d = Diagnostic {
             index: 0,
-            entry: entries[0].raw.clone(),
+            entry: entries[0].observed.raw.clone(),
             severity: Severity::Warn,
             kind: Kind::Conflict {
                 diagnostic: "foo_overlap".into(),

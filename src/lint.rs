@@ -358,8 +358,8 @@ impl EvaluateDeps<'static> {
     /// resolver walks PATH via [`crate::resolve::resolve`]; the
     /// shape check calls [`check_shape_filesystem`]; the env
     /// oracle reads the live process env.
-    pub fn production(path_entries: &[crate::path_entry::PathEntry]) -> Self {
-        let entries: Vec<crate::path_entry::PathEntry> = path_entries.to_vec();
+    pub fn production(path_entries: &[crate::Attribution]) -> Self {
+        let entries: Vec<crate::Attribution> = path_entries.to_vec();
         EvaluateDeps {
             common: crate::CommonDeps::production(),
             resolver: Box::new(move |cmd: &str| -> Option<PathBuf> {
@@ -417,7 +417,7 @@ pub fn evaluate_real(
     expectations: &[Expectation],
     sources: &BTreeMap<String, SourceDef>,
     os: Os,
-    path_entries: &[crate::path_entry::PathEntry],
+    path_entries: &[crate::Attribution],
 ) -> Vec<Outcome> {
     evaluate(
         expectations,

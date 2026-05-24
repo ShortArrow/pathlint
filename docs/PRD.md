@@ -894,31 +894,40 @@ embedder that constructs a deterministic carrier never touches
 `bin/pathlint/run::enforce_source_validation`, which is
 binary-side and always wants the live env.
 
-**Observed vs. provenance (0.0.24+, Windows process target).**
-`raw` / `expanded` describe a single entry as observed at one
-source. There is one Windows case where two sources disagree:
-`--target process` calls `getenv("PATH")`, but the OS expands
-`REG_EXPAND_SZ` registry values via `ExpandEnvironmentStringsW`
-before handing PATH to the child process. So `raw` on a process
-entry is always a literal — even when HKCU has
-`%LocalAppData%\Microsoft\WindowsApps`. The 0.0.23 raw-preservation
-fix protects `--target user` / `--target machine` (which read
-the registry directly) but does nothing for the default
-`--target process`.
+**Observed vs. provenance (0.0.24+, Windows process target; type split in 0.0.28).**
+`PathEntry { raw, expanded }` describes a single entry as
+observed at one source. There is one Windows case where two
+sources disagree: `--target process` calls `getenv("PATH")`, but
+the OS expands `REG_EXPAND_SZ` registry values via
+`ExpandEnvironmentStringsW` before handing PATH to the child
+process. So `raw` on a process entry is always a literal — even
+when HKCU has `%LocalAppData%\Microsoft\WindowsApps`. The 0.0.23
+raw-preservation fix protects `--target user` / `--target machine`
+(which read the registry directly) but does nothing for the
+default `--target process`.
 
-0.0.24 introduces `provenance_raw: Option<String>` on `PathEntry`.
+0.0.24 introduced a cross-source overlay; 0.0.28 (ADR-0008) split
+it out of `PathEntry` into its own carrier `pathlint::Attribution`:
+
+```rust
+pub struct Attribution {
+    pub observed: PathEntry,
+    pub provenance_raw: Option<String>,
+}
+```
+
 On Windows process target, `path_source::read_process` reads HKCU
 and HKLM raw at start-up, then a pure
 `reconcile_process_with_registry` overlay sets `provenance_raw`
-on each process entry whose `expanded` matches a registry entry's
-`expanded`. Detectors that reason about user intent
-(`Shortenable`, `Malformed`, `TrailingSlash`, `ShortName`, plus
-the human-facing `Diagnostic.entry`) go through
-`PathEntry::effective_raw_for_user_intent()`, which prefers
-`provenance_raw` over the observed `raw`. Filesystem-side
+on each `Attribution` whose `observed.expanded` matches a
+registry entry's `observed.expanded`. Detectors that reason
+about user intent (`Shortenable`, `Malformed`, `TrailingSlash`,
+`ShortName`, plus the human-facing `Diagnostic.entry`) go
+through `Attribution::effective_raw_for_user_intent()`, which
+prefers `provenance_raw` over `observed.raw`. Filesystem-side
 detectors (`Missing`, `WriteablePathDir`, the resolver) keep
-reading `expanded` — the filesystem doesn't care what the user
-typed.
+reading `attrib.observed.expanded` — the filesystem doesn't
+care what the user typed.
 
 The overlay's contract:
 
