@@ -19,7 +19,6 @@ use pathlint::os_detect::Os;
 use pathlint::path_entry::PathEntry;
 use pathlint::path_source::{self, Target};
 use pathlint::report;
-use pathlint::resolve;
 use pathlint::source_match::{self, SourceWarningReason};
 use pathlint::trace::{self, TraceOutcome};
 
@@ -133,13 +132,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         }
     }
 
-    let outcomes = lint::evaluate(
-        &cfg.expectations,
-        &catalog,
-        os,
-        |cmd| resolve::resolve(cmd, &path_entries),
-        lint::check_shape_filesystem,
-    );
+    let outcomes = lint::evaluate_real(&cfg.expectations, &catalog, os, &path_entries);
 
     if check_args.json {
         let json = format::check_json(&outcomes)?;
@@ -279,9 +272,13 @@ fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8
     enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
-    let outcome = trace::locate(&args.command, &merged, &relations, Os::current(), |cmd| {
-        resolve::resolve(cmd, &path_entries)
-    });
+    let outcome = trace::locate_real(
+        &args.command,
+        &merged,
+        &relations,
+        Os::current(),
+        &path_entries,
+    );
 
     if args.json {
         let json = format::where_json(&args.command, &outcome)?;
@@ -334,7 +331,7 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     enforce_relation_acyclic(&relations)?;
     let path_entries = read_path_entries(global);
 
-    let plan = pathlint::sort::sort_path(
+    let plan = pathlint::sort::sort_path_real(
         &path_entries,
         &cfg.expectations,
         &catalog,

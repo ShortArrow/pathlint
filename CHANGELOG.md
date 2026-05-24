@@ -16,6 +16,73 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.27] — 2026-05-24
+
+Step 3 of the 0.0.25-0.1.0 roadmap. Closes the codex 2026-05-17 audit's
+CA H finding on `doctor::analyze` and the ADR-0006 Follow-up on internal
+closure threading by bundling per-function injected closures into typed
+`*Deps` carriers across all four public entry points at once. See
+[ADR-0007](docs/decisions/0007-deps-bag-layered.md) for the rationale,
+the six alternatives that were rejected (status quo, flat per-function
+carriers, single Option-laden bag, trait+associated-types, generic
+closure fields, builder pattern), and the closure-HRTB limit that
+drove the `Box<dyn>` over generic.
+
+### Breaking
+
+- **`pathlint::doctor::analyze` signature change.** The four
+  positional closures (`fs_exists`, `env_lookup`, `fs_list_dir`,
+  `is_writable_dir`) collapse into a single `AnalyzeDeps<'_>`
+  carrier. `analyze_real` is unchanged.
+  Migration:
+  ```rust
+  analyze(e, s, r, os, fs, env, ls, wr)
+  // becomes
+  analyze(e, s, r, os, AnalyzeDeps {
+      common: CommonDeps { env_lookup: Box::new(env) },
+      fs_exists: Box::new(fs),
+      fs_list_dir: Box::new(ls),
+      is_writable_dir: Box::new(wr),
+  })
+  ```
+- **`pathlint::lint::evaluate` signature change.** The `resolver` /
+  `shape_check` positional closures collapse into `EvaluateDeps<'_>`.
+- **`pathlint::trace::locate` signature change.** The `resolver`
+  positional closure collapses into `LocateDeps<'_>`.
+- **`pathlint::sort::sort_path` signature change.** Now takes a
+  `SortDeps<'_>` carrier (which today only carries the shared env
+  oracle; the carrier exists so future cross-cutting deps are
+  additive).
+
+### Added
+
+- `pathlint::CommonDeps` — shared dependency carrier holding the
+  env oracle. Embedded by every per-function `*Deps`.
+- `pathlint::doctor::AnalyzeDeps` / `lint::EvaluateDeps` /
+  `trace::LocateDeps` / `sort::SortDeps` — per-function carriers
+  with `production()` constructors.
+- `pathlint::lint::evaluate_real` / `trace::locate_real` /
+  `sort::sort_path_real` — production wrappers mirroring the
+  pre-existing `doctor::analyze_real` so all four entry points
+  have the same zero-extra-closures shape for CLI / production
+  use.
+- Type aliases in the carriers (`EnvLookupFn`, `FsBoolFn`,
+  `FsListDirFn`, `ResolverFn`, `ShapeCheckFn`) — public surface so
+  `tests/public_api.rs` can pin them and embedders can name
+  callable shapes without re-deriving `Box<dyn Fn ... + 'a>`.
+
+### Fixed
+
+- ADR-0006 Follow-up: internal callers inside the lib
+  (`doctor::matched_entries_for_source`,
+  `doctor::add_relation_conflict_diagnostics`,
+  `lint::evaluate_one`, `trace::locate`'s provenance walk,
+  `sort::sort_path`'s indexer) now thread `env_lookup` through
+  `source_match::*_with` instead of falling back to the wrappers.
+- `#[allow(clippy::too_many_arguments)]` on `doctor::analyze`
+  removed — the carrier replaces the positional closures that
+  earned the lint.
+
 ## [0.0.26] — 2026-05-23
 
 Additive-only release. No BREAKING. Closes the env-injection

@@ -12,31 +12,34 @@
 
 #![allow(unused_imports)]
 
+use pathlint::CommonDeps;
 use pathlint::catalog::{
     builtin, builtin_relations, check_acyclic, embedded_version, merge_with_user,
     merge_with_user_relations, version_check,
 };
 use pathlint::config::{Config, Expectation, Kind, Relation, Severity, SourceDef};
 use pathlint::doctor::{
-    Diagnostic, Filter, Kind as DoctorKind, Severity as DoctorSeverity, all_kind_names, analyze,
-    analyze_real, env_lookup_real, fs_exists_real, fs_list_dir_real, has_error, kind_name,
-    user_diagnostic_names, validate_filter_names,
+    AnalyzeDeps, Diagnostic, Filter, Kind as DoctorKind, Severity as DoctorSeverity,
+    all_kind_names, analyze, analyze_real, env_lookup_real, fs_exists_real, fs_list_dir_real,
+    has_error, is_writable_dir_real, kind_name, user_diagnostic_names, validate_filter_names,
 };
 use pathlint::expand::{
     expand_and_normalize, expand_and_normalize_with, expand_env, expand_env_with, normalize,
 };
 use pathlint::lint::{
-    CheckOutcomeView, Diagnosis, Outcome, Status, check_shape_filesystem, diagnose, evaluate,
-    exit_code, has_config_error, is_failure,
+    CheckOutcomeView, Diagnosis, EvaluateDeps, Outcome, Status, check_shape_filesystem, diagnose,
+    evaluate, evaluate_real, exit_code, has_config_error, is_failure,
 };
 use pathlint::os_detect::{Os, os_filter_applies};
 use pathlint::path_entry::PathEntry;
-use pathlint::sort::{EntryMove, SortNote, SortPlan, sort_path};
+use pathlint::sort::{EntryMove, SortDeps, SortNote, SortPlan, sort_path, sort_path_real};
 use pathlint::source_match::{
     Match, SourceWarning, SourceWarningReason, find, find_with, names_only, names_only_with,
     validate_sources, validate_sources_with,
 };
-use pathlint::trace::{Found, Provenance, TraceOutcome, UninstallHint, locate};
+use pathlint::trace::{
+    Found, LocateDeps, Provenance, TraceOutcome, UninstallHint, locate, locate_real,
+};
 
 #[test]
 fn public_api_compiles() {
@@ -45,64 +48,70 @@ fn public_api_compiles() {
 }
 
 #[test]
-fn evaluate_callable_with_pathbuf_resolver() {
-    // 0.0.16 BLOCKER fix: lint::evaluate is part of the published
-    // surface, so the resolver closure must be expressible with
-    // public types alone. PathBuf is from std; pathlint's internal
-    // Resolution wrapper would not compile here from an external
-    // crate. integration tests run as a separate crate so this
-    // test catches the regression.
+fn evaluate_callable_with_evaluate_deps() {
+    // 0.0.27 BREAKING: lint::evaluate now takes an EvaluateDeps
+    // carrier instead of two positional closures. Pin the public
+    // surface so external embedders can still wire a deterministic
+    // resolver and shape_check.
     use std::collections::BTreeMap;
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
-    let outcomes = evaluate(
-        &[],
-        &sources,
-        Os::Linux,
-        |_cmd: &str| -> Option<std::path::PathBuf> { None },
-        |_path: &std::path::Path, _kind: Kind| -> Result<(), String> { Ok(()) },
-    );
+    let deps = EvaluateDeps {
+        common: CommonDeps {
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
+        },
+        resolver: Box::new(|_cmd: &str| -> Option<std::path::PathBuf> { None }),
+        shape_check: Box::new(
+            |_path: &std::path::Path, _kind: Kind| -> Result<(), String> { Ok(()) },
+        ),
+    };
+    let outcomes = evaluate(&[], &sources, Os::Linux, deps);
     assert!(outcomes.is_empty());
 }
 
 #[test]
-fn locate_callable_with_pathbuf_resolver() {
-    // Same DIP gate for trace::locate — the resolver closure must
-    // return Option<PathBuf>, not the internal Resolution wrapper.
+fn locate_callable_with_locate_deps() {
+    // 0.0.27 BREAKING: trace::locate now takes a LocateDeps carrier
+    // instead of a single positional resolver closure.
     use std::collections::BTreeMap;
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
+    let deps = LocateDeps {
+        common: CommonDeps {
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
+        },
+        resolver: Box::new(|_cmd: &str| -> Option<std::path::PathBuf> { None }),
+    };
     let outcome = locate(
         "definitely_no_such_command",
         &sources,
         &relations,
         Os::Linux,
-        |_cmd: &str| -> Option<std::path::PathBuf> { None },
+        deps,
     );
     assert!(matches!(outcome, TraceOutcome::NotFound));
 }
 
 #[test]
-fn analyze_callable_with_fs_list_dir_closure() {
-    // 0.0.19 BREAKING: doctor::analyze gains a 7th closure parameter
-    // for the duplicate_but_shadowed detector. Pin the signature so
-    // the public surface stays usable from external crates without
-    // pulling in pathlint internals.
+fn analyze_callable_with_analyze_deps() {
+    // 0.0.27 BREAKING: doctor::analyze now takes an AnalyzeDeps
+    // carrier instead of 4 positional closures. The carrier groups
+    // the 4 detectors' deps + the shared env_lookup (in CommonDeps).
     use std::collections::BTreeMap;
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
-    let diags = analyze(
-        &[],
-        &sources,
-        &relations,
-        Os::Linux,
-        |_path: &str| -> bool { false },
-        |_var: &str| -> Option<String> { None },
-        |_path: &str| -> Vec<String> { Vec::new() },
-        |_path: &str| -> bool { false },
-    );
+    let deps = AnalyzeDeps {
+        common: CommonDeps {
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
+        },
+        fs_exists: Box::new(|_path: &str| -> bool { false }),
+        fs_list_dir: Box::new(|_path: &str| -> Vec<String> { Vec::new() }),
+        is_writable_dir: Box::new(|_path: &str| -> bool { false }),
+    };
+    let diags = analyze(&[], &sources, &relations, Os::Linux, deps);
     assert!(diags.is_empty());
-    // Real wrapper is also part of the surface.
+    // Real wrappers are also part of the surface.
     let _real: Vec<String> = fs_list_dir_real("/this/path/does/not/exist");
+    let _w: bool = is_writable_dir_real("/this/path/does/not/exist");
 }
 
 #[test]
@@ -122,23 +131,24 @@ fn path_entry_from_raw_takes_env_lookup_closure() {
 fn analyze_signature_pinned_with_pathentry_slice() {
     // 0.0.23 BREAKING: doctor::analyze takes &[PathEntry]. A bare
     // `&[]` would still type-check via inference, so pin the slice
-    // type explicitly here.
+    // type explicitly here. 0.0.27 updated the trailing closures
+    // into an AnalyzeDeps carrier; the PathEntry slice pin is
+    // unchanged.
     use std::collections::BTreeMap;
     let entries: Vec<PathEntry> = vec![PathEntry::from_raw("/usr/bin", |_| -> Option<String> {
         None
     })];
     let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
     let relations: Vec<Relation> = Vec::new();
-    let diags = analyze(
-        &entries,
-        &sources,
-        &relations,
-        Os::Linux,
-        |_path: &str| -> bool { true },
-        |_var: &str| -> Option<String> { None },
-        |_path: &str| -> Vec<String> { Vec::new() },
-        |_path: &str| -> bool { false },
-    );
+    let deps = AnalyzeDeps {
+        common: CommonDeps {
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
+        },
+        fs_exists: Box::new(|_path: &str| -> bool { true }),
+        fs_list_dir: Box::new(|_path: &str| -> Vec<String> { Vec::new() }),
+        is_writable_dir: Box::new(|_path: &str| -> bool { false }),
+    };
+    let diags = analyze(&entries, &sources, &relations, Os::Linux, deps);
     // No expectations / no detectors that fire on an existing single
     // entry — just confirm the signature compiles and runs.
     assert!(diags.is_empty(), "got: {diags:?}");
@@ -231,4 +241,79 @@ fn source_match_with_variants_pinned_on_public_surface() {
     // NeedleTooShort heuristic, so no warnings fire.
     let warnings = validate_sources_with(&sources, Os::Linux, env_lookup);
     assert!(warnings.is_empty(), "got: {warnings:?}");
+}
+
+#[test]
+fn common_deps_production_pinned_on_public_surface() {
+    // 0.0.27: the shared CommonDeps carrier lives at the crate
+    // root so every *Deps variant can embed it. Pin both the type
+    // and the production() constructor (ADR-0007: closures are
+    // type-erased through Box<dyn> so the carrier itself is not
+    // generic).
+    let _common: CommonDeps = CommonDeps::production();
+}
+
+#[test]
+fn analyze_deps_production_pinned_on_public_surface() {
+    // 0.0.27: AnalyzeDeps::production() bundles the four `_real`
+    // closures so the CLI binary can keep calling analyze_real
+    // without re-wiring them.
+    let _deps: AnalyzeDeps = AnalyzeDeps::production();
+}
+
+#[test]
+fn evaluate_real_pinned_on_public_surface() {
+    // 0.0.27 Added: lint::evaluate_real is the production wrapper
+    // mirroring analyze_real / locate_real / sort_path_real.
+    use std::collections::BTreeMap;
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let entries: Vec<PathEntry> = Vec::new();
+    let outcomes = evaluate_real(&[], &sources, Os::Linux, &entries);
+    assert!(outcomes.is_empty());
+}
+
+#[test]
+fn locate_real_pinned_on_public_surface() {
+    // 0.0.27 Added.
+    use std::collections::BTreeMap;
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let relations: Vec<Relation> = Vec::new();
+    let entries: Vec<PathEntry> = Vec::new();
+    let outcome = locate_real(
+        "definitely_no_such_command",
+        &sources,
+        &relations,
+        Os::Linux,
+        &entries,
+    );
+    assert!(matches!(outcome, TraceOutcome::NotFound));
+}
+
+#[test]
+fn sort_path_real_pinned_on_public_surface() {
+    // 0.0.27 Added.
+    use std::collections::BTreeMap;
+    let entries: Vec<PathEntry> = Vec::new();
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let relations: Vec<Relation> = Vec::new();
+    let plan = sort_path_real(&entries, &[], &sources, &relations, Os::Linux);
+    // The plan can be inspected; just confirm the signature pins.
+    let _ = plan;
+}
+
+#[test]
+fn sort_path_callable_with_sort_deps() {
+    // 0.0.27 BREAKING: sort::sort_path now takes a SortDeps carrier
+    // (env_lookup only). The pin makes the closure-only carrier
+    // explicit so future field additions are caught here.
+    use std::collections::BTreeMap;
+    let entries: Vec<PathEntry> = Vec::new();
+    let sources: BTreeMap<String, SourceDef> = BTreeMap::new();
+    let relations: Vec<Relation> = Vec::new();
+    let deps = SortDeps {
+        common: CommonDeps {
+            env_lookup: Box::new(|_var: &str| -> Option<String> { None }),
+        },
+    };
+    let _plan = sort_path(&entries, &[], &sources, &relations, Os::Linux, deps);
 }

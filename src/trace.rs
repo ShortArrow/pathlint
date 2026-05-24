@@ -19,7 +19,11 @@
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
 //! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
-//! let outcome = trace::locate("nonexistent", &sources, &relations, Os::current(), resolver);
+//! let deps = trace::LocateDeps {
+//!     common: pathlint::CommonDeps { env_lookup: Box::new(|_v: &str| -> Option<String> { None }) },
+//!     resolver: Box::new(resolver),
+//! };
+//! let outcome = trace::locate("nonexistent", &sources, &relations, Os::current(), deps);
 //! assert_eq!(outcome, trace::TraceOutcome::NotFound);
 //! ```
 
@@ -29,7 +33,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::config::{Relation, SourceDef};
-use crate::expand::{expand_and_normalize, normalize};
+use crate::expand::normalize;
 use crate::os_detect::Os;
 use crate::source_match;
 
@@ -120,30 +124,64 @@ pub enum Provenance {
     },
 }
 
+/// Dependency carrier for [`locate`]. Bundles the resolver closure
+/// with the shared env oracle so adding a new injected dependency
+/// to provenance lookup becomes an additive field on this struct.
+///
+/// 0.0.27+.
+pub struct LocateDeps<'a> {
+    /// Shared env oracle. See [`crate::CommonDeps`].
+    pub common: crate::CommonDeps<'a>,
+    /// PATH resolver. Same shape as
+    /// [`crate::lint::EvaluateDeps::resolver`]; type-erased through
+    /// `Box<dyn>` for the same closure-HRTB reason
+    /// (ADR-0007 §Alternatives).
+    pub resolver: crate::lint::ResolverFn<'a>,
+}
+
+impl LocateDeps<'static> {
+    /// Production wiring against the given `path_entries`.
+    pub fn production(path_entries: &[crate::path_entry::PathEntry]) -> Self {
+        let entries: Vec<crate::path_entry::PathEntry> = path_entries.to_vec();
+        LocateDeps {
+            common: crate::CommonDeps::production(),
+            resolver: Box::new(move |cmd: &str| -> Option<PathBuf> {
+                crate::resolve::resolve(cmd, &entries)
+            }),
+        }
+    }
+}
+
 /// Compute the `where` answer for a command. The resolver is the
 /// same closure used by `lint::evaluate`, so production code wires
 /// this to the real PATH resolver.
-pub fn locate<R>(
+///
+/// 0.0.27+: the resolver positional closure plus a new env_lookup
+/// requirement were collapsed into a [`LocateDeps`] carrier.
+pub fn locate(
     command: &str,
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
-    mut resolver: R,
-) -> TraceOutcome
-where
-    R: FnMut(&str) -> Option<PathBuf>,
-{
+    deps: LocateDeps<'_>,
+) -> TraceOutcome {
+    let LocateDeps {
+        common,
+        mut resolver,
+    } = deps;
+    let env_lookup = common.env_lookup;
     let Some(resolved_path) = resolver(command) else {
         return TraceOutcome::NotFound;
     };
 
     let haystack = normalize(&resolved_path.to_string_lossy());
-    let matched = source_match::names_only(&haystack, sources, os);
+    let matched = source_match::names_only_with(&haystack, sources, os, &*env_lookup);
 
     // Provenance comes from `[[relation]] kind = "served_by_via"`:
     // when the resolved path lives under a relation's `host` source
     // and the next segment matches `guest_pattern`, attribute it.
-    let provenance = infer_provenance_from_relations(&haystack, sources, relations, os);
+    let provenance =
+        infer_provenance_from_relations(&haystack, sources, relations, os, &*env_lookup);
 
     let uninstall = match &provenance {
         Some(prov) => uninstall_for_provenance(prov, os),
@@ -161,6 +199,27 @@ where
         uninstall,
         provenance,
     })
+}
+
+/// Production wrapper: build [`LocateDeps::production`] from the
+/// given PATH entries and call [`locate`]. Mirrors
+/// [`crate::doctor::analyze_real`] and [`crate::lint::evaluate_real`].
+///
+/// 0.0.27+.
+pub fn locate_real(
+    command: &str,
+    sources: &BTreeMap<String, SourceDef>,
+    relations: &[Relation],
+    os: Os,
+    path_entries: &[crate::path_entry::PathEntry],
+) -> TraceOutcome {
+    locate(
+        command,
+        sources,
+        relations,
+        os,
+        LocateDeps::production(path_entries),
+    )
 }
 
 /// For every `[[relation]] kind = "alias_of"`, push the parent to
@@ -240,6 +299,7 @@ fn infer_provenance_from_relations(
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
+    env_lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Option<Provenance> {
     // 0.0.18: walk served_by_via via RelationIndex.
     let index = crate::catalog::RelationIndex::from_slice(relations);
@@ -250,7 +310,7 @@ fn infer_provenance_from_relations(
         let Some(host_raw) = host_def.path_for(os) else {
             continue;
         };
-        let host_needle = expand_and_normalize(host_raw);
+        let host_needle = crate::expand::expand_and_normalize_with(host_raw, env_lookup);
         if host_needle.is_empty() {
             continue;
         }
@@ -390,7 +450,18 @@ mod tests {
 
     #[test]
     fn not_found_when_resolver_returns_none() {
-        let out = locate("ghost", &BTreeMap::new(), &[], Os::Linux, |_| None);
+        let out = locate(
+            "ghost",
+            &BTreeMap::new(),
+            &[],
+            Os::Linux,
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| None),
+            },
+        );
         assert_eq!(out, TraceOutcome::NotFound);
     }
 
@@ -400,9 +471,18 @@ mod tests {
             "cargo",
             src_with_uninstall("/home/u/.cargo/bin", "cargo uninstall {bin}"),
         )]);
-        let out = locate("lazygit", &sources, &[], Os::Linux, |_| {
-            Some(resolution("/home/u/.cargo/bin/lazygit"))
-        });
+        let out = locate(
+            "lazygit",
+            &sources,
+            &[],
+            Os::Linux,
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| Some(resolution("/home/u/.cargo/bin/lazygit"))),
+            },
+        );
         match out {
             TraceOutcome::Found(f) => {
                 assert_eq!(f.matched_sources, vec!["cargo".to_string()]);
@@ -431,11 +511,22 @@ mod tests {
                 src_with_uninstall("/home/u/.local/share/mise/installs", "mise uninstall {bin}"),
             ),
         ]);
-        let out = locate("lazygit", &sources, &mise_relations(), Os::Linux, |_| {
-            Some(resolution(
-                "/home/u/.local/share/mise/installs/cargo-lazygit/0.61/bin/lazygit",
-            ))
-        });
+        let out = locate(
+            "lazygit",
+            &sources,
+            &mise_relations(),
+            Os::Linux,
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolution(
+                        "/home/u/.local/share/mise/installs/cargo-lazygit/0.61/bin/lazygit",
+                    ))
+                }),
+            },
+        );
         match out {
             TraceOutcome::Found(f) => {
                 assert_eq!(f.matched_sources[0], "mise_installs");
@@ -468,11 +559,22 @@ mod tests {
     fn no_template_when_source_has_none() {
         // aqua is in the catalog but has no uninstall_command.
         let sources = cat(&[("aqua", src("/home/u/.local/share/aquaproj-aqua"))]);
-        let out = locate("aqua_tool", &sources, &[], Os::Linux, |_| {
-            Some(resolution(
-                "/home/u/.local/share/aquaproj-aqua/cache/foo/aqua_tool",
-            ))
-        });
+        let out = locate(
+            "aqua_tool",
+            &sources,
+            &[],
+            Os::Linux,
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolution(
+                        "/home/u/.local/share/aquaproj-aqua/cache/foo/aqua_tool",
+                    ))
+                }),
+            },
+        );
         match out {
             TraceOutcome::Found(f) => {
                 assert_eq!(
@@ -491,9 +593,18 @@ mod tests {
         // The resolved path doesn't match any catalog entry — pathlint
         // can't speak to provenance.
         let sources = cat(&[("cargo", src("/home/u/.cargo/bin"))]);
-        let out = locate("orphan", &sources, &[], Os::Linux, |_| {
-            Some(resolution("/opt/local-stuff/bin/orphan"))
-        });
+        let out = locate(
+            "orphan",
+            &sources,
+            &[],
+            Os::Linux,
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| Some(resolution("/opt/local-stuff/bin/orphan"))),
+            },
+        );
         match out {
             TraceOutcome::Found(f) => {
                 assert!(f.matched_sources.is_empty());
@@ -512,9 +623,18 @@ mod tests {
             "cargo",
             src_with_uninstall("/home/u/.cargo/bin", "cargo uninstall {bin}"),
         )]);
-        let out = locate("lazygit", &sources, &[], Os::Linux, |_| {
-            Some(resolution("/home/u/.cargo/bin/lazygit.exe"))
-        });
+        let out = locate(
+            "lazygit",
+            &sources,
+            &[],
+            Os::Linux,
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| Some(resolution("/home/u/.cargo/bin/lazygit.exe"))),
+            },
+        );
         match out {
             TraceOutcome::Found(f) => {
                 assert_eq!(
@@ -544,10 +664,15 @@ mod tests {
             &mise_sources(),
             &mise_relations(),
             Os::Linux,
-            |_| {
-                Some(resolution(
-                    "/home/u/.local/share/mise/installs/npm-google-gemini-cli/0.40.0/gemini",
-                ))
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolution(
+                        "/home/u/.local/share/mise/installs/npm-google-gemini-cli/0.40.0/gemini",
+                    ))
+                }),
             },
         );
         match out {
@@ -585,10 +710,15 @@ mod tests {
             &mise_sources(),
             &mise_relations(),
             Os::Linux,
-            |_| {
-                Some(resolution(
-                    "/home/u/.local/share/mise/installs/python/3.14/bin/python",
-                ))
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolution(
+                        "/home/u/.local/share/mise/installs/python/3.14/bin/python",
+                    ))
+                }),
             },
         );
         match out {
@@ -609,10 +739,15 @@ mod tests {
             &mise_sources(),
             &mise_relations(),
             Os::Linux,
-            |_| {
-                Some(resolution(
-                    "/home/u/.local/share/mise/installs/pipx-black/24.0/bin/black",
-                ))
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolution(
+                        "/home/u/.local/share/mise/installs/pipx-black/24.0/bin/black",
+                    ))
+                }),
             },
         );
         match out {
@@ -637,11 +772,22 @@ mod tests {
     fn unknown_plugin_prefix_does_not_attribute() {
         // A plugin installed via a prefix we don't recognize stays
         // unattributed — pathlint shouldn't guess.
-        let out = locate("xyz", &mise_sources(), &mise_relations(), Os::Linux, |_| {
-            Some(resolution(
-                "/home/u/.local/share/mise/installs/exotic-thing/0.1/bin/xyz",
-            ))
-        });
+        let out = locate(
+            "xyz",
+            &mise_sources(),
+            &mise_relations(),
+            Os::Linux,
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolution(
+                        "/home/u/.local/share/mise/installs/exotic-thing/0.1/bin/xyz",
+                    ))
+                }),
+            },
+        );
         match out {
             TraceOutcome::Found(f) => {
                 assert!(f.provenance.is_none());
@@ -665,7 +811,12 @@ mod tests {
             &sources,
             &mise_relations(),
             Os::Linux,
-            |_| Some(resolution("/home/u/.cargo/bin/cargo-lazygit")),
+            LocateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolution("/home/u/.cargo/bin/cargo-lazygit"))),
+            },
         );
         match out {
             TraceOutcome::Found(f) => {

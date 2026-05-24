@@ -80,13 +80,12 @@
 //! }];
 //!
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
-//! let outcomes = lint::evaluate(
-//!     &expectations,
-//!     &sources,
-//!     Os::current(),
-//!     resolver,
-//!     lint::check_shape_filesystem, // R2 shape check; unused here
-//! );
+//! let deps = lint::EvaluateDeps {
+//!     common: pathlint::CommonDeps { env_lookup: Box::new(|_v: &str| -> Option<String> { None }) },
+//!     resolver: Box::new(resolver),
+//!     shape_check: Box::new(lint::check_shape_filesystem), // R2 shape check; unused here
+//! };
+//! let outcomes = lint::evaluate(&expectations, &sources, Os::current(), deps);
 //!
 //! // outcomes[0].status is Status::Ok because the resolver picked
 //! // a path under cargo's built-in source.
@@ -134,3 +133,46 @@ pub mod report;
 #[doc(hidden)]
 pub mod resolve;
 pub(crate) mod shell_quote;
+
+/// Shared dependency carrier embedded in every per-function `*Deps`
+/// (see [`doctor::AnalyzeDeps`], [`lint::EvaluateDeps`],
+/// [`trace::LocateDeps`], [`sort::SortDeps`]).
+///
+/// Today this only holds `env_lookup`, but the four
+/// per-function carriers all reach for the same env oracle, so
+/// concentrating it here keeps the "how does pathlint read the
+/// process env?" decision in a single place. Future cross-cutting
+/// concerns (logging hook, deterministic clock, etc.) belong here
+/// too.
+///
+/// Production callers usually start from [`CommonDeps::production`]
+/// and pass the resulting value into one of the per-function
+/// carriers. Embedders supplying a deterministic env oracle
+/// construct the struct directly.
+///
+/// 0.0.27+.
+/// `Fn(&str) -> Option<String>` env oracle, type-erased through a
+/// trait object. Used as the type of `CommonDeps::env_lookup` and
+/// (transitively) every per-function `*Deps`. The `'a` lifetime lets
+/// the closure borrow from the test stack; production wiring uses
+/// `'static`. 0.0.27+.
+pub type EnvLookupFn<'a> = Box<dyn Fn(&str) -> Option<String> + 'a>;
+
+pub struct CommonDeps<'a> {
+    /// The env oracle every `source_match::*_with` call inside the
+    /// lib eventually consults. Type-erased through a trait object so
+    /// each per-function `*Deps` can embed it without leaking another
+    /// generic parameter — see ADR-0007 §Alternatives for why Box<dyn>
+    /// beat the generic-closure variants.
+    pub env_lookup: EnvLookupFn<'a>,
+}
+
+impl CommonDeps<'static> {
+    /// Production wiring: env_lookup reads the live process
+    /// environment via [`doctor::env_lookup_real`].
+    pub fn production() -> Self {
+        CommonDeps {
+            env_lookup: Box::new(doctor::env_lookup_real),
+        }
+    }
+}

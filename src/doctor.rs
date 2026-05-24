@@ -28,16 +28,13 @@
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
 //! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
-//! let diags = doctor::analyze(
-//!     &entries,
-//!     &sources,
-//!     &relations,
-//!     Os::Linux,
-//!     |_| true,
-//!     |_| None,
-//!     |_| Vec::new(),
-//!     |_| false,
-//! );
+//! let deps = doctor::AnalyzeDeps {
+//!     common: pathlint::CommonDeps { env_lookup: Box::new(|_v: &str| -> Option<String> { None }) },
+//!     fs_exists: Box::new(|_: &str| true),
+//!     fs_list_dir: Box::new(|_: &str| Vec::new()),
+//!     is_writable_dir: Box::new(|_: &str| false),
+//! };
+//! let diags = doctor::analyze(&entries, &sources, &relations, Os::Linux, deps);
 //! assert!(diags.iter().any(|d| matches!(d.kind, doctor::Kind::Duplicate { .. })));
 //! ```
 
@@ -61,6 +58,55 @@ pub fn env_lookup_real(var: &str) -> Option<String> {
     env::var(var).ok()
 }
 
+/// Dependency carrier for [`analyze`]. Groups the four closures
+/// that the detector pipeline injects (filesystem existence check,
+/// env oracle via the embedded [`CommonDeps`], directory listing,
+/// writable-directory check) so adding a new detector becomes an
+/// additive field on this struct rather than a `pub fn analyze`
+/// signature change.
+///
+/// Production wiring uses [`AnalyzeDeps::production`]. Embedders
+/// and tests construct the struct directly with deterministic
+/// closures.
+///
+/// `Fn(&str) -> bool` predicate, type-erased through a trait
+/// object. Shared shape for [`AnalyzeDeps::fs_exists`] and
+/// [`AnalyzeDeps::is_writable_dir`]. 0.0.27+.
+pub type FsBoolFn<'a> = Box<dyn Fn(&str) -> bool + 'a>;
+
+/// `Fn(&str) -> Vec<String>` directory lister. Shape for
+/// [`AnalyzeDeps::fs_list_dir`]. 0.0.27+.
+pub type FsListDirFn<'a> = Box<dyn Fn(&str) -> Vec<String> + 'a>;
+
+/// 0.0.27+.
+pub struct AnalyzeDeps<'a> {
+    /// Shared env oracle. See [`crate::CommonDeps`].
+    pub common: crate::CommonDeps<'a>,
+    /// Existence check for the `Missing` detector. Production
+    /// wiring uses [`fs_exists_real`]; tests pass deterministic
+    /// stubs via `Box::new(|_| true)` etc.
+    pub fs_exists: FsBoolFn<'a>,
+    /// Directory listing for the `DuplicateButShadowed` detector.
+    /// Production wiring uses [`fs_list_dir_real`].
+    pub fs_list_dir: FsListDirFn<'a>,
+    /// Writable-by-others probe for the `WriteablePathDir`
+    /// detector. Production wiring uses [`is_writable_dir_real`].
+    pub is_writable_dir: FsBoolFn<'a>,
+}
+
+impl AnalyzeDeps<'static> {
+    /// Production wiring: each closure is the corresponding
+    /// `_real` helper at the top of this module.
+    pub fn production() -> Self {
+        AnalyzeDeps {
+            common: crate::CommonDeps::production(),
+            fs_exists: Box::new(fs_exists_real),
+            fs_list_dir: Box::new(fs_list_dir_real),
+            is_writable_dir: Box::new(is_writable_dir_real),
+        }
+    }
+}
+
 /// Convenience: production wiring of `analyze` that uses the real
 /// filesystem and process env. `sources` and `relations` come from
 /// the merged catalog; relation-driven conflict diagnostics
@@ -71,16 +117,7 @@ pub fn analyze_real(
     relations: &[Relation],
     os: Os,
 ) -> Vec<Diagnostic> {
-    analyze(
-        entries,
-        sources,
-        relations,
-        os,
-        fs_exists_real,
-        env_lookup_real,
-        fs_list_dir_real,
-        is_writable_dir_real,
-    )
+    analyze(entries, sources, relations, os, AnalyzeDeps::production())
 }
 
 /// Production wrapper for the `is_writable_dir` closure on
@@ -509,23 +546,20 @@ pub fn has_error(diags: &[&Diagnostic]) -> bool {
 /// `Kind::Conflict` diagnostics: every
 /// `Relation::ConflictsWhenBothInPath` in `relations` fires when
 /// at least two of its declared `sources` match the current PATH.
-#[allow(clippy::too_many_arguments)]
-pub fn analyze<F, V, L, W>(
+pub fn analyze(
     entries: &[PathEntry],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
-    fs_exists: F,
-    env_lookup: V,
-    fs_list_dir: L,
-    is_writable_dir: W,
-) -> Vec<Diagnostic>
-where
-    F: Fn(&str) -> bool,
-    V: Fn(&str) -> Option<String>,
-    L: Fn(&str) -> Vec<String>,
-    W: Fn(&str) -> bool,
-{
+    deps: AnalyzeDeps<'_>,
+) -> Vec<Diagnostic> {
+    let AnalyzeDeps {
+        common,
+        fs_exists,
+        fs_list_dir,
+        is_writable_dir,
+    } = deps;
+    let env_lookup = common.env_lookup;
     let mut out = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         // User-intent detectors read `effective_raw_for_user_intent`
@@ -577,7 +611,15 @@ where
         .collect();
     add_duplicate_diagnostics(&normalized, entries, &mut out);
     add_case_variant_diagnostics(entries, &mut out);
-    add_relation_conflict_diagnostics(&normalized, entries, sources, relations, os, &mut out);
+    add_relation_conflict_diagnostics(
+        &normalized,
+        entries,
+        sources,
+        relations,
+        os,
+        &env_lookup,
+        &mut out,
+    );
     add_per_source_missing_required_diagnostics(sources, os, &fs_exists, &env_lookup, &mut out);
     add_duplicate_but_shadowed_diagnostics(entries, os, &fs_list_dir, &env_lookup, &mut out);
     add_relative_path_entry_diagnostics(entries, os, &mut out);
@@ -1121,6 +1163,7 @@ fn add_relation_conflict_diagnostics(
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
+    env_lookup: &dyn Fn(&str) -> Option<String>,
     out: &mut Vec<Diagnostic>,
 ) {
     // 0.0.18: walk conflicts via RelationIndex so this call site
@@ -1129,7 +1172,7 @@ fn add_relation_conflict_diagnostics(
     for (src_names, diagnostic) in index.iter_conflicts() {
         let groups: Vec<Vec<usize>> = src_names
             .iter()
-            .map(|name| matched_entries_for_source(name, normalized, sources, os))
+            .map(|name| matched_entries_for_source(name, normalized, sources, os, env_lookup))
             .collect();
         let active = groups.iter().filter(|g| !g.is_empty()).count();
         if active < 2 {
@@ -1162,6 +1205,7 @@ fn matched_entries_for_source(
     normalized: &[String],
     sources: &BTreeMap<String, SourceDef>,
     os: Os,
+    env_lookup: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<usize> {
     let Some(def) = sources.get(source_name) else {
         return Vec::new();
@@ -1172,7 +1216,7 @@ fn matched_entries_for_source(
         .iter()
         .enumerate()
         .filter_map(|(i, n)| {
-            let hit = source_match::find(n, &single, os);
+            let hit = source_match::find_with(n, &single, os, env_lookup);
             if hit.is_empty() { None } else { Some(i) }
         })
         .collect()
@@ -1221,6 +1265,7 @@ fn add_case_variant_diagnostics(entries: &[PathEntry], out: &mut Vec<Diagnostic>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CommonDeps;
 
     fn entries(strs: &[&str]) -> Vec<PathEntry> {
         // Doctor unit tests that don't need env injection use the
@@ -1351,10 +1396,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let dups: Vec<_> = diags
             .iter()
@@ -1374,10 +1423,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Linux,
-            fs_no,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_no),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(diags.iter().any(|d| matches!(d.kind, Kind::Missing)));
     }
@@ -1390,10 +1443,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let trailing: Vec<_> = diags
             .iter()
@@ -1411,10 +1468,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(
             diags
@@ -1449,10 +1510,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Windows,
-            fs_yes,
-            env_map(&[("UserProfile", "C:\\Users\\Mixed")]),
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_map(&[("UserProfile", "C:\\Users\\Mixed")])),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let s = diags
             .iter()
@@ -1474,10 +1539,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Linux,
-            fs_yes,
-            env_map(&[("HOME", "/home/u")]),
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_map(&[("HOME", "/home/u")])),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(
             !diags
@@ -1497,10 +1566,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let case: Vec<_> = diags
             .iter()
@@ -1517,10 +1590,14 @@ mod tests {
             &empty_sources(),
             &mise_relations(),
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         // Empty entries are filtered upstream by `split_path`. If one
         // does sneak in, our checks must not blow up.
@@ -1551,10 +1628,14 @@ mod tests {
             &sources,
             &relations,
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let mab: Vec<_> = diags.iter().filter_map(match_mise_activate_both).collect();
         assert_eq!(mab.len(), 1);
@@ -1572,10 +1653,14 @@ mod tests {
             &sources,
             &relations,
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(
             diags
@@ -1598,10 +1683,14 @@ mod tests {
             &sources,
             &relations,
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(
             diags
@@ -1626,10 +1715,14 @@ mod tests {
             &sources,
             &relations,
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let (shims, installs) = diags
             .iter()
@@ -1679,10 +1772,14 @@ mod tests {
             &sources,
             &relations,
             Os::Windows,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let groups = diags
             .iter()
@@ -1715,10 +1812,14 @@ mod tests {
             &sources,
             &relations,
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let groups = diags
             .iter()
@@ -1751,10 +1852,14 @@ mod tests {
             &sources,
             &[],
             Os::Linux,
-            fs_no,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_no),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hit = diags
             .iter()
@@ -1776,10 +1881,14 @@ mod tests {
             &sources,
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(
             diags
@@ -1804,10 +1913,14 @@ mod tests {
             &sources,
             &[],
             Os::Linux,
-            fs_no,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_no),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(
             diags
@@ -1827,10 +1940,14 @@ mod tests {
             &sources,
             &[],
             Os::Linux,
-            fs_no,
-            env,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env),
+                },
+                fs_exists: Box::new(fs_no),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(diags.iter().any(
             |d| matches!(&d.kind, Kind::PerSourceMissingRequired { source } if source == "cargo")
@@ -2011,10 +2128,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -2046,10 +2167,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -2078,10 +2203,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_yes,
-            env,
-            fs_list,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -2111,10 +2240,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_yes,
-            env,
-            fs_list,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -2141,10 +2274,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let dbs: Vec<&Diagnostic> = diags
             .iter()
@@ -2168,10 +2305,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = relative_kinds(&diags);
         assert_eq!(hits.len(), 1);
@@ -2188,10 +2329,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = relative_kinds(&diags);
         assert_eq!(hits.len(), 3, "all three relative entries fire");
@@ -2205,10 +2350,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(relative_kinds(&diags).is_empty());
     }
@@ -2225,10 +2374,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         unsafe { env::remove_var("PATHLINT_TEST_REL_HOME") };
         assert!(
@@ -2249,10 +2402,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = relative_kinds(&diags);
         assert_eq!(
@@ -2279,10 +2436,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            writable,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(writable),
+            },
         );
         let hits = writable_kinds(&diags);
         assert_eq!(hits.len(), 1);
@@ -2299,10 +2460,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         assert!(writable_kinds(&diags).is_empty());
     }
@@ -2318,10 +2483,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            writable,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(writable),
+            },
         );
         assert!(writable_kinds(&diags).is_empty());
     }
@@ -2337,10 +2506,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            writable,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(writable),
+            },
         );
         let hits = writable_kinds(&diags);
         assert_eq!(hits.len(), 1);
@@ -2361,10 +2534,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Linux,
-            fs_yes,
-            env_none,
-            fs_list_empty,
-            writable,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(writable),
+            },
         );
         unsafe { env::remove_var("PATHLINT_TEST_WRITEABLE_DIR") };
         let hits = writable_kinds(&diags);
@@ -2412,10 +2589,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_yes,
-            env,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = shortenable_kinds(&diags);
         assert!(
@@ -2440,10 +2621,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_yes,
-            env,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = shortenable_kinds(&diags);
         assert_eq!(
@@ -2473,10 +2658,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_check,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_check),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = missing_kinds(&diags);
         assert_eq!(
@@ -2504,10 +2693,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_no, // force Missing
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_no), // force Missing
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = missing_kinds(&diags);
         assert_eq!(hits.len(), 1);
@@ -2539,10 +2732,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_yes,
-            env,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = shortenable_kinds(&diags);
         assert!(
@@ -2572,10 +2769,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_no,
-            env_none,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env_none),
+                },
+                fs_exists: Box::new(fs_no),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = missing_kinds(&diags);
         assert_eq!(hits.len(), 1);
@@ -2604,10 +2805,14 @@ mod tests {
             &empty_sources(),
             &[],
             Os::Windows,
-            fs_yes,
-            env,
-            fs_list_empty,
-            fs_writable_no,
+            AnalyzeDeps {
+                common: CommonDeps {
+                    env_lookup: Box::new(env),
+                },
+                fs_exists: Box::new(fs_yes),
+                fs_list_dir: Box::new(fs_list_empty),
+                is_writable_dir: Box::new(fs_writable_no),
+            },
         );
         let hits = shortenable_kinds(&diags);
         assert_eq!(

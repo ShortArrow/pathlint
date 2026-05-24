@@ -324,6 +324,52 @@ pub fn diagnose(o: &Outcome) -> Option<Diagnosis> {
     }
 }
 
+/// Dependency carrier for [`evaluate`]. Bundles the resolver and
+/// shape-check closures with the shared env oracle (in `common`)
+/// so adding a new injected dependency to evaluation becomes an
+/// additive field on this struct.
+///
+/// 0.0.27+.
+/// `FnMut(&str) -> Option<PathBuf>` resolver, type-erased.
+/// Shape for `EvaluateDeps::resolver` and `LocateDeps::resolver`.
+/// 0.0.27+.
+pub type ResolverFn<'a> = Box<dyn FnMut(&str) -> Option<PathBuf> + 'a>;
+
+/// `FnMut(&Path, Kind) -> Result<(), String>` shape check.
+/// Shape for `EvaluateDeps::shape_check`. 0.0.27+.
+pub type ShapeCheckFn<'a> = Box<dyn FnMut(&std::path::Path, Kind) -> Result<(), String> + 'a>;
+
+pub struct EvaluateDeps<'a> {
+    /// Shared env oracle. See [`crate::CommonDeps`].
+    pub common: crate::CommonDeps<'a>,
+    /// PATH resolver. Production wiring composes
+    /// [`crate::resolve::resolve`] with the slice of `PathEntry`
+    /// values from `path_source::read_path`. Type-erased through
+    /// `Box<dyn>` so closure HRTB inference doesn't get in the
+    /// way of constructing the struct (ADR-0007 §Alternatives).
+    pub resolver: ResolverFn<'a>,
+    /// Filesystem shape check. Production wiring uses
+    /// [`check_shape_filesystem`].
+    pub shape_check: ShapeCheckFn<'a>,
+}
+
+impl EvaluateDeps<'static> {
+    /// Production wiring against the given `path_entries`. The
+    /// resolver walks PATH via [`crate::resolve::resolve`]; the
+    /// shape check calls [`check_shape_filesystem`]; the env
+    /// oracle reads the live process env.
+    pub fn production(path_entries: &[crate::path_entry::PathEntry]) -> Self {
+        let entries: Vec<crate::path_entry::PathEntry> = path_entries.to_vec();
+        EvaluateDeps {
+            common: crate::CommonDeps::production(),
+            resolver: Box::new(move |cmd: &str| -> Option<PathBuf> {
+                crate::resolve::resolve(cmd, &entries)
+            }),
+            shape_check: Box::new(check_shape_filesystem),
+        }
+    }
+}
+
 /// Evaluate every expectation. Both the resolver and the shape
 /// checker are injected so `evaluate` itself stays pure — production
 /// passes real PATH lookup and `std::fs::metadata` closures, tests
@@ -332,34 +378,63 @@ pub fn diagnose(o: &Outcome) -> Option<Diagnosis> {
 /// `shape_check` is invoked only when an expectation declares
 /// `kind` and the source check has already passed (R2 escalates
 /// OK to NG, never the other way).
-pub fn evaluate<R, S>(
+///
+/// 0.0.27+: the four positional closures collapsed into an
+/// [`EvaluateDeps`] carrier.
+pub fn evaluate(
     expectations: &[Expectation],
     sources: &BTreeMap<String, SourceDef>,
     os: Os,
-    mut resolver: R,
-    mut shape_check: S,
-) -> Vec<Outcome>
-where
-    R: FnMut(&str) -> Option<PathBuf>,
-    S: FnMut(&std::path::Path, Kind) -> Result<(), String>,
-{
+    deps: EvaluateDeps<'_>,
+) -> Vec<Outcome> {
+    let EvaluateDeps {
+        common,
+        mut resolver,
+        mut shape_check,
+    } = deps;
+    let env_lookup = common.env_lookup;
     expectations
         .iter()
-        .map(|e| evaluate_one(e, sources, os, &mut resolver, &mut shape_check))
+        .map(|e| {
+            evaluate_one(
+                e,
+                sources,
+                os,
+                &mut *resolver,
+                &mut *shape_check,
+                &*env_lookup,
+            )
+        })
         .collect()
 }
 
-fn evaluate_one<R, S>(
+/// Production wrapper: build [`EvaluateDeps::production`] from the
+/// given PATH entries and call [`evaluate`]. Mirrors
+/// [`crate::doctor::analyze_real`].
+///
+/// 0.0.27+.
+pub fn evaluate_real(
+    expectations: &[Expectation],
+    sources: &BTreeMap<String, SourceDef>,
+    os: Os,
+    path_entries: &[crate::path_entry::PathEntry],
+) -> Vec<Outcome> {
+    evaluate(
+        expectations,
+        sources,
+        os,
+        EvaluateDeps::production(path_entries),
+    )
+}
+
+fn evaluate_one(
     expect: &Expectation,
     sources: &BTreeMap<String, SourceDef>,
     os: Os,
-    resolver: &mut R,
-    shape_check: &mut S,
-) -> Outcome
-where
-    R: FnMut(&str) -> Option<PathBuf>,
-    S: FnMut(&std::path::Path, Kind) -> Result<(), String>,
-{
+    resolver: &mut dyn FnMut(&str) -> Option<PathBuf>,
+    shape_check: &mut dyn FnMut(&std::path::Path, Kind) -> Result<(), String>,
+    env_lookup: &dyn Fn(&str) -> Option<String>,
+) -> Outcome {
     let base = Outcome::initial(expect);
 
     if !crate::os_detect::os_filter_applies(&expect.os, os) {
@@ -382,7 +457,7 @@ where
     };
 
     let haystack = normalize(&resolved_path.to_string_lossy());
-    let matched = source_match::names_only(&haystack, sources, os);
+    let matched = source_match::names_only_with(&haystack, sources, os, env_lookup);
     let source_status = decide(&matched, &expect.prefer, &expect.avoid);
 
     // R2 shape check. Only run when the source check already passed —
@@ -536,8 +611,13 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| Some(resolved("/home/u/.cargo/bin/runex")),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved("/home/u/.cargo/bin/runex"))),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::Ok);
         assert_eq!(out[0].matched_sources, vec!["cargo".to_string()]);
@@ -562,12 +642,17 @@ mod tests {
             &expectations,
             &sources,
             Os::Windows,
-            |_| {
-                Some(resolved(
-                    r"C:\Users\u\AppData\Local\Microsoft\WinGet\Links\runex.exe",
-                ))
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolved(
+                        r"C:\Users\u\AppData\Local\Microsoft\WinGet\Links\runex.exe",
+                    ))
+                }),
+                shape_check: Box::new(shape_ok),
             },
-            shape_ok,
         );
         assert_eq!(out[0].status, Status::NgWrongSource);
         assert!(out[0].matched_sources.contains(&"winget".to_string()));
@@ -589,8 +674,13 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| Some(resolved("/usr/local/bin/runex")),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved("/usr/local/bin/runex"))),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::NgUnknownSource);
     }
@@ -610,8 +700,13 @@ mod tests {
             &expectations,
             &BTreeMap::new(),
             Os::Linux,
-            |_| None,
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| None),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::NgNotFound);
 
@@ -624,7 +719,18 @@ mod tests {
             kind: None,
             severity: crate::config::Severity::Error,
         }];
-        let out = evaluate(&optional, &BTreeMap::new(), Os::Linux, |_| None, shape_ok);
+        let out = evaluate(
+            &optional,
+            &BTreeMap::new(),
+            Os::Linux,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| None),
+                shape_check: Box::new(shape_ok),
+            },
+        );
         assert_eq!(out[0].status, Status::Skip);
     }
 
@@ -643,8 +749,13 @@ mod tests {
             &expectations,
             &BTreeMap::new(),
             Os::Linux,
-            |_| panic!("resolver must not be called for n/a expectations"),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| panic!("resolver must not be called for n/a expectations")),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::NotApplicable);
     }
@@ -664,8 +775,13 @@ mod tests {
             &expectations,
             &BTreeMap::new(),
             Os::Linux,
-            |_| panic!("must not resolve when config is invalid"),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| panic!("must not resolve when config is invalid")),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::ConfigError);
         assert!(
@@ -694,8 +810,13 @@ mod tests {
             &expectations,
             &sources,
             Os::Windows,
-            |_| Some(resolved(r"C:\Users\u\.cargo\bin\runex.exe")),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved(r"C:\Users\u\.cargo\bin\runex.exe"))),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::Ok);
     }
@@ -722,12 +843,17 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| {
-                Some(resolved(
-                    "/home/u/.local/share/mise/installs/lazygit/0.42/bin/lazygit",
-                ))
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolved(
+                        "/home/u/.local/share/mise/installs/lazygit/0.42/bin/lazygit",
+                    ))
+                }),
+                shape_check: Box::new(shape_ok),
             },
-            shape_ok,
         );
         assert_eq!(out[0].status, Status::Ok);
         assert_eq!(out[0].matched_sources, vec!["mise".to_string()]);
@@ -753,12 +879,17 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| {
-                Some(resolved(
-                    "/home/u/.local/share/mise/installs/python/3.12/bin/python",
-                ))
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolved(
+                        "/home/u/.local/share/mise/installs/python/3.12/bin/python",
+                    ))
+                }),
+                shape_check: Box::new(shape_ok),
             },
-            shape_ok,
         );
         assert_eq!(out[0].status, Status::Ok);
         assert_eq!(out[0].matched_sources.len(), 2);
@@ -791,12 +922,17 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| {
-                Some(resolved(
-                    "/home/u/.local/share/mise/installs/python/3.10/bin/python",
-                ))
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolved(
+                        "/home/u/.local/share/mise/installs/python/3.10/bin/python",
+                    ))
+                }),
+                shape_check: Box::new(shape_ok),
             },
-            shape_ok,
         );
         assert_eq!(out[0].status, Status::NgWrongSource);
     }
@@ -825,8 +961,13 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| Some(resolved("/home/u/.local/share/mise/shims/python")),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved("/home/u/.local/share/mise/shims/python"))),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::Ok);
         assert!(out[0].matched_sources.contains(&"mise".to_string()));
@@ -861,12 +1002,17 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| {
-                Some(resolved(
-                    "/home/u/.local/share/mise/installs/python/3.14/bin/python",
-                ))
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolved(
+                        "/home/u/.local/share/mise/installs/python/3.14/bin/python",
+                    ))
+                }),
+                shape_check: Box::new(shape_ok),
             },
-            shape_ok,
         );
         assert_eq!(out[0].status, Status::Ok);
         assert!(out[0].matched_sources.contains(&"mise".to_string()));
@@ -900,19 +1046,29 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| Some(resolved("/home/u/.local/share/mise/shims/python")),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved("/home/u/.local/share/mise/shims/python"))),
+                shape_check: Box::new(shape_ok),
+            },
         );
         let out_install = evaluate(
             &expectations,
             &sources,
             Os::Linux,
-            |_| {
-                Some(resolved(
-                    "/home/u/.local/share/mise/installs/python/3.14/bin/python",
-                ))
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_: &str| {
+                    Some(resolved(
+                        "/home/u/.local/share/mise/installs/python/3.14/bin/python",
+                    ))
+                }),
+                shape_check: Box::new(shape_ok),
             },
-            shape_ok,
         );
         assert_eq!(out_shim[0].status, Status::Ok);
         assert_eq!(out_install[0].status, Status::Ok);
@@ -965,8 +1121,13 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| Some(resolved("/some/dir/rogue_bin")),
-            shape_err("is a directory"),
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved("/some/dir/rogue_bin"))),
+                shape_check: Box::new(shape_err("is a directory")),
+            },
         );
         assert_eq!(out[0].status, Status::NgNotExecutable);
         assert_eq!(out[0].reason.as_deref(), Some("is a directory"));
@@ -983,8 +1144,13 @@ mod tests {
                 &expectations,
                 &sources,
                 Os::Linux,
-                |_| Some(resolved("/no/such/place/ghost")),
-                shape_err(reason),
+                EvaluateDeps {
+                    common: crate::CommonDeps {
+                        env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                    },
+                    resolver: Box::new(|_| Some(resolved("/no/such/place/ghost"))),
+                    shape_check: Box::new(shape_err(reason)),
+                },
             );
             assert_eq!(out[0].status, Status::NgNotExecutable);
             assert_eq!(out[0].reason.as_deref(), Some(reason));
@@ -1009,8 +1175,13 @@ mod tests {
             &expectations,
             &sources,
             Os::current(),
-            |_| Some(resolved("/no/such/place/ghost")),
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved("/no/such/place/ghost"))),
+                shape_check: Box::new(shape_ok),
+            },
         );
         assert_eq!(out[0].status, Status::Ok);
     }
@@ -1033,13 +1204,18 @@ mod tests {
             &expectations,
             &sources,
             Os::Linux,
-            |_| Some(resolved("/home/u/bad/x")),
-            // Suppression of shape-check by source mismatch must
-            // hold even when the shape closure would have passed.
-            // shape_ok is fine here; check_shape_filesystem would
-            // also fail (path doesn't exist) but the test would
-            // still pass because the source check fires first.
-            shape_ok,
+            EvaluateDeps {
+                common: crate::CommonDeps {
+                    env_lookup: Box::new(|_v: &str| -> Option<String> { None }),
+                },
+                resolver: Box::new(|_| Some(resolved("/home/u/bad/x"))),
+                // Suppression of shape-check by source mismatch must
+                // hold even when the shape closure would have passed.
+                // shape_ok is fine here; check_shape_filesystem would
+                // also fail (path doesn't exist) but the test would
+                // still pass because the source check fires first.
+                shape_check: Box::new(shape_ok),
+            },
         );
         // Stays NgWrongSource — the shape check is suppressed
         // because the source check already failed.
