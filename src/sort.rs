@@ -32,18 +32,18 @@
 //! # Examples
 //!
 //! ```
+//! use pathlint::{Attribution, sort};
 //! use pathlint::config::Config;
 //! use pathlint::os_detect::Os;
 //! use pathlint::path_entry::PathEntry;
-//! use pathlint::sort;
 //!
 //! let cfg = Config::default();
 //! let sources = pathlint::catalog::merge_with_user(&cfg.source);
 //! let relations = pathlint::catalog::merge_with_user_relations(&cfg.relations);
 //! let null_env = |_: &str| -> Option<String> { None };
 //! let entries = vec![
-//!     PathEntry::from_raw("/usr/local/bin", null_env),
-//!     PathEntry::from_raw("/usr/bin", null_env),
+//!     Attribution::new(PathEntry::from_raw("/usr/local/bin", null_env)),
+//!     Attribution::new(PathEntry::from_raw("/usr/bin", null_env)),
 //! ];
 //! let plan = sort::sort_path_real(
 //!     &entries,
@@ -60,10 +60,10 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::Attribution;
 use crate::config::{Expectation, Relation, SourceDef};
 use crate::expand::normalize;
 use crate::os_detect::Os;
-use crate::path_entry::PathEntry;
 use crate::source_match;
 
 /// One entry's movement from old to new index. Only emitted when
@@ -148,7 +148,7 @@ impl SortDeps<'static> {
 }
 
 pub fn sort_path(
-    entries: &[PathEntry],
+    entries: &[Attribution],
     expectations: &[Expectation],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
@@ -156,14 +156,21 @@ pub fn sort_path(
     deps: SortDeps<'_>,
 ) -> SortPlan {
     let env_lookup = deps.common.env_lookup;
-    let original: Vec<String> = entries.iter().map(|e| e.raw.clone()).collect();
+    let original: Vec<String> = entries.iter().map(|e| e.observed.raw.clone()).collect();
 
     // Index every entry by which sources it matches. Source matching
     // is done against the expanded form because catalog needles
     // (`$HOME/.cargo/bin`) only line up after env expansion.
     let entry_sources: Vec<Vec<String>> = entries
         .iter()
-        .map(|e| source_match::names_only_with(&normalize(&e.expanded), sources, os, &*env_lookup))
+        .map(|e| {
+            source_match::names_only_with(
+                &normalize(&e.observed.expanded),
+                sources,
+                os,
+                &*env_lookup,
+            )
+        })
         .collect();
 
     // Walk every applicable expectation and gather both promotion
@@ -212,7 +219,10 @@ pub fn sort_path(
         .chain(neutral_bucket)
         .chain(avoided_bucket)
         .collect();
-    let sorted: Vec<String> = new_order.iter().map(|&i| entries[i].raw.clone()).collect();
+    let sorted: Vec<String> = new_order
+        .iter()
+        .map(|&i| entries[i].observed.raw.clone())
+        .collect();
 
     let moves: Vec<EntryMove> = new_order
         .iter()
@@ -220,7 +230,7 @@ pub fn sort_path(
         .enumerate()
         .filter(|(new_idx, old_idx)| new_idx != old_idx)
         .map(|(new_idx, old_idx)| EntryMove {
-            entry: entries[old_idx].raw.clone(),
+            entry: entries[old_idx].observed.raw.clone(),
             from: old_idx,
             to: new_idx,
             reason: reason_for(old_idx, &intents),
@@ -254,7 +264,7 @@ pub fn sort_path(
 ///
 /// 0.0.27+.
 pub fn sort_path_real(
-    entries: &[PathEntry],
+    entries: &[Attribution],
     expectations: &[Expectation],
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
@@ -397,6 +407,7 @@ fn collect_notes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path_entry::PathEntry;
 
     fn src(unix: &str) -> SourceDef {
         SourceDef {
@@ -412,9 +423,9 @@ mod tests {
             .collect()
     }
 
-    fn entries(s: &[&str]) -> Vec<PathEntry> {
+    fn entries(s: &[&str]) -> Vec<Attribution> {
         s.iter()
-            .map(|x| PathEntry::from_raw(*x, |_| -> Option<String> { None }))
+            .map(|x| Attribution::new(PathEntry::from_raw(*x, |_| -> Option<String> { None })))
             .collect()
     }
 

@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::Attribution;
 use crate::path_entry::PathEntry;
 
 /// Split a `PATH` string on the platform's separator. Each entry is
@@ -19,21 +20,21 @@ use crate::path_entry::PathEntry;
 /// infrastructure layer for command lookup, so reading the live
 /// env here is correct (and matches `path_source::read_path`).
 /// Lib embedders that need deterministic env can build a
-/// `Vec<PathEntry>` directly via `PathEntry::from_raw(raw,
+/// `Vec<Attribution>` directly via `PathEntry::from_raw(raw,
 /// closure)` and skip this helper.
-pub fn split_path(path_value: &str) -> Vec<PathEntry> {
+pub fn split_path(path_value: &str) -> Vec<Attribution> {
     let sep = if cfg!(windows) { ';' } else { ':' };
     path_value
         .split(sep)
         .filter(|s| !s.is_empty())
-        .map(|raw| PathEntry::from_raw(raw, |v| std::env::var(v).ok()))
+        .map(|raw| Attribution::new(PathEntry::from_raw(raw, |v| std::env::var(v).ok())))
         .collect()
 }
 
 /// Resolve `command` against the given PATH entries. Returns the
 /// first matching full path, or `None`.
 ///
-/// Reads `entry.expanded` because the filesystem cannot evaluate
+/// Reads `entry.observed.expanded` because the filesystem cannot evaluate
 /// `%LocalAppData%` etc. — `PathEntry::from_raw` (computed once at
 /// the `path_source` boundary) already ran `expand_env`.
 ///
@@ -41,12 +42,12 @@ pub fn split_path(path_value: &str) -> Vec<PathEntry> {
 /// `PathBuf` carries the same information and lets the public
 /// surface (`lint::evaluate`, `trace::locate`) accept resolver
 /// closures expressed in standard-library types alone.
-/// 0.0.23: lifted to `&[PathEntry]` so callers no longer pass raw
+/// 0.0.23: lifted to `&[Attribution]` so callers no longer pass raw
 /// strings whose expansion state is implicit.
-pub fn resolve(command: &str, path_entries: &[PathEntry]) -> Option<PathBuf> {
+pub fn resolve(command: &str, path_entries: &[Attribution]) -> Option<PathBuf> {
     let exts = pathext_list();
     for entry in path_entries {
-        let dir = Path::new(&entry.expanded);
+        let dir = Path::new(&entry.observed.expanded);
         if !dir.is_dir() {
             continue;
         }
@@ -127,17 +128,17 @@ mod tests {
         let sep = if cfg!(windows) { ';' } else { ':' };
         let s = format!("a{sep}{sep}b");
         let parts = split_path(&s);
-        let raw: Vec<&str> = parts.iter().map(|e| e.raw.as_str()).collect();
+        let raw: Vec<&str> = parts.iter().map(|e| e.observed.raw.as_str()).collect();
         assert_eq!(raw, vec!["a", "b"]);
     }
 
     #[test]
     fn missing_command_returns_none() {
         let dir = std::env::temp_dir();
-        let entry =
-            PathEntry::from_raw(dir.to_string_lossy().into_owned(), |_| -> Option<String> {
-                None
-            });
+        let entry = Attribution::new(PathEntry::from_raw(
+            dir.to_string_lossy().into_owned(),
+            |_| -> Option<String> { None },
+        ));
         let result = resolve("pathlint_definitely_no_such_command_xyz", &[entry]);
         assert!(result.is_none());
     }

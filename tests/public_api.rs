@@ -12,7 +12,6 @@
 
 #![allow(unused_imports)]
 
-use pathlint::{Attribution, CommonDeps};
 use pathlint::catalog::{
     builtin, builtin_relations, check_acyclic, embedded_version, merge_with_user,
     merge_with_user_relations, version_check,
@@ -40,6 +39,7 @@ use pathlint::source_match::{
 use pathlint::trace::{
     Found, LocateDeps, Provenance, TraceOutcome, UninstallHint, locate, locate_real,
 };
+use pathlint::{Attribution, CommonDeps};
 
 #[test]
 fn public_api_compiles() {

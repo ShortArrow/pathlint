@@ -20,6 +20,7 @@
 //! run `expand::expand_env` once — so every platform follows the same
 //! "raw at the source, expanded at the boundary" rule.
 
+use crate::Attribution;
 use crate::expand;
 use crate::path_entry::PathEntry;
 
@@ -32,7 +33,7 @@ pub enum Target {
 
 #[derive(Debug)]
 pub struct PathRead {
-    pub entries: Vec<PathEntry>,
+    pub entries: Vec<Attribution>,
     pub warning: Option<String>,
 }
 
@@ -105,17 +106,17 @@ fn read_process() -> PathRead {
 /// the cross-platform `overlay_tests` module.
 #[allow(dead_code)]
 pub(crate) fn reconcile_process_with_registry(
-    process: &[PathEntry],
-    user_reg: &[PathEntry],
-    machine_reg: &[PathEntry],
-) -> Vec<PathEntry> {
+    process: &[Attribution],
+    user_reg: &[Attribution],
+    machine_reg: &[Attribution],
+) -> Vec<Attribution> {
     process
         .iter()
         .map(|p| {
             let candidate =
                 find_expanded_match(p, user_reg).or_else(|| find_expanded_match(p, machine_reg));
             match candidate {
-                Some(reg_raw) if reg_raw != p.raw => p.clone().with_provenance(reg_raw),
+                Some(reg_raw) if reg_raw != p.observed.raw => p.clone().with_provenance(reg_raw),
                 _ => p.clone(),
             }
         })
@@ -123,27 +124,27 @@ pub(crate) fn reconcile_process_with_registry(
 }
 
 #[allow(dead_code)]
-fn find_expanded_match(p: &PathEntry, reg: &[PathEntry]) -> Option<String> {
-    let key = expand::normalize(&p.expanded);
+fn find_expanded_match(p: &Attribution, reg: &[Attribution]) -> Option<String> {
+    let key = expand::normalize(&p.observed.expanded);
     reg.iter()
-        .find(|r| expand::normalize(&r.expanded) == key)
-        .map(|r| r.raw.clone())
+        .find(|r| expand::normalize(&r.observed.expanded) == key)
+        .map(|r| r.observed.raw.clone())
 }
 
 /// Split a raw PATH string on the platform's separator and lift each
-/// entry into a [`PathEntry`]. Empty entries are dropped — they are
-/// the result of `::` / `;;` artefacts in the source, not genuine
-/// PATH directories.
+/// entry into an [`Attribution`] (with `provenance_raw = None`).
+/// Empty entries are dropped — they are the result of `::` / `;;`
+/// artefacts in the source, not genuine PATH directories.
 ///
 /// `path_source` is the infrastructure boundary, so this is one of
 /// the two places in the lib that reads `std::env::var` (the other
 /// is `resolve::split_path`). Every other caller of
 /// `PathEntry::from_raw` injects a deterministic closure.
-pub(crate) fn split_into_entries(s: &str) -> Vec<PathEntry> {
+pub(crate) fn split_into_entries(s: &str) -> Vec<Attribution> {
     let sep = if cfg!(windows) { ';' } else { ':' };
     s.split(sep)
         .filter(|x| !x.is_empty())
-        .map(|raw| PathEntry::from_raw(raw, |v| std::env::var(v).ok()))
+        .map(|raw| Attribution::new(PathEntry::from_raw(raw, |v| std::env::var(v).ok())))
         .collect()
 }
 
@@ -261,10 +262,12 @@ mod overlay_tests {
 
     use super::*;
 
-    fn raw_entry(raw: &str, expanded: &str) -> PathEntry {
-        PathEntry {
-            raw: raw.into(),
-            expanded: expanded.into(),
+    fn raw_entry(raw: &str, expanded: &str) -> Attribution {
+        Attribution {
+            observed: PathEntry {
+                raw: raw.into(),
+                expanded: expanded.into(),
+            },
             provenance_raw: None,
         }
     }
@@ -281,7 +284,7 @@ mod overlay_tests {
             r"%LocalAppData%\Microsoft\WindowsApps",
             r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
         )];
-        let machine_reg: Vec<PathEntry> = Vec::new();
+        let machine_reg: Vec<Attribution> = Vec::new();
 
         let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
         assert_eq!(out.len(), 1);
@@ -328,7 +331,7 @@ mod overlay_tests {
             r"%LocalAppData%\Microsoft\WindowsApps",
             r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
         )];
-        let machine_reg: Vec<PathEntry> = Vec::new();
+        let machine_reg: Vec<Attribution> = Vec::new();
 
         let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
         assert_eq!(out.len(), 1);
@@ -350,7 +353,7 @@ mod overlay_tests {
             r"C:\Program Files\PowerShell\7",
             r"C:\Program Files\PowerShell\7",
         )];
-        let machine_reg: Vec<PathEntry> = Vec::new();
+        let machine_reg: Vec<Attribution> = Vec::new();
 
         let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
         assert!(
@@ -378,7 +381,7 @@ mod overlay_tests {
                 r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
             ),
         ];
-        let machine_reg: Vec<PathEntry> = Vec::new();
+        let machine_reg: Vec<Attribution> = Vec::new();
 
         let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
         assert_eq!(
@@ -402,7 +405,7 @@ mod overlay_tests {
             r"%LocalAppData%\X",
             "c:/users/me/appdata/local/x",
         )];
-        let machine_reg: Vec<PathEntry> = Vec::new();
+        let machine_reg: Vec<Attribution> = Vec::new();
 
         let out = reconcile_process_with_registry(&process, &user_reg, &machine_reg);
         assert_eq!(

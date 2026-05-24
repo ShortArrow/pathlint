@@ -141,8 +141,8 @@ pub struct LocateDeps<'a> {
 
 impl LocateDeps<'static> {
     /// Production wiring against the given `path_entries`.
-    pub fn production(path_entries: &[crate::path_entry::PathEntry]) -> Self {
-        let entries: Vec<crate::path_entry::PathEntry> = path_entries.to_vec();
+    pub fn production(path_entries: &[crate::Attribution]) -> Self {
+        let entries: Vec<crate::Attribution> = path_entries.to_vec();
         LocateDeps {
             common: crate::CommonDeps::production(),
             resolver: Box::new(move |cmd: &str| -> Option<PathBuf> {
@@ -211,7 +211,7 @@ pub fn locate_real(
     sources: &BTreeMap<String, SourceDef>,
     relations: &[Relation],
     os: Os,
-    path_entries: &[crate::path_entry::PathEntry],
+    path_entries: &[crate::Attribution],
 ) -> TraceOutcome {
     locate(
         command,

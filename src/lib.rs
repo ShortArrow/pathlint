@@ -176,3 +176,110 @@ impl CommonDeps<'static> {
         }
     }
 }
+
+/// Per-entry cross-source carrier. Wraps a single-source
+/// [`crate::path_entry::PathEntry`] together with an optional
+/// `provenance_raw`: the `raw` form observed at *another* source
+/// whose `expanded` matches this one. The only place that sets
+/// `provenance_raw` today is
+/// [`crate::path_source::reconcile_process_with_registry`], which
+/// recovers the registry `%VAR%` form for entries the OS expanded
+/// on its way into `getenv("PATH")` (the `--target process` overlay,
+/// see ADR-0004).
+///
+/// 0.0.28 split this out of `PathEntry` so the carrier inside the
+/// lib has one clean concept per type: `PathEntry` is "what one
+/// source said this entry is"; `Attribution` is "that observation
+/// plus whatever cross-source hint we have". See ADR-0008.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attribution {
+    /// The entry as observed at the source that originally
+    /// produced it. Carries `raw` (on-source form) and `expanded`
+    /// (`expand::expand_env`-once form).
+    pub observed: path_entry::PathEntry,
+    /// Cross-source overlay. `Some(reg_raw)` when this process
+    /// entry was produced by the OS expanding a registry-stored
+    /// `%VAR%` form (HKCU\Environment\Path or HKLM\...). `None`
+    /// otherwise: `--target user` / `--target machine` (already
+    /// raw at source), Unix / macOS (no registry), process
+    /// entries with no expanded match in registry, or REG_SZ
+    /// entries whose `raw == observed.raw` (no expansion happened).
+    pub provenance_raw: Option<String>,
+}
+
+impl Attribution {
+    /// Wrap a freshly-observed `PathEntry`; `provenance_raw` is
+    /// `None`. Use this when you have one source's view of the
+    /// entry and no cross-source hint to apply yet.
+    pub fn new(observed: path_entry::PathEntry) -> Self {
+        Attribution {
+            observed,
+            provenance_raw: None,
+        }
+    }
+
+    /// Chainable setter for the cross-source overlay. Used by the
+    /// `path_source` reconciler when a process entry's `expanded`
+    /// matches an HKCU / HKLM entry whose `raw` differs (because
+    /// the OS expanded a `%VAR%`). Idempotent.
+    pub fn with_provenance(mut self, registry_raw: String) -> Self {
+        self.provenance_raw = Some(registry_raw);
+        self
+    }
+
+    /// Return the form the user authored, falling back to the
+    /// observed `raw` when no overlay applies. Use this from
+    /// detectors that reason about user intent (`Shortenable`,
+    /// `Malformed`, `TrailingSlash`, `ShortName`) and from human
+    /// rendering of `Diagnostic.entry`. Filesystem-side detectors
+    /// (`Missing`, `WriteablePathDir`) keep using `observed.expanded`.
+    pub fn effective_raw_for_user_intent(&self) -> &str {
+        self.provenance_raw.as_deref().unwrap_or(&self.observed.raw)
+    }
+}
+
+#[cfg(test)]
+mod attribution_tests {
+    use super::*;
+    use path_entry::PathEntry;
+
+    /// 0.0.28: with no provenance overlay, the accessor returns
+    /// the observed raw form. This is the path every non-Windows
+    /// entry and every `--target user` / `--target machine` entry
+    /// takes.
+    #[test]
+    fn effective_raw_for_user_intent_falls_back_to_raw_when_none() {
+        let pe = PathEntry::from_raw(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            |_| -> Option<String> { None },
+        );
+        let a = Attribution::new(pe);
+        assert!(a.provenance_raw.is_none());
+        assert_eq!(
+            a.effective_raw_for_user_intent(),
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+        );
+    }
+
+    /// 0.0.28: when the path_source reconciler attaches a registry
+    /// raw form via `with_provenance`, the accessor returns that
+    /// form so raw-aware detectors and the human renderer see the
+    /// `%VAR%` shape the user actually wrote in the registry.
+    #[test]
+    fn effective_raw_for_user_intent_returns_provenance_when_present() {
+        let pe = PathEntry::from_raw(
+            r"C:\Users\me\AppData\Local\Microsoft\WindowsApps",
+            |_| -> Option<String> { None },
+        );
+        let a = Attribution::new(pe)
+            .with_provenance(r"%LocalAppData%\Microsoft\WindowsApps".to_string());
+        assert_eq!(
+            a.provenance_raw.as_deref(),
+            Some(r"%LocalAppData%\Microsoft\WindowsApps"),
+        );
+        assert_eq!(
+            a.effective_raw_for_user_intent(),
+            r"%LocalAppData%\Microsoft\WindowsApps",
+        );
+    }
+}
