@@ -86,16 +86,15 @@ ADR-0010 / ADR-0011) was reflected via a separate "Drained
 in 0.0.30" subsection at the table's bottom; this release
 does the equivalent informally in this ADR's Context above.
 
-## Decision: this ADR does not declare graduation
-
-Per ADR-0013 Alternative A ("Cut 0.1.0 in this ADR" —
-rejected) and the user instruction quoted there
-("0.1.0 を勝手に決めないで"), the graduation release cut
-is **user judgement**, not a plan-side or ADR-side
-decision. This ADR records *criterion 5 closure*, which is
-one of seven criteria. Whether the user chooses to cut
-graduation as 0.0.33 / 0.1.0 / another number / not at all,
-and when, is outside this ADR's scope.
+**Scope (this ADR does not declare graduation).** Per
+ADR-0013 Alternative A ("Cut 0.1.0 in this ADR" — rejected)
+and the user instruction quoted there ("0.1.0 を勝手に決め
+ないで"), the graduation release cut is **user judgement**,
+not a plan-side or ADR-side decision. This ADR records
+*criterion 5 closure*, which is one of seven criteria.
+Whether the user chooses to cut graduation as 0.0.33 /
+0.1.0 / another number / not at all, and when, is outside
+this ADR's scope.
 
 ## Alternatives considered
 
