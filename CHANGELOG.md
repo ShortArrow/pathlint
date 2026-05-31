@@ -16,6 +16,31 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.29] — 2026-05-31
+
+Step 5a of the 0.0.25-0.1.0 roadmap. **Additive-only docs release**
+(no `### Breaking` section). First entry in the
+two-consecutive-additive-release window that graduation criterion 1
+needs after 0.0.27 / 0.0.28 both shipped a BREAKING change.
+
+### Changed
+
+- `docs/SECURITY.md` refreshed for the 0.0.27 `*Deps` env-injection
+  surface and the 0.0.28 `Attribution` split. Trust-boundary table
+  now lists `Attribution.provenance_raw` overlay (Windows
+  `--target process`) and the `CommonDeps::env_lookup` closure
+  (caller-supplied at the lib boundary). Sanitisation pointers
+  table gains entries for `Attribution::effective_raw_for_user_intent`
+  and `CommonDeps::production` so the single-place reuse rule is
+  visible for both 0.0.28 additions.
+
+### Fixed (docs drift)
+
+- N/A this release — PRD §11 CLI surface table and
+  `docs/ARCHITECTURE.md` Repo map / 10-module table already matched
+  the implementation as of 0.0.28; both were re-verified during
+  0.0.29 preparation and required no edits.
+
 ## [0.0.28] — 2026-05-24
 
 Step 4 of the 0.0.25-0.1.0 roadmap, and the last intentionally
@@ -635,7 +660,14 @@ Earlier releases predate this changelog format and are not
 re-tabulated here. The git history (`git log --oneline`) and tags
 `v0.0.x` are the canonical record.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.22...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.29...HEAD
+[0.0.29]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.29
+[0.0.28]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.28
+[0.0.27]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.27
+[0.0.26]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.26
+[0.0.25]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.25
+[0.0.24]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.24
+[0.0.23]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.23
 [0.0.22]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.22
 [0.0.21]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.21
 [0.0.20]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.20
