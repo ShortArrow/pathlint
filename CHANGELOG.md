@@ -16,6 +16,54 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.32] — 2026-05-31
+
+**Additive-only docs release** (no `### Breaking` section).
+Fourth consecutive additive release after 0.0.29 / 0.0.30 /
+0.0.31; graduation criterion 1's counter now reads 4.
+
+This release closes **graduation criterion 5** (ADR completeness)
+by backfilling 11 new ADRs for the 7 pre-ADR-system releases
+(0.0.14 / 0.0.15 / 0.0.16 / 0.0.17 / 0.0.19 / 0.0.21 / 0.0.22)
+whose CHANGELOG `### Breaking` sections previously lacked ADR
+links. ADR-0013's Criterion 5 section (which recorded
+"Partially satisfied" at the 0.0.31 snapshot) is now
+superseded by ADR-0025; ADR-0013's frontmatter gains a
+one-line additive Status pointer per README §Supersession.
+
+**Release cut beyond 0.0.32 (number, timing, whether to cut
+0.1.0) remains user judgement** — this release continues
+ADR-0013's separation of "criteria recording" from
+"graduation cut".
+
+### Added
+
+- 11 new ADRs covering pre-ADR-system Breaking releases:
+  - [ADR-0014](docs/decisions/0014-source-naming-convention.md) (Cat 7): Source naming convention — `<provenance>_<scope>` snake_case + `os_baseline_*` family split (0.0.14)
+  - [ADR-0015](docs/decisions/0015-provenance-wrapper-installer-rename.md) (Cat 1): `Provenance::WrapperInstaller` generalises from mise-only naming (0.0.14)
+  - [ADR-0016](docs/decisions/0016-json-wire-shape-kind-discriminator.md) (Cat 7): JSON wire shape — every union uses top-level `kind` discriminator + `*.schema.json` `required` honesty (0.0.14 / 0.0.15 / 0.0.17 bundled)
+  - [ADR-0017](docs/decisions/0017-lib-surface-nine-modules.md) (Cat 1, +2/+8): Lib surface narrowed to 9 supported `pub mod` + `#[doc(hidden)] pub` middle tier (0.0.15 / 0.0.17 bundled)
+  - [ADR-0018](docs/decisions/0018-resolver-outcome-type-simplification.md) (Cat 1): Resolver `Option<PathBuf>` + unit-variant `Status` with `Outcome::reason` (0.0.16 / 0.0.17 bundled)
+  - [ADR-0019](docs/decisions/0019-cli-alias-deprecation-runway.md) (Cat 5, +8): 6-release deprecation runway for CLI renames (`where`/`--rules`, 0.0.14 → 0.0.20 warning → 0.0.22 removal)
+  - [ADR-0020](docs/decisions/0020-doctor-analyze-closure-tuple.md) (Cat 1, +3): `doctor::analyze` open-ended closure tuple as new detectors land (0.0.19 / 0.0.21; superseded by ADR-0007 as of 0.0.27)
+  - [ADR-0021](docs/decisions/0021-build-rs-aggregate-violations.md) (Cat 8): `build.rs` aggregates plugin referential-integrity violations into one failure (0.0.14)
+  - [ADR-0022](docs/decisions/0022-depends-on-descriptive-only.md) (Cat 5): `depends_on` relation is descriptive-only, no runtime effect on detectors (0.0.14)
+  - [ADR-0023](docs/decisions/0023-catalog-version-reserved-for-embedded.md) (Cat 7): `catalog_version` is reserved for the embedded catalog; user TOML rejection (0.0.14 post-parse → 0.0.15 structural)
+  - [ADR-0024](docs/decisions/0024-color-flag-activation.md) (Cat 8): `--color` flag activation — parsed-but-ignored → effective (0.0.17)
+- [ADR-0025](docs/decisions/0025-criterion-5-closure.md) (Cat 8): graduation criterion 5 fully satisfied; supersedes ADR-0013 §Criterion 5. Records the 11-of-11 (release × ≥1 ADR) audit matrix.
+
+### Changed
+
+- [ADR-0013](docs/decisions/0013-graduation-criteria-record.md) frontmatter gains additive Status pointer: "Criterion 5 section superseded by ADR-0025 as of 0.0.32". Body unchanged per README §Supersession.
+- `docs/decisions/README.md` index gains 12 new ADR rows (timeline view) plus category-view pointers for Cat 1 (4 new), Cat 5 (2 new), Cat 7 (3 new), Cat 8 (3 new).
+- CHANGELOG entries for 0.0.14 / 0.0.15 / 0.0.16 / 0.0.17 / 0.0.19 / 0.0.21 / 0.0.22 each gain `*(See ADR-NNNN.)*` parentheticals on their Breaking bullets, mirroring the existing `*(Alias removed in 0.0.22.)*` style.
+
+### Notes
+
+- **Graduation criterion status as of 0.0.32**: criterion 5 transitions from ⚠️ Partially satisfied (ADR-0013) to ✅ Fully satisfied (ADR-0025). Criteria 1 / 2 / 3 / 4 / 6 / 7 remain as recorded in ADR-0013 (criteria 4 and 7 carry M caveats from the 2026-05-31 codex audit, non-blocking).
+- ADR-0000's Known ADR backlog table is **unchanged** — that table records the backlog state at the time of the ADR system's introduction (0.0.25). New ADRs in this release are recorded retroactively in their per-ADR `Release:` metadata.
+- No source code change (`src/` untouched). All work is in `docs/`, `CHANGELOG.md`, and `Cargo.toml`.
+
 ## [0.0.31] — 2026-05-31
 
 Step 5c of the 0.0.25-0.1.0 roadmap. **Additive-only docs release**
@@ -511,7 +559,7 @@ ADRs from their `### Breaking` entries.
   **Migration**: rename to `pathlint trace` and `--config`.
   Scripts that grepped for the old spelling on the warning line
   in stderr can drop the grep entirely — the warning is gone with
-  the alias.
+  the alias. *(See [ADR-0019](docs/decisions/0019-cli-alias-deprecation-runway.md).)*
 
 ### Changed
 
@@ -540,7 +588,7 @@ ADRs from their `### Breaking` entries.
   in `pathlint::doctor::is_writable_dir_real` is the reference;
   Unix checks the others-write bit, Windows reads the DACL via
   `GetEffectiveRightsFromAclW`). `analyze_real` is unchanged for
-  CLI-only callers.
+  CLI-only callers. *(See [ADR-0020](docs/decisions/0020-doctor-analyze-closure-tuple.md); superseded by ADR-0007 as of 0.0.27.)*
 
 ### Added
 
@@ -604,7 +652,7 @@ ADRs from their `### Breaking` entries.
   executables in each PATH dir. Embedders that built their own
   resolver loop must add the closure (production wiring in
   `pathlint::doctor::fs_list_dir_real` is the reference).
-  `analyze_real` is unchanged for CLI-only callers.
+  `analyze_real` is unchanged for CLI-only callers. *(See [ADR-0020](docs/decisions/0020-doctor-analyze-closure-tuple.md); superseded by ADR-0007 as of 0.0.27.)*
 
 ### Added
 
@@ -667,36 +715,36 @@ ADRs from their `### Breaking` entries.
   `{"kind": "ng_not_executable", "reason": "..."}` instead of
   `{"kind": {"ng_not_executable": "..."}}`. Consumers branching
   on `kind` as a string can finally do so without a fallback for
-  the two payload-carrying variants.
+  the two payload-carrying variants. *(See [ADR-0018](docs/decisions/0018-resolver-outcome-type-simplification.md).)*
 - **`pathlint::cli` and `pathlint::run` removed from the lib.**
   Both modules used to be `#[doc(hidden)] pub mod` so the binary
   in `src/main.rs` could reach across the crate boundary. They
   now live in `src/bin/pathlint/` and are binary-only. Anything
   embedding pathlint as a library had no business calling them;
-  they are gone from the surface.
+  they are gone from the surface. *(See [ADR-0017](docs/decisions/0017-lib-surface-nine-modules.md).)*
 - **Lib internal modules behind `#[doc(hidden)] pub`.**
   `catalog_view`, `format`, `init`, `path_source`, `report`,
   `resolve` shifted from `pub(crate)` to `#[doc(hidden)] pub` so
   the binary at `src/bin/pathlint/` can call them across the
-  lib/bin boundary. Same compromise cli/run had pre-0.0.17.
+  lib/bin boundary. Same compromise cli/run had pre-0.0.17. *(See [ADR-0017](docs/decisions/0017-lib-surface-nine-modules.md).)*
 - **`check.schema.json` `required` no longer lists
   `prefer` / `avoid` / `reason` / `diagnosis` / `resolved`.** The
   runtime applied `skip_serializing_if` on these fields, but the
   schema flagged them as required. The schema is now honest about
   what the wire form actually emits. JSON validators that assumed
-  those fields were always present must accept their absence.
+  those fields were always present must accept their absence. *(See [ADR-0016](docs/decisions/0016-json-wire-shape-kind-discriminator.md).)*
 - **Shell quoting moved to internal `shell_quote` module.**
   Pre-0.0.17 `pathlint::format::quote_for` etc. were public. They
   were never advertised as supported and are now `pub(crate)` in
   `pathlint::shell_quote`. Embedders should read the
-  already-quoted string from `trace --json uninstall.command`.
+  already-quoted string from `trace --json uninstall.command`. *(See [ADR-0017](docs/decisions/0017-lib-surface-nine-modules.md).)*
 - **`--color` flag is now effective.** Pre-0.0.17 the global
   `--color {auto,always,never}` flag was parsed by clap and
   silently ignored. As of 0.0.17 it actually colourises status
   tags in the human output (and respects `--color never`). Output
   of pipelines that captured `pathlint check` stdout may now
   contain ANSI escapes when the captured stream is also pathlint's
-  stdout and `--color always` is set.
+  stdout and `--color always` is set. *(See [ADR-0024](docs/decisions/0024-color-flag-activation.md).)*
 
 ## [0.0.16] — 2026-05-05
 
@@ -707,12 +755,12 @@ ADRs from their `### Breaking` entries.
   returning `Option<std::path::PathBuf>`, not the internal
   `Resolution { full_path: PathBuf }` wrapper. Embedders that
   built their own resolver closures must drop the wrapper:
-  `Some(Resolution { full_path: pb })` → `Some(pb)`.
+  `Some(Resolution { full_path: pb })` → `Some(pb)`. *(See [ADR-0018](docs/decisions/0018-resolver-outcome-type-simplification.md).)*
 - **`Resolution` type removed.** `pathlint::resolve::resolve()`
   now returns `Option<PathBuf>` directly. Internal-only impact —
   the type was never on the public surface, but downstream
   embedders accessing pathlint via `git` dependencies might
-  notice.
+  notice. *(See [ADR-0018](docs/decisions/0018-resolver-outcome-type-simplification.md).)*
 
 ## [0.0.15] — 2026-05-05
 
@@ -722,18 +770,18 @@ ADRs from their `### Breaking` entries.
   array element now uses `kind` (matches doctor / trace / sort /
   catalog relations) instead of the pre-0.0.15 `status`. The
   values themselves are unchanged. **Migration**: any consumer
-  that branched on `.status` must read `.kind` instead.
+  that branched on `.status` must read `.kind` instead. *(See [ADR-0016](docs/decisions/0016-json-wire-shape-kind-discriminator.md).)*
 - **Lib public surface narrowed to nine supported modules.**
   `config`, `lint`, `trace`, `sort`, `doctor`, `catalog`,
   `source_match`, `os_detect`, `expand`. Internals are
   `pub(crate)` or `#[doc(hidden)] pub` (the latter only for
   `cli` / `run` reachable from `src/main.rs`). Embedders relying
   on previously-public modules (e.g. `format`, `report`) must
-  migrate.
+  migrate. *(See [ADR-0017](docs/decisions/0017-lib-surface-nine-modules.md).)*
 - **UserConfig and the embedded catalog file are distinct types.**
   A user `pathlint.toml` declaring `catalog_version` is now a
   structural parse error (deny_unknown_fields) instead of the
-  post-parse error 0.0.14 introduced.
+  post-parse error 0.0.14 introduced. *(See [ADR-0023](docs/decisions/0023-catalog-version-reserved-for-embedded.md).)*
 
 ## [0.0.14] — 2026-05-05
 
@@ -741,14 +789,14 @@ ADRs from their `### Breaking` entries.
 
 - **`pathlint where` → `pathlint trace`.** `where` remains as a
   clap visible alias for the rest of 0.0.x. *(Alias removed in
-  0.0.22.)*
+  0.0.22.)* *(See [ADR-0019](docs/decisions/0019-cli-alias-deprecation-runway.md).)*
 - **`--rules` → `--config`.** `--rules` remains as a visible
-  alias for the rest of 0.0.x. *(Alias removed in 0.0.22.)*
+  alias for the rest of 0.0.x. *(Alias removed in 0.0.22.)* *(See [ADR-0019](docs/decisions/0019-cli-alias-deprecation-runway.md).)*
 - **Source rename, no aliases.** `WindowsApps` → `windows_apps`.
   `system_windows` / `system_macos` / `system_linux` →
   `os_baseline_windows` / `os_baseline_macos` /
   `os_baseline_linux`. New `os_baseline_linux_sbin` for
-  `/usr/sbin`. **Migration**:
+  `/usr/sbin`. *(See [ADR-0014](docs/decisions/0014-source-naming-convention.md).)* **Migration**:
   ```sh
   sed -i \
     -e 's/WindowsApps/windows_apps/g' \
@@ -760,25 +808,25 @@ ADRs from their `### Breaking` entries.
 - **`trace --json` shape change.** Top-level `kind` discriminator
   (`"found"` / `"not_found"`) replaces the old `found: bool`
   field. JSON consumers that branched on `found` must switch to
-  `kind`.
+  `kind`. *(See [ADR-0016](docs/decisions/0016-json-wire-shape-kind-discriminator.md).)*
 - **`Provenance::MiseInstallerPlugin` → `Provenance::WrapperInstaller`.**
   Visible in `trace --json` as
   `provenance.kind = "wrapper_installer"`. `installer` and
-  `plugin_segment` payload fields are unchanged.
+  `plugin_segment` payload fields are unchanged. *(See [ADR-0015](docs/decisions/0015-provenance-wrapper-installer-rename.md).)*
 - **`sort --dry-run` is opt-in.** `pathlint sort` without
   `--dry-run` exits 2 with a message naming the flag. A future
   `--apply` (post-1.0) would override this; today the only mode
-  shipped is `--dry-run`.
+  shipped is `--dry-run`. *(See [ADR-0009](docs/decisions/0009-read-only-stance.md).)*
 - **`catalog_version = N` in user `pathlint.toml` is rejected.**
   The field was always reserved for the embedded catalog;
   `Config::from_path` now exits 2 if a user TOML sets it. (0.0.15
-  promoted this from a post-parse to a structural error.)
+  promoted this from a post-parse to a structural error.) *(See [ADR-0023](docs/decisions/0023-catalog-version-reserved-for-embedded.md).)*
 - **`depends_on` is descriptive only.** It surfaces in
   `pathlint catalog relations` but does not affect doctor /
-  trace / sort behaviour.
+  trace / sort behaviour. *(See [ADR-0022](docs/decisions/0022-depends-on-descriptive-only.md).)*
 - **`build.rs` aggregates referential integrity violations.** CI
   surfaces every offending plugin in one failure instead of
-  bailing on the first.
+  bailing on the first. *(See [ADR-0021](docs/decisions/0021-build-rs-aggregate-violations.md).)*
 
 ## Releases prior to 0.0.14
 
@@ -786,7 +834,8 @@ Earlier releases predate this changelog format and are not
 re-tabulated here. The git history (`git log --oneline`) and tags
 `v0.0.x` are the canonical record.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.31...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.32...HEAD
+[0.0.32]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.32
 [0.0.31]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.31
 [0.0.30]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.30
 [0.0.29]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.29
