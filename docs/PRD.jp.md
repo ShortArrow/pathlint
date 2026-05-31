@@ -132,8 +132,11 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
    済み。
 
 1, 2, 5, 6, 7 は機械的 (countable) gate、 3 と 4 は narrative
-gate。 0.1.0 を切る瞬間の verification は ADR-0009 (planned) に
-書く。
+gate。 graduation criteria の audit を通った瞬間の verification は
+ADR (planned) として記録する。 番号はその時点で他に何が
+shipped 済かに依存する (ADR-0009 から ADR-0011 は 0.0.30 で別件
+backlog drainage に割当済、 verification record は後の番号に
+なる)。
 
 ## 4. 非ゴール
 

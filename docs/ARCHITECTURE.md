@@ -177,7 +177,13 @@ CI runs `cargo test` on Ubuntu + macOS + Windows. The
 (version + publish_crates inputs):
 
 1. **prepare**: bump `Cargo.toml` + `Cargo.lock`, commit
-   `chore: release X.Y.Z`, tag `vX.Y.Z`, push to `main`.
+   `chore: release X.Y.Z`, tag `vX.Y.Z`, push to `main`. The
+   bump is idempotent — if `Cargo.toml` is already at the
+   requested version (e.g. a feature PR pre-bumped it to pin
+   `tests/help_contract.rs`), `cargo set-version` is a no-op
+   and the `chore: release` commit is skipped, but `HEAD` still
+   gets tagged. See
+   [ADR-0010](decisions/0010-release-workflow-bump-skip.md).
 2. **build × 4 archs**: `x86_64-unknown-linux-gnu`,
    `x86_64-pc-windows-msvc`, `x86_64-apple-darwin`,
    `aarch64-apple-darwin`. Each produces an archive uploaded as
