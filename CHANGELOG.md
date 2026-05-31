@@ -59,6 +59,45 @@ runtime behaviour change.
   backlog table reduced from 10 to 7 rows. Drained entries now
   carry pointers to the new ADRs they shipped as.
 
+### Fixed (docs drift)
+
+- `docs/PRD.md` §3.1 / `docs/PRD.jp.md` §3.1 no longer claim
+  "ADR-0009 (planned) will be the graduation verification
+  record" — ADR-0009 in this release is the Read-only stance,
+  so the graduation verification record is left without a
+  reserved number and will land at whatever number is next when
+  the criteria audit passes.
+- `docs/RELEASE.md`, `docs/RELEASE.jp.md`, and
+  `docs/ARCHITECTURE.md` release-pipeline descriptions now
+  point at ADR-0010 for the idempotent `cargo set-version` /
+  conditional `chore: release` commit behaviour (previously
+  described as always bumping + always committing).
+
+### Notes (codex 6-axis audit re-run, 2026-05-31)
+
+- **0 H findings** — graduation criterion 7 ("no open H
+  severity codex audit findings") remains satisfied after the
+  0.0.28 / 0.0.29 / 0.0.30 work.
+- **3 M findings** carried forward to be evaluated in the next
+  audit cycle:
+  - TDD: the "PathEntry has no `provenance_raw` field" invariant
+    is asserted in a comment in `tests/public_api.rs` but not
+    pinned by a compile-fail test.
+  - FP: `std::env::var` is still called directly inside the lib
+    from `source_match::find` / `validate_sources` / `names_only`
+    wrappers, `expand::expand_and_normalize`, `resolve::split_path`
+    / `resolve::pathext_list`, and `path_source::read_path`
+    helpers. The main `doctor` / `lint` / `trace` / `sort`
+    call graphs flow through `CommonDeps::env_lookup`; only
+    the wrappers and infra boundaries still read the live env.
+  - Security: `SECURITY.md` describes the `CommonDeps::env_lookup`
+    closure as trusted in-process code but does not catalogue
+    the bytes that production lookups return (`PATHEXT`, `HOME`,
+    `USERPROFILE`, source-path expansion targets) as untrusted
+    inputs in their own right.
+- **2 L Docs findings** addressed in this release (see
+  "Fixed (docs drift)" above).
+
 ## [0.0.29] — 2026-05-31
 
 Step 5a of the 0.0.25-0.1.0 roadmap. **Additive-only docs release**

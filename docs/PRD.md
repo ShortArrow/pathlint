@@ -146,8 +146,12 @@ licence that this gate retires.
    longer applies.
 
 Criteria 1, 2, 5, 6, 7 are mechanical (countable). 3 and 4 are
-narrative gates. ADR-0009 (planned) will be the verification
-record at the moment 0.1.0 cuts.
+narrative gates. The graduation verification record is itself an
+ADR (planned), written at the moment the criteria audit passes;
+its number depends on what else has shipped by then (ADR-0009
+through ADR-0011 were assigned to other backlog drainage entries
+in 0.0.30, so the verification record will land at a later
+number).
 
 ## 4. Non-goals
 

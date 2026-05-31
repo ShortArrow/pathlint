@@ -47,9 +47,14 @@ Then:
 
 The workflow will:
 
-1. bump `Cargo.toml` and refresh `Cargo.lock`,
+1. bump `Cargo.toml` and refresh `Cargo.lock` (idempotent: if
+   `Cargo.toml` already matches the input version, `cargo
+   set-version` is a no-op and the `chore: release` commit is
+   skipped — see
+   [ADR-0010](decisions/0010-release-workflow-bump-skip.md)),
 2. run fmt / clippy / test / package,
-3. commit `chore: release X.Y.Z`, tag `vX.Y.Z`, push to `main`,
+3. commit `chore: release X.Y.Z` (or skip if no diff) and tag
+   `vX.Y.Z`, push to `main`,
 4. cross-build for Linux / macOS / Windows,
 5. create a GitHub Release with auto-generated notes,
 6. (if asked) publish to crates.io.

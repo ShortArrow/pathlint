@@ -47,10 +47,14 @@ opt-in。
 
 ワークフローは以下を順に行う：
 
-1. `Cargo.toml` を bump し、`Cargo.lock` を更新する。
+1. `Cargo.toml` を bump し、`Cargo.lock` を更新する (idempotent:
+   入力 version と `Cargo.toml` が既に一致していれば `cargo
+   set-version` は no-op、 `chore: release` commit は skip
+   される。 詳細は
+   [ADR-0010](decisions/0010-release-workflow-bump-skip.md))。
 2. fmt / clippy / test / package を走らせる。
-3. `chore: release X.Y.Z` をコミットし、`vX.Y.Z` を tag、
-   `main` に push する。
+3. `chore: release X.Y.Z` をコミットし (差分が無ければ skip)、
+   `vX.Y.Z` を tag、 `main` に push する。
 4. Linux / macOS / Windows 向けにクロスビルドする。
 5. リリースノートを自動生成して GitHub Release を作る。
 6. （指定された場合のみ）crates.io に公開する。
