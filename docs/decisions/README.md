@@ -29,7 +29,19 @@ directory belongs to one or more of those categories.
 | [0010](0010-release-workflow-bump-skip.md) | Release workflow tolerates an already-bumped `Cargo.toml` | 8 | Accepted | 0.0.24 (recorded retroactively in 0.0.30) |
 | [0011](0011-normalize-substring-match-policy.md) | `expand::normalize` policy (case-insensitive + slash unify, substring match without canonicalisation) | 3 | Accepted | 0.0.x (recorded retroactively in 0.0.30) |
 | [0012](0012-schemars-1-0-deferred.md) | Defer schemars 1.0 migration past 0.0.x graduation | 6 | Accepted | 0.0.31 |
-| [0013](0013-graduation-criteria-record.md) | Graduation criteria satisfaction record (0.0.31 snapshot) | 8 | Accepted | 0.0.31 |
+| [0013](0013-graduation-criteria-record.md) | Graduation criteria satisfaction record (0.0.31 snapshot) | 8 | Accepted (Criterion 5 section superseded by ADR-0025) | 0.0.31 |
+| [0014](0014-source-naming-convention.md) | Source naming convention — `<provenance>_<scope>` + `os_baseline_*` split | 7 | Accepted | 0.0.14 (recorded retroactively in 0.0.32) |
+| [0015](0015-provenance-wrapper-installer-rename.md) | `Provenance::WrapperInstaller` generalises from mise-only naming | 1 | Accepted | 0.0.14 (recorded retroactively in 0.0.32) |
+| [0016](0016-json-wire-shape-kind-discriminator.md) | JSON wire shape — every union uses top-level `kind` + schema `required` honesty | 7 | Accepted | 0.0.14 / 0.0.15 / 0.0.17 (recorded retroactively in 0.0.32) |
+| [0017](0017-lib-surface-nine-modules.md) | Lib surface narrowed to 9 supported `pub mod` + `#[doc(hidden)] pub` middle tier | 1 (+2, +8) | Accepted | 0.0.15 / 0.0.17 (recorded retroactively in 0.0.32) |
+| [0018](0018-resolver-outcome-type-simplification.md) | Resolver `Option<PathBuf>` + unit-variant `Status` with `Outcome::reason` | 1 | Accepted | 0.0.16 / 0.0.17 (recorded retroactively in 0.0.32) |
+| [0019](0019-cli-alias-deprecation-runway.md) | 6-release deprecation runway for CLI renames (`where`/`--rules`) | 5 (+8) | Accepted | 0.0.14 → 0.0.22 (recorded retroactively in 0.0.32) |
+| [0020](0020-doctor-analyze-closure-tuple.md) | `doctor::analyze` open-ended closure tuple as new detectors land | 1 (+3) | Accepted (superseded by ADR-0007 as of 0.0.27) | 0.0.19 / 0.0.21 (recorded retroactively in 0.0.32) |
+| [0021](0021-build-rs-aggregate-violations.md) | `build.rs` aggregates plugin referential-integrity violations | 8 | Accepted | 0.0.14 (recorded retroactively in 0.0.32) |
+| [0022](0022-depends-on-descriptive-only.md) | `depends_on` relation is descriptive-only, no runtime effect | 5 | Accepted | 0.0.14 (recorded retroactively in 0.0.32) |
+| [0023](0023-catalog-version-reserved-for-embedded.md) | `catalog_version` is reserved for the embedded catalog | 7 | Accepted | 0.0.14 / 0.0.15 (recorded retroactively in 0.0.32) |
+| [0024](0024-color-flag-activation.md) | `--color` flag activation (parsed-but-ignored → effective) | 8 | Accepted | 0.0.17 (recorded retroactively in 0.0.32) |
+| [0025](0025-criterion-5-closure.md) | Graduation criterion 5 fully satisfied (11/11 Breaking releases ADR-linked) | 8 | Accepted (supersedes ADR-0013 §Criterion 5) | 0.0.32 |
 
 ## Index by category (topical view)
 
@@ -45,6 +57,10 @@ is **not** a universal ADR hierarchy.
 - [ADR-0006](0006-source-match-env-closure-injection.md) — secondary (Added `_with` variants on `expand` / `source_match`)
 - [ADR-0007](0007-deps-bag-layered.md) — secondary (4 BREAKING signature changes on `analyze` / `evaluate` / `locate` / `sort_path`)
 - [ADR-0008](0008-attribution-type-split.md) — split `Attribution` out of `PathEntry`; entry-list parameters now take `&[Attribution]`
+- [ADR-0015](0015-provenance-wrapper-installer-rename.md) — `Provenance::WrapperInstaller` generalises from mise-only naming
+- [ADR-0017](0017-lib-surface-nine-modules.md) — Lib surface narrowed to 9 supported `pub mod` + `#[doc(hidden)] pub` middle tier
+- [ADR-0018](0018-resolver-outcome-type-simplification.md) — Resolver `Option<PathBuf>` + unit-variant `Status` with `Outcome::reason`
+- [ADR-0020](0020-doctor-analyze-closure-tuple.md) — `doctor::analyze` open-ended closure tuple (superseded by ADR-0007)
 
 ### 2. Module boundary / dependency direction
 
@@ -67,6 +83,8 @@ is **not** a universal ADR hierarchy.
 
 - [ADR-0004](0004-process-target-registry-provenance-overlay.md) — secondary (Windows `--target process` semantics)
 - [ADR-0009](0009-read-only-stance.md) — pathlint is read-only on `PATH`, registry, and dotfiles
+- [ADR-0019](0019-cli-alias-deprecation-runway.md) — 6-release deprecation runway for CLI renames
+- [ADR-0022](0022-depends-on-descriptive-only.md) — `depends_on` relation is descriptive-only
 
 ### 6. External dependency
 
@@ -74,14 +92,19 @@ is **not** a universal ADR hierarchy.
 
 ### 7. Persistence / data format
 
-*(none yet — JSON schema discriminator rename in 0.0.15 predated the ADR system; covered by its CHANGELOG entry)*
+- [ADR-0014](0014-source-naming-convention.md) — Source naming convention + `os_baseline_*` split
+- [ADR-0016](0016-json-wire-shape-kind-discriminator.md) — JSON wire shape uses top-level `kind` discriminator + schema `required` honesty
+- [ADR-0023](0023-catalog-version-reserved-for-embedded.md) — `catalog_version` reserved for embedded catalog (user TOML rejection)
 
 ### 8. Process / governance
 
 - [ADR-0000](0000-adr-categories.md) — this index, ADR categories and application criteria
 - [ADR-0005](0005-pre-1-0-breaking-policy.md) — pre-1.0 BREAKING licence
 - [ADR-0010](0010-release-workflow-bump-skip.md) — release workflow tolerates an already-bumped `Cargo.toml` (PR #22 formalised)
-- [ADR-0013](0013-graduation-criteria-record.md) — graduation criteria satisfaction record (0.0.31 snapshot)
+- [ADR-0013](0013-graduation-criteria-record.md) — graduation criteria satisfaction record (0.0.31 snapshot; Criterion 5 superseded)
+- [ADR-0021](0021-build-rs-aggregate-violations.md) — `build.rs` aggregates plugin referential-integrity violations
+- [ADR-0024](0024-color-flag-activation.md) — `--color` flag activation
+- [ADR-0025](0025-criterion-5-closure.md) — graduation criterion 5 fully satisfied (supersedes ADR-0013 §Criterion 5)
 
 ## When to write an ADR
 

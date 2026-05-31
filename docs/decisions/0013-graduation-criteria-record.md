@@ -1,6 +1,6 @@
 # ADR-0013: graduation criteria satisfaction record (0.0.31 snapshot)
 
-- **Status**: Accepted
+- **Status**: Accepted (Criterion 5 section superseded by [ADR-0025](0025-criterion-5-closure.md) as of 0.0.32; other sections unchanged)
 - **Date**: 2026-05-31
 - **Release**: 0.0.31
 - **Category**: 8. Process / governance
