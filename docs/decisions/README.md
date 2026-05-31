@@ -25,6 +25,9 @@ directory belongs to one or more of those categories.
 | [0006](0006-source-match-env-closure-injection.md) | `_with` env-lookup closures on `expand_and_normalize` and `source_match` | 3 (+1) | Accepted | 0.0.26 |
 | [0007](0007-deps-bag-layered.md) | layered `*Deps` carriers + per-function production wrappers | 2 (+1) | Accepted | 0.0.27 |
 | [0008](0008-attribution-type-split.md) | split `Attribution` out of `PathEntry` | 1 (+2) | Accepted (closes ADR-0001 & 0004 Follow-up) | 0.0.28 |
+| [0009](0009-read-only-stance.md) | Read-only stance (no PATH / registry / dotfiles mutation) | 5 (+4) | Accepted | 0.0.x (recorded retroactively in 0.0.30) |
+| [0010](0010-release-workflow-bump-skip.md) | Release workflow tolerates an already-bumped `Cargo.toml` | 8 | Accepted | 0.0.24 (recorded retroactively in 0.0.30) |
+| [0011](0011-normalize-substring-match-policy.md) | `expand::normalize` policy (case-insensitive + slash unify, substring match without canonicalisation) | 3 | Accepted | 0.0.x (recorded retroactively in 0.0.30) |
 
 ## Index by category (topical view)
 
@@ -50,15 +53,18 @@ is **not** a universal ADR hierarchy.
 
 - [ADR-0002](0002-from-raw-closure-injection.md) — env injection via closure on `PathEntry::from_raw`
 - [ADR-0006](0006-source-match-env-closure-injection.md) — env injection extended to `expand::expand_and_normalize_with` and `source_match::*_with`
+- [ADR-0011](0011-normalize-substring-match-policy.md) — `expand::normalize` case-insensitive + slash unify; substring match without canonicalisation
 
 ### 4. Trust / security boundary
 
 - [ADR-0001](0001-pathentry-as-tenth-public-module.md) — secondary (registry decode boundary)
 - [ADR-0003](0003-reg-expand-sz-raw-decode.md) — `decode_reg_string` lossy UTF-16 + type reject
+- [ADR-0009](0009-read-only-stance.md) — secondary (no host mutation removes one whole attack surface from the trust boundary)
 
 ### 5. Architectural style
 
 - [ADR-0004](0004-process-target-registry-provenance-overlay.md) — secondary (Windows `--target process` semantics)
+- [ADR-0009](0009-read-only-stance.md) — pathlint is read-only on `PATH`, registry, and dotfiles
 
 ### 6. External dependency
 
@@ -72,6 +78,7 @@ is **not** a universal ADR hierarchy.
 
 - [ADR-0000](0000-adr-categories.md) — this index, ADR categories and application criteria
 - [ADR-0005](0005-pre-1-0-breaking-policy.md) — pre-1.0 BREAKING licence
+- [ADR-0010](0010-release-workflow-bump-skip.md) — release workflow tolerates an already-bumped `Cargo.toml` (PR #22 formalised)
 
 ## When to write an ADR
 

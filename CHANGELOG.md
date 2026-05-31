@@ -16,6 +16,49 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.30] — 2026-05-31
+
+Step 5b of the 0.0.25-0.1.0 roadmap. **Additive-only docs release**
+(no `### Breaking` section). Second consecutive additive release
+after 0.0.29 — graduation criterion 1's "≥ 2 consecutive releases
+without `### Breaking`" counter now reads 2.
+
+ADR backlog drainage: three of the ten Known ADR backlog rows in
+[ADR-0000](docs/decisions/0000-adr-categories.md) now have
+dedicated ADRs, dropping the backlog to seven. The drainage
+targets historical decisions that already shipped (read-only
+stance since 0.0.1, release workflow bump-skip since PR #22 /
+0.0.24, `expand::normalize` policy since 0.0.x baseline) — no
+runtime behaviour change.
+
+### Added
+
+- [ADR-0009](docs/decisions/0009-read-only-stance.md) — pathlint
+  is read-only on `PATH`, registry, and dotfiles. Category 5
+  (architectural style); records the stance that has been in
+  force since 0.0.1 and the four rejected alternatives (ship
+  `sort --apply` from day one; opt-in `--write`; separate
+  `pathlint-apply` binary; let `init` overwrite without `--force`).
+- [ADR-0010](docs/decisions/0010-release-workflow-bump-skip.md) —
+  release workflow tolerates an already-bumped `Cargo.toml`.
+  Category 8 (process / governance); records PR #22's 0.0.24
+  fix that lets bump-in-feature-PR releases land without a
+  separate `chore: release` commit.
+- [ADR-0011](docs/decisions/0011-normalize-substring-match-policy.md) —
+  `expand::normalize` is case-insensitive + slash-unifying;
+  substring match without canonicalisation. Category 3
+  (cross-cutting concern); records the policy every path
+  comparison goes through and the five rejected alternatives
+  (canonicalize both sides; structural component compare;
+  locale-aware case folding; slash-only without case folding;
+  tokenise + trie).
+
+### Changed
+
+- [ADR-0000](docs/decisions/0000-adr-categories.md) Known ADR
+  backlog table reduced from 10 to 7 rows. Drained entries now
+  carry pointers to the new ADRs they shipped as.
+
 ## [0.0.29] — 2026-05-31
 
 Step 5a of the 0.0.25-0.1.0 roadmap. **Additive-only docs release**
@@ -660,7 +703,8 @@ Earlier releases predate this changelog format and are not
 re-tabulated here. The git history (`git log --oneline`) and tags
 `v0.0.x` are the canonical record.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.29...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.30...HEAD
+[0.0.30]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.30
 [0.0.29]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.29
 [0.0.28]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.28
 [0.0.27]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.27

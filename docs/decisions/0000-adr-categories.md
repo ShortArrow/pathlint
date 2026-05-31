@@ -262,16 +262,20 @@ public symbols must each link an ADR by graduation time).
 
 | Decision | Category | First shipped | Notes |
 |---|---|---|---|
-| Read-only stance (no PATH / registry / dotfiles mutation) | 5 (architectural style) | 0.0.1 | Documented in PRD §4; an ADR would crystallise the rejected `sort --apply` line and serve as the anchor for any future "stay read-only" call. |
 | Public / internal module split (10 `pub mod` + `#[doc(hidden)] pub` + `pub(crate)`) | 2 (module boundary) | 0.0.17 | The boundary was re-shuffled in 0.0.17 (`cli` / `run` moved binary-side); an ADR would record why the `#[doc(hidden)] pub` middle tier exists. |
 | Compile-time catalog embed (`build.rs` + `include_str!` + `embedded_catalog.toml`) | 7 (persistence / data format) | 0.0.x baseline | Rejected runtime catalog discovery; an ADR would record the trade-off (vendor lock vs distribution-time freshness). |
-| `expand::normalize` substring-match policy (case-insensitive + slash unify) | 3 (cross-cutting concern) | 0.0.x baseline | Every detector that compares paths goes through this; an ADR would pin the policy and record why path-canonicalize was rejected. |
 | `winreg` crate adoption | 6 (external dependency) | 0.0.x baseline | Listed in ADR-0003 Context but no dedicated dependency-policy ADR. |
 | `Config::from_path` DoS guards (16 MiB cap + symlink hop check) | 4 (trust / security) | 0.0.11 | Listed in SECURITY.md but no dedicated ADR; the alternatives (no cap, multi-hop allowed) deserve recording. |
 | `strip_control_chars` reach on every human renderer | 4 (trust / security) | 0.0.11 | Listed in SECURITY.md; the policy ("ASCII control bytes → `?`, preserve `\t`/`\n`") would deserve an ADR that justifies that specific byte range. |
 | `pathlint trace` provenance + mise plugin attribution heuristic | 5 (architectural style) | 0.0.5 | Recorded in PRD §16 Resolved; an ADR would capture the rejected design ("treat plugin segment as a real source label"). |
 | JSON schema discriminator rename (`status` → `kind`) | 7 (persistence / data format) | 0.0.15 | Covered by 0.0.15 CHANGELOG Breaking; an ADR would record the cross-schema consistency motivation. |
-| Release workflow bump-skip (allow re-running with already-bumped Cargo.toml) | 8 (process / governance) | 0.0.24 → main via PR #22 | The workflow contract changed; an ADR would record why the alternative ("require fresh Cargo.toml before release") was rejected. |
+
+**Drained in 0.0.30** (now have dedicated ADRs, removed from
+backlog):
+
+- Read-only stance → [ADR-0009](0009-read-only-stance.md)
+- Release workflow bump-skip → [ADR-0010](0010-release-workflow-bump-skip.md)
+- `expand::normalize` substring-match policy → [ADR-0011](0011-normalize-substring-match-policy.md)
 
 The backlog is the explicit list — adding to it means writing a
 note here; removing from it means writing the actual ADR. The
