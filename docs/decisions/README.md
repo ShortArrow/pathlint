@@ -28,6 +28,8 @@ directory belongs to one or more of those categories.
 | [0009](0009-read-only-stance.md) | Read-only stance (no PATH / registry / dotfiles mutation) | 5 (+4) | Accepted | 0.0.x (recorded retroactively in 0.0.30) |
 | [0010](0010-release-workflow-bump-skip.md) | Release workflow tolerates an already-bumped `Cargo.toml` | 8 | Accepted | 0.0.24 (recorded retroactively in 0.0.30) |
 | [0011](0011-normalize-substring-match-policy.md) | `expand::normalize` policy (case-insensitive + slash unify, substring match without canonicalisation) | 3 | Accepted | 0.0.x (recorded retroactively in 0.0.30) |
+| [0012](0012-schemars-1-0-deferred.md) | Defer schemars 1.0 migration past 0.0.x graduation | 6 | Accepted | 0.0.31 |
+| [0013](0013-graduation-criteria-record.md) | Graduation criteria satisfaction record (0.0.31 snapshot) | 8 | Accepted | 0.0.31 |
 
 ## Index by category (topical view)
 
@@ -68,7 +70,7 @@ is **not** a universal ADR hierarchy.
 
 ### 6. External dependency
 
-*(none yet — `winreg` adoption predated the ADR system; schemars 1.0 evaluation is planned for Step 5 T.B.D.)*
+- [ADR-0012](0012-schemars-1-0-deferred.md) — defer schemars 1.0 migration past 0.0.x graduation; trigger conditions for revisiting recorded.
 
 ### 7. Persistence / data format
 
@@ -79,6 +81,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0000](0000-adr-categories.md) — this index, ADR categories and application criteria
 - [ADR-0005](0005-pre-1-0-breaking-policy.md) — pre-1.0 BREAKING licence
 - [ADR-0010](0010-release-workflow-bump-skip.md) — release workflow tolerates an already-bumped `Cargo.toml` (PR #22 formalised)
+- [ADR-0013](0013-graduation-criteria-record.md) — graduation criteria satisfaction record (0.0.31 snapshot)
 
 ## When to write an ADR
 

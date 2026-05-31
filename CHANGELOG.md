@@ -16,6 +16,50 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.31] — 2026-05-31
+
+Step 5c of the 0.0.25-0.1.0 roadmap. **Additive-only docs release**
+(no `### Breaking` section). Third consecutive additive release
+after 0.0.29 / 0.0.30; graduation criterion 1's counter now
+reads 3 (the criterion requires ≥ 2).
+
+This release closes the Step 5 plan: graduation criteria are now
+**recorded** in [ADR-0013](docs/decisions/0013-graduation-criteria-record.md).
+Whether and when to cut graduation (next release as 0.0.32 vs
+0.1.0, what number, what cadence) is **user judgement** —
+ADR-0013 records the audit, it does not schedule the cut.
+
+### Added
+
+- [ADR-0012](docs/decisions/0012-schemars-1-0-deferred.md) —
+  defer schemars 1.0 migration past 0.0.x graduation. Category 6
+  (external dependency); records the 0.8 → 1.0 cost (5 binaries +
+  5 derive sites + 5 schema files + 5 drift-gate tests + downstream
+  re-pin), the four rejected alternatives (migrate in this release;
+  migrate in 0.0.32; migrate as part of 0.1.0 itself; never migrate;
+  switch to a different crate), and the trigger conditions that
+  would re-open the decision (security advisory, draft-2020-12-only
+  consumer ask, pathlint feature needing 1.x machinery, 0.2.x
+  dependency-refresh window). Graduation criterion 3 ("Schemars 1.0
+  evaluated") satisfied by this ADR's existence per PRD §3.1.
+- [ADR-0013](docs/decisions/0013-graduation-criteria-record.md) —
+  graduation criteria satisfaction record at the 0.0.31 cut.
+  Category 8 (process / governance); records the 7 criteria with
+  pointers to where each is satisfied (CHANGELOG entries, prior
+  ADRs, codex audit notes). Criterion 5 is recorded as **partially
+  satisfied** (7 pre-ADR-system releases lack ADR links); two
+  options for the user — accept partial state, or backfill 5–7
+  short ADRs for 0.0.14–22 — are spelled out in the ADR. The four
+  rejected alternatives (cut 0.1.0 in this ADR; reinterpret
+  criterion 5; backfill within 0.0.31; defer the record) are
+  pinned so the choice rationale is durable.
+
+### Changed
+
+- `docs/decisions/README.md` index gains ADR-0012 / 0013 rows and
+  category-view pointers (Cat 6 first occupant; Cat 8 third
+  occupant after ADR-0000 / 0005 / 0010).
+
 ## [0.0.30] — 2026-05-31
 
 Step 5b of the 0.0.25-0.1.0 roadmap. **Additive-only docs release**
@@ -742,7 +786,8 @@ Earlier releases predate this changelog format and are not
 re-tabulated here. The git history (`git log --oneline`) and tags
 `v0.0.x` are the canonical record.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.30...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.31...HEAD
+[0.0.31]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.31
 [0.0.30]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.30
 [0.0.29]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.29
 [0.0.28]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.28
