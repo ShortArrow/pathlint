@@ -16,6 +16,78 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.33] — 2026-06-01
+
+**Additive-only docs + test-infra release** (no `### Breaking`
+section). Fifth consecutive additive release after 0.0.29 /
+0.0.30 / 0.0.31 / 0.0.32; graduation criterion 1's counter now
+reads 5.
+
+Closes the **3 M findings carried forward** from the 2026-05-31
+codex 6-axis audit (see CHANGELOG 0.0.30 Notes). All 3 close
+additively; no source code changes. The carry-forward list is
+now empty; the next audit cycle starts from a clean baseline.
+
+### Added
+
+- **trybuild dev-dependency + `tests/ui/` harness for
+  negative-invariant tests.** First snippet is
+  `tests/ui/path_entry_has_no_provenance_raw.rs`, pinning
+  ADR-0008's invariant (PathEntry has no `provenance_raw`
+  field, no `with_provenance` / `effective_raw_for_user_intent`
+  methods — those moved to `Attribution` in the 0.0.28 split).
+  If a future refactor re-introduces any of these on
+  `PathEntry`, `cargo test --test ui_compile_fail` fails.
+  Regenerate `.stderr` snapshots with `TRYBUILD=overwrite cargo
+  test --test ui_compile_fail` after a rustc upgrade. See
+  [ADR-0026](docs/decisions/0026-trybuild-for-negative-invariants.md).
+- [ADR-0026](docs/decisions/0026-trybuild-for-negative-invariants.md)
+  (Cat 6 +8): adopt `trybuild` as the dev-dependency for
+  compile-fail negative tests. Records the 5 rejected
+  alternatives (comment-only pin / hand-rolled macro trick /
+  `compiletest_rs` / runtime panic check / defer adoption).
+- [ADR-0027](docs/decisions/0027-lib-env-read-boundaries.md)
+  (Cat 3 +4): lib has two intentional env-read boundaries
+  (source catalog resolution + PATH entry construction); the
+  `_with` family is the injection seam, the wrapper family is
+  the CLI-convenience surface. Records why the residual
+  `std::env::var` calls flagged by the codex audit are
+  intentional architecture, with 5 rejected alternatives
+  (delete wrappers / unified `Deps` carrier / move env reads
+  to caller / accept finding without ADR / automated
+  enforcement test).
+
+### Changed
+
+- `docs/SECURITY.md` trust-boundary table gains a row for
+  environment-variable values returned by
+  `CommonDeps::env_lookup` (`PATHEXT`, `HOME`, `USERPROFILE`,
+  source-path expansion targets). Sanitisation pointers
+  section's `*Deps` bullet cross-references ADR-0027 for the
+  two-boundary architecture.
+- `docs/decisions/README.md` index gains ADR-0026 / 0027 rows
+  in the timeline view and category-view pointers (Cat 3 / 4 /
+  6 / 8).
+
+### Notes
+
+- **M findings closed (codex 2026-05-31 carry-forward)**:
+  - **TDD**: ADR-0026 + `tests/ui/path_entry_has_no_provenance_raw.rs`
+    pin closes M. Future negative invariants follow the same
+    `tests/ui/` template.
+  - **FP**: ADR-0027 formalises "intentional boundary, `_with`
+    variant already shipped" as the close. Internal callers
+    use `_with` exclusively (verified callgraph); wrappers
+    stay as the CLI-convenience surface.
+  - **Security**: SECURITY.md row addition + sanitisation
+    pointer cross-reference close M.
+- **Carry-forward list now empty.** The next codex audit
+  cycle (whenever it happens) starts from a clean baseline.
+- **Graduation criteria status unchanged**: all 7 ✅ as of
+  0.0.32 / ADR-0025. The M caveats that ADR-0013 noted on
+  criteria 4 and 7 are now closed by this release; the
+  criteria themselves were already satisfied.
+
 ## [0.0.32] — 2026-05-31
 
 **Additive-only docs release** (no `### Breaking` section).
@@ -834,7 +906,8 @@ Earlier releases predate this changelog format and are not
 re-tabulated here. The git history (`git log --oneline`) and tags
 `v0.0.x` are the canonical record.
 
-[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.32...HEAD
+[Unreleased]: https://github.com/ShortArrow/pathlint/compare/v0.0.33...HEAD
+[0.0.33]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.33
 [0.0.32]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.32
 [0.0.31]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.31
 [0.0.30]: https://github.com/ShortArrow/pathlint/releases/tag/v0.0.30

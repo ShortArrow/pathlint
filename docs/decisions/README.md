@@ -42,6 +42,8 @@ directory belongs to one or more of those categories.
 | [0023](0023-catalog-version-reserved-for-embedded.md) | `catalog_version` is reserved for the embedded catalog | 7 | Accepted | 0.0.14 / 0.0.15 (recorded retroactively in 0.0.32) |
 | [0024](0024-color-flag-activation.md) | `--color` flag activation (parsed-but-ignored → effective) | 8 | Accepted | 0.0.17 (recorded retroactively in 0.0.32) |
 | [0025](0025-criterion-5-closure.md) | Graduation criterion 5 fully satisfied (11/11 Breaking releases ADR-linked) | 8 | Accepted (supersedes ADR-0013 §Criterion 5) | 0.0.32 |
+| [0026](0026-trybuild-for-negative-invariants.md) | Adopt `trybuild` as dev-dependency for compile-fail negative-invariant tests | 6 (+8) | Accepted | 0.0.33 |
+| [0027](0027-lib-env-read-boundaries.md) | Lib has two intentional env-read boundaries; `_with` is the injection seam, wrapper is CLI-convenience | 3 (+4) | Accepted | 0.0.33 |
 
 ## Index by category (topical view)
 
@@ -72,12 +74,14 @@ is **not** a universal ADR hierarchy.
 - [ADR-0002](0002-from-raw-closure-injection.md) — env injection via closure on `PathEntry::from_raw`
 - [ADR-0006](0006-source-match-env-closure-injection.md) — env injection extended to `expand::expand_and_normalize_with` and `source_match::*_with`
 - [ADR-0011](0011-normalize-substring-match-policy.md) — `expand::normalize` case-insensitive + slash unify; substring match without canonicalisation
+- [ADR-0027](0027-lib-env-read-boundaries.md) — two intentional env-read boundaries (source catalog resolution + PATH entry construction); wrapper / `_with` split is the injection seam
 
 ### 4. Trust / security boundary
 
 - [ADR-0001](0001-pathentry-as-tenth-public-module.md) — secondary (registry decode boundary)
 - [ADR-0003](0003-reg-expand-sz-raw-decode.md) — `decode_reg_string` lossy UTF-16 + type reject
 - [ADR-0009](0009-read-only-stance.md) — secondary (no host mutation removes one whole attack surface from the trust boundary)
+- [ADR-0027](0027-lib-env-read-boundaries.md) — secondary (env_lookup-returned bytes documented in SECURITY.md as untrusted)
 
 ### 5. Architectural style
 
@@ -89,6 +93,7 @@ is **not** a universal ADR hierarchy.
 ### 6. External dependency
 
 - [ADR-0012](0012-schemars-1-0-deferred.md) — defer schemars 1.0 migration past 0.0.x graduation; trigger conditions for revisiting recorded.
+- [ADR-0026](0026-trybuild-for-negative-invariants.md) — adopt `trybuild` as dev-dependency for compile-fail negative tests
 
 ### 7. Persistence / data format
 
@@ -105,6 +110,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0021](0021-build-rs-aggregate-violations.md) — `build.rs` aggregates plugin referential-integrity violations
 - [ADR-0024](0024-color-flag-activation.md) — `--color` flag activation
 - [ADR-0025](0025-criterion-5-closure.md) — graduation criterion 5 fully satisfied (supersedes ADR-0013 §Criterion 5)
+- [ADR-0026](0026-trybuild-for-negative-invariants.md) — secondary (test-infra policy)
 
 ## When to write an ADR
 

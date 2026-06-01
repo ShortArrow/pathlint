@@ -1,0 +1,19 @@
+error[E0609]: no field `provenance_raw` on type `PathEntry`
+  --> tests/ui/path_entry_has_no_provenance_raw.rs:17:16
+   |
+17 |     let _ = pe.provenance_raw;
+   |                ^^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `raw`, `expanded`
+
+error[E0599]: no method named `with_provenance` found for struct `PathEntry` in the current scope
+  --> tests/ui/path_entry_has_no_provenance_raw.rs:18:16
+   |
+18 |     let _ = pe.with_provenance("y".to_string());
+   |                ^^^^^^^^^^^^^^^ method not found in `PathEntry`
+
+error[E0599]: no method named `effective_raw_for_user_intent` found for struct `PathEntry` in the current scope
+  --> tests/ui/path_entry_has_no_provenance_raw.rs:19:16
+   |
+19 |     let _ = pe.effective_raw_for_user_intent();
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `PathEntry`
