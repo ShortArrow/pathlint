@@ -16,6 +16,50 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+### Note on intermediate release publishing (0.0.29–0.0.32)
+
+CHANGELOG entries for 0.0.29 / 0.0.30 / 0.0.31 / 0.0.32 are
+present above, but **no `v0.0.29` / `v0.0.30` / `v0.0.31` /
+`v0.0.32` tag exists on GitHub and no corresponding version was
+published to crates.io**. The 0.0.33 release on 2026-06-01
+bundles all five steps' commits (Step 5a through Step 7) into
+one rolling release.
+
+Why: the `release.yml` workflow's `prepare` job runs
+`cargo set-version`, which enforces monotonic version bumps —
+once main had been bumped to 0.0.33 (the last commit in the
+sequence), attempting to trigger a release for 0.0.29 / 0.0.30 /
+0.0.31 / 0.0.32 failed with
+`Cannot downgrade from 0.0.33 to <older>`. Re-publishing the
+intermediate versions would require either modifying the
+workflow to bypass the safety guard or hand-tagging past
+commits and triggering per-tag releases — both have unrelated
+risks (workflow safety regression; tag-history rewrites).
+
+Implications:
+
+- **Graduation criteria are unaffected.** PRD §3.1 #1 reads
+  "≥ 2 consecutive releases without `### Breaking` in
+  `CHANGELOG.md`"; the count is over CHANGELOG entries, not
+  over crates.io publishes. The 5-consecutive-additive
+  streak (0.0.29 → 0.0.33) remains satisfied.
+- **Embedders pinning to intermediate versions cannot fetch
+  them from crates.io.** They can pin to 0.0.33 (which
+  contains every Step 5a–Step 7 commit) or use a
+  `git`-dependency against the corresponding tagged commit
+  in this repository — the commits exist on `main` at
+  `18422c5` (0.0.29) / `762a220` (0.0.30) / `c014508` (0.0.31)
+  / `0561e78` (0.0.32) / `4d7ab5b` (0.0.33).
+- **Pre-graduation policy unchanged.** [ADR-0005](docs/decisions/0005-pre-1-0-breaking-policy.md)'s
+  pin convention is "pin exact `0.0.x`"; users following that
+  convention pin to 0.0.33 directly.
+
+Future releases should be triggered at the time `Cargo.toml` is
+bumped (one bump per release), not in batch after multiple
+bumps land on `main`. If a batch situation recurs, the recovery
+is the same as here: ship the latest version, document the
+gap.
+
 ## [0.0.33] — 2026-06-01
 
 **Additive-only docs + test-infra release** (no `### Breaking`
