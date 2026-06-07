@@ -119,9 +119,9 @@ fn doctor_json_emits_top_level_array() {
 
 #[test]
 fn doctor_emits_selfcheck_kinds_only() {
-    // The kind enum in schemas/doctor.schema.json must be a small set:
-    // { binary_not_in_path, binary_shadowed, config_not_found,
-    //   config_parse_error, env_lookup_failed }. No PATH-anomaly kinds.
+    // The kind enum doctor emits must be a small selfcheck set:
+    // { binary_not_in_path, config_not_found, config_parse_error,
+    //   env_lookup_failed }. No PATH-anomaly kinds (ADR-0028).
     let tmp = tempfile::tempdir().unwrap();
     let out = Command::new(BIN)
         .args(["doctor", "--json"])
@@ -130,8 +130,7 @@ fn doctor_emits_selfcheck_kinds_only() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let v: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect(&stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     let lint_kinds = [
         "duplicate",
         "duplicate_but_shadowed",
