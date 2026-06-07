@@ -46,6 +46,7 @@ pub fn doctor_line(d: &Diagnostic, entries: &[Attribution], style: Style) -> Str
     let tag = match d.severity {
         Severity::Error => "[ERR] ",
         Severity::Warn => "[warn]",
+        Severity::Info => "[info]",
     };
     // Every PATH-derived string (entry text, suggestion, reason,
     // canonical pointer for case variants) goes through
@@ -104,6 +105,24 @@ pub fn doctor_line(d: &Diagnostic, entries: &[Attribution], style: Style) -> Str
         Kind::WriteablePathDir => {
             "directory is writable by other users; binary substitution risk".into()
         }
+        Kind::BinaryNotInPath { running } => format!(
+            "pathlint binary at {} is not on PATH",
+            strip_control_chars(running)
+        ),
+        Kind::ConfigParseError {
+            config_path,
+            reason,
+        } => format!(
+            "config {} failed to parse: {}",
+            strip_control_chars(config_path),
+            strip_control_chars(reason)
+        ),
+        Kind::ConfigNotFound => {
+            "no pathlint.toml found (cwd or $XDG_CONFIG_HOME); running without config".into()
+        }
+        Kind::EnvLookupFailed { var } => {
+            format!("env_lookup failed for {}", strip_control_chars(var))
+        }
     };
     // Per-source diagnostics use usize::MAX as the "no PATH index"
     // sentinel; render that as "(catalog)" instead of a number.
@@ -116,6 +135,41 @@ pub fn doctor_line(d: &Diagnostic, entries: &[Attribution], style: Style) -> Str
         "{tag} {idx_render} {entry}\n      {detail}",
         entry = strip_control_chars(&d.entry)
     )
+}
+
+/// Render a selfcheck diagnostic (0.0.34+, ADR-0028). Selfcheck
+/// findings are not bound to a PATH entry, so the leading "#NNN
+/// entry" segment of `doctor_line` is omitted.
+pub fn selfcheck_line(d: &Diagnostic, _style: Style) -> String {
+    let tag = match d.severity {
+        Severity::Error => "[ERR] ",
+        Severity::Warn => "[warn]",
+        Severity::Info => "[info]",
+    };
+    let detail = match &d.kind {
+        Kind::BinaryNotInPath { running } => format!(
+            "pathlint binary at {} is not on PATH",
+            strip_control_chars(running)
+        ),
+        Kind::ConfigParseError {
+            config_path,
+            reason,
+        } => format!(
+            "config {} failed to parse: {}",
+            strip_control_chars(config_path),
+            strip_control_chars(reason)
+        ),
+        Kind::ConfigNotFound => {
+            "no pathlint.toml found (cwd or $XDG_CONFIG_HOME); running without config".into()
+        }
+        Kind::EnvLookupFailed { var } => {
+            format!("env_lookup failed for {}", strip_control_chars(var))
+        }
+        // Non-selfcheck kinds in selfcheck output indicate a wiring
+        // bug; render generically so the operator notices.
+        other => format!("unexpected selfcheck kind {:?}", other),
+    };
+    format!("{tag} selfcheck: {detail}")
 }
 
 /// Conflict diagnostics get a multi-line layout that enumerates the

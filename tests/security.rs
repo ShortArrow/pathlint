@@ -52,7 +52,10 @@ fn check_rejects_user_source_pointing_at_root() {
 }
 
 #[test]
-fn doctor_rejects_user_source_pointing_at_root() {
+fn lint_rejects_user_source_pointing_at_root() {
+    // 0.0.34 (ADR-0028): the source-validation gate moved from
+    // doctor (now selfcheck) to lint, since lint is the command
+    // that consumes the merged catalog.
     let tmp = tempfile::tempdir().unwrap();
     let key = if cfg!(windows) { "windows" } else { "unix" };
     let body = format!(
@@ -63,7 +66,7 @@ fn doctor_rejects_user_source_pointing_at_root() {
     );
     let rules = write_rules(tmp.path(), &body);
 
-    let (code, _stdout, stderr) = run("doctor", &rules, "/usr/bin");
+    let (code, _stdout, stderr) = run("lint", &rules, "/usr/bin");
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(stderr.contains("rejected"), "stderr: {stderr}");
 }
@@ -309,7 +312,11 @@ later = "a"
 }
 
 #[test]
-fn doctor_rejects_user_relation_cycle() {
+fn lint_rejects_user_relation_cycle() {
+    // 0.0.34 (ADR-0028): relation acyclicity is enforced by every
+    // command that consumes the merged relation graph (check / lint
+    // / trace / sort). doctor is now selfcheck and does not read
+    // user relations.
     let tmp = tempfile::tempdir().unwrap();
     let body = r#"
 [[relation]]
@@ -324,7 +331,7 @@ target = "a"
 "#;
     let rules = write_rules(tmp.path(), body);
 
-    let (code, _stdout, stderr) = run("doctor", &rules, "/usr/bin");
+    let (code, _stdout, stderr) = run("lint", &rules, "/usr/bin");
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(stderr.contains("cycle"), "stderr: {stderr}");
 }

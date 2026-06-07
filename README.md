@@ -142,9 +142,14 @@ kind    = "executable"
   diagnosis / hint).
 - `pathlint check --json` — machine-readable output for CI
   pipelines.
-- `pathlint doctor` — lint PATH itself (duplicates, missing dirs,
+- `pathlint lint` — lint PATH itself (duplicates, missing dirs,
   8.3 short names, env-var-shortenable entries, malformed entries,
-  same-command-different-dir shadows). Independent of `[[expect]]`.
+  same-command-different-dir shadows, writeable directories,
+  relative entries). Independent of `[[expect]]`. New name as of
+  0.0.34 (ADR-0028); pre-0.0.34 this surface was `pathlint doctor`.
+- `pathlint doctor` — selfcheck pathlint itself (binary on PATH,
+  `pathlint.toml` discoverable + parseable, `env_lookup` working).
+  New behaviour as of 0.0.34.
 - `pathlint trace <command>` — show where a command resolves from,
   which sources match it, and the most plausible uninstall command.
   Plugin-aware for mise (see [Working with mise](#working-with-mise)).
@@ -285,11 +290,12 @@ unix = "/data/tools/mise/installs"
 
 ## Operational details
 
-The 0.0.x line ships six subcommands: `check` (default), `doctor`,
-`trace`, `sort`, `init`, and `catalog` (with `list` and
-`relations`). `pathlint where` is kept as a visible alias of
-`pathlint trace`, and `--rules` is kept as a visible alias of
-`--config`. Both aliases are slated for removal in a future
+The 0.0.x line ships seven subcommands: `check` (default), `lint`
+(new in 0.0.34), `doctor`, `trace`, `sort`, `init`, and `catalog`
+(with `list` and `relations`). `pathlint where` is kept as a
+visible alias of `pathlint trace`, and `--rules` is kept as a
+visible alias of `--config`. Both aliases are slated for removal
+in a future
 release; the exact timing is undecided and will be announced
 ahead of the breaking version. The TOML schema and CLI surface
 are still moving, but the resolve / match / report pipeline is

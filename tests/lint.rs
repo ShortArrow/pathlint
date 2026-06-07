@@ -1,4 +1,5 @@
-//! `pathlint doctor` end-to-end tests.
+//! `pathlint lint` end-to-end tests (formerly `pathlint doctor`
+//! through 0.0.33; renamed in 0.0.34 per ADR-0028).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,9 +7,9 @@ use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_pathlint");
 
-fn run_doctor(path_value: &str) -> (i32, String, String) {
+fn run_lint(path_value: &str) -> (i32, String, String) {
     let out = Command::new(BIN)
-        .arg("doctor")
+        .arg("lint")
         .env("PATH", path_value)
         .env_remove("XDG_CONFIG_HOME")
         .output()
@@ -29,31 +30,31 @@ fn join_path(parts: &[&Path]) -> String {
 }
 
 #[test]
-fn doctor_warns_on_duplicate_entries() {
+fn lint_warns_on_duplicate_entries() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("x");
     fs::create_dir_all(&dir).unwrap();
     let path = join_path(&[&dir, &dir]);
-    let (code, stdout, _) = run_doctor(&path);
+    let (code, stdout, _) = run_lint(&path);
     assert_eq!(code, 0, "warn-only must not fail the run");
     assert!(stdout.contains("[warn]"), "stdout: {stdout}");
     assert!(stdout.contains("duplicate"), "stdout: {stdout}");
 }
 
 #[test]
-fn doctor_warns_on_missing_directory() {
+fn lint_warns_on_missing_directory() {
     let tmp = tempfile::tempdir().unwrap();
     let exists = tmp.path().join("real");
     fs::create_dir_all(&exists).unwrap();
     let absent = tmp.path().join("definitely_does_not_exist_xyz");
     let path = join_path(&[&exists, &absent]);
-    let (code, stdout, _) = run_doctor(&path);
+    let (code, stdout, _) = run_lint(&path);
     assert_eq!(code, 0);
     assert!(stdout.contains("does not exist"), "stdout: {stdout}");
 }
 
 #[test]
-fn doctor_reports_duplicate_but_shadowed_across_path_dirs() {
+fn lint_reports_duplicate_but_shadowed_across_path_dirs() {
     // Two PATH dirs each containing an executable with the same
     // basename. The earlier dir wins; the later one is shadowed.
     let tmp = tempfile::tempdir().unwrap();
@@ -83,7 +84,7 @@ fn doctor_reports_duplicate_but_shadowed_across_path_dirs() {
     let dir_a = strip_unc_prefix(&dir_a);
     let dir_b = strip_unc_prefix(&dir_b);
     let path = join_path(&[&dir_a, &dir_b]);
-    let (code, stdout, stderr) = run_doctor(&path);
+    let (code, stdout, stderr) = run_lint(&path);
     // Quote the binary's stdout/stderr in panic messages so an OS
     // that silently fails to detect the shadow (e.g. case-sensitive
     // filesystem mismatch in 0.0.19 pre-fix) is diagnosable from the
@@ -95,7 +96,7 @@ fn doctor_reports_duplicate_but_shadowed_across_path_dirs() {
 }
 
 #[test]
-fn doctor_warns_on_relative_path_entry() {
+fn lint_warns_on_relative_path_entry() {
     // PATH containing "." (cwd) is the textbook security footgun
     // for relative entries; doctor should surface it.
     let tmp = tempfile::tempdir().unwrap();
@@ -110,7 +111,7 @@ fn doctor_warns_on_relative_path_entry() {
     } else {
         format!("{}:.", real.display())
     };
-    let (code, stdout, stderr) = run_doctor(&path);
+    let (code, stdout, stderr) = run_lint(&path);
     let context = format!("code={code} stdout={stdout:?} stderr={stderr:?}");
     assert_eq!(code, 0, "warn-only must not fail the run; {context}");
     assert!(stdout.contains("relative PATH entry"), "{context}");
@@ -118,7 +119,7 @@ fn doctor_warns_on_relative_path_entry() {
 
 #[cfg(unix)]
 #[test]
-fn doctor_warns_on_writeable_path_dir() {
+fn lint_warns_on_writeable_path_dir() {
     // Create a tempdir, chmod it 0o777 (others-write), and put it on
     // PATH. doctor should surface writeable_path_dir. Windows is
     // skipped because winapi mock for ACL is impractical at the
@@ -133,14 +134,14 @@ fn doctor_warns_on_writeable_path_dir() {
     let writable = fs::canonicalize(&writable).unwrap();
     let writable = strip_unc_prefix(&writable);
     let path = join_path(&[&writable]);
-    let (code, stdout, stderr) = run_doctor(&path);
+    let (code, stdout, stderr) = run_lint(&path);
     let context = format!("code={code} stdout={stdout:?} stderr={stderr:?}");
     assert_eq!(code, 0, "warn-only must not fail the run; {context}");
     assert!(stdout.contains("writable by other users"), "{context}");
 }
 
 #[test]
-fn doctor_clean_path_emits_nothing() {
+fn lint_clean_path_emits_nothing() {
     // The temp dir on Windows lives under %LocalAppData%, which would
     // trigger the "shortenable" warning even on an otherwise clean
     // PATH. Wipe the obvious env vars so the run is genuinely empty.
@@ -156,7 +157,7 @@ fn doctor_clean_path_emits_nothing() {
     let only_clean = strip_unc_prefix(&only_canonical);
     let path = join_path(&[&only_clean]);
     let mut cmd = Command::new(BIN);
-    cmd.arg("doctor")
+    cmd.arg("lint")
         .env("PATH", &path)
         .env_remove("XDG_CONFIG_HOME")
         .env_remove("HOME")
@@ -186,7 +187,7 @@ fn strip_unc_prefix(p: &Path) -> PathBuf {
 }
 
 #[test]
-fn doctor_warns_on_trailing_slash() {
+fn lint_warns_on_trailing_slash() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("slashy");
     fs::create_dir_all(&dir).unwrap();
@@ -195,25 +196,25 @@ fn doctor_warns_on_trailing_slash() {
         dir.display(),
         if cfg!(windows) { "\\" } else { "/" }
     );
-    let (code, stdout, _) = run_doctor(&with_slash);
+    let (code, stdout, _) = run_lint(&with_slash);
     assert_eq!(code, 0);
     assert!(stdout.contains("trailing slash"), "stdout: {stdout}");
 }
 
 #[test]
 #[cfg(windows)]
-fn doctor_errors_on_illegal_chars_on_windows() {
+fn lint_errors_on_illegal_chars_on_windows() {
     // Pipe char is illegal in NTFS filenames and would never resolve
     // as a directory; doctor escalates this to error severity.
     let path = "C:\\foo|bar";
-    let (code, stdout, _) = run_doctor(path);
+    let (code, stdout, _) = run_lint(path);
     assert_eq!(code, 1, "malformed entries must yield exit 1");
     assert!(stdout.contains("[ERR]"), "stdout: {stdout}");
     assert!(stdout.contains("malformed"), "stdout: {stdout}");
 }
 
 #[test]
-fn doctor_quiet_hides_warnings_but_keeps_errors() {
+fn lint_quiet_hides_warnings_but_keeps_errors() {
     // We can only stage a malformed entry on Windows (the kinds of
     // illegal chars differ on Unix). On Unix this test still asserts
     // that --quiet silences a clean warn-only run.
@@ -223,7 +224,7 @@ fn doctor_quiet_hides_warnings_but_keeps_errors() {
     let path = join_path(&[&dir, &dir]);
     let out = Command::new(BIN)
         .arg("--quiet")
-        .arg("doctor")
+        .arg("lint")
         .env("PATH", &path)
         .env_remove("XDG_CONFIG_HOME")
         .output()
@@ -238,9 +239,9 @@ fn doctor_quiet_hides_warnings_but_keeps_errors() {
 
 // ---- --include / --exclude (0.0.6+) -------------------------
 
-fn run_doctor_args(path_value: &str, extra: &[&str]) -> (i32, String, String) {
+fn run_lint_args(path_value: &str, extra: &[&str]) -> (i32, String, String) {
     let mut cmd = Command::new(BIN);
-    cmd.arg("doctor")
+    cmd.arg("lint")
         .args(extra)
         .env("PATH", path_value)
         .env_remove("XDG_CONFIG_HOME");
@@ -252,7 +253,7 @@ fn run_doctor_args(path_value: &str, extra: &[&str]) -> (i32, String, String) {
 }
 
 #[test]
-fn doctor_include_filters_to_named_kinds_only() {
+fn lint_include_filters_to_named_kinds_only() {
     // PATH carries one missing dir AND one duplicate. With
     // `--include duplicate` the missing entry must be silenced.
     let tmp = tempfile::tempdir().unwrap();
@@ -260,14 +261,14 @@ fn doctor_include_filters_to_named_kinds_only() {
     fs::create_dir_all(&real).unwrap();
     let absent = tmp.path().join("definitely_does_not_exist_xyz");
     let path = join_path(&[&real, &real, &absent]);
-    let (code, stdout, _) = run_doctor_args(&path, &["--include", "duplicate"]);
+    let (code, stdout, _) = run_lint_args(&path, &["--include", "duplicate"]);
     assert_eq!(code, 0);
     assert!(stdout.contains("duplicate"), "stdout: {stdout}");
     assert!(!stdout.contains("does not exist"), "stdout: {stdout}");
 }
 
 #[test]
-fn doctor_exclude_drops_diagnostics_and_affects_exit_code() {
+fn lint_exclude_drops_diagnostics_and_affects_exit_code() {
     // Force a malformed (Error severity) entry on Windows + a
     // duplicate. Without --exclude this exits 1; with
     // --exclude malformed the Error is suppressed and the run
@@ -281,11 +282,11 @@ fn doctor_exclude_drops_diagnostics_and_affects_exit_code() {
     }
     let path = format!("{};C:\\foo|bar", dir.display());
 
-    let (default_code, default_stdout, _) = run_doctor_args(&path, &[]);
+    let (default_code, default_stdout, _) = run_lint_args(&path, &[]);
     assert_eq!(default_code, 1, "stdout: {default_stdout}");
     assert!(default_stdout.contains("[ERR]"), "stdout: {default_stdout}");
 
-    let (filtered_code, filtered_stdout, _) = run_doctor_args(&path, &["--exclude", "malformed"]);
+    let (filtered_code, filtered_stdout, _) = run_lint_args(&path, &["--exclude", "malformed"]);
     assert_eq!(filtered_code, 0, "stdout: {filtered_stdout}");
     assert!(
         !filtered_stdout.contains("[ERR]"),
@@ -294,24 +295,24 @@ fn doctor_exclude_drops_diagnostics_and_affects_exit_code() {
 }
 
 #[test]
-fn doctor_unknown_kind_is_a_config_error_with_exit_2() {
+fn lint_unknown_kind_is_a_config_error_with_exit_2() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("d");
     fs::create_dir_all(&dir).unwrap();
-    let (code, _stdout, stderr) = run_doctor_args(&join_path(&[&dir]), &["--include", "nope"]);
+    let (code, _stdout, stderr) = run_lint_args(&join_path(&[&dir]), &["--include", "nope"]);
     assert_eq!(code, 2);
-    assert!(stderr.contains("unknown doctor kind"), "stderr: {stderr}");
+    assert!(stderr.contains("unknown lint kind"), "stderr: {stderr}");
     assert!(stderr.contains("nope"), "stderr: {stderr}");
 }
 
 #[test]
-fn doctor_include_and_exclude_together_is_a_clap_error() {
+fn lint_include_and_exclude_together_is_a_clap_error() {
     // clap's conflicts_with annotation should make the parse fail
     // with exit 2 and a usage message before pathlint even runs.
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("d");
     fs::create_dir_all(&dir).unwrap();
-    let (code, _stdout, stderr) = run_doctor_args(
+    let (code, _stdout, stderr) = run_lint_args(
         &join_path(&[&dir]),
         &["--include", "duplicate", "--exclude", "missing"],
     );
@@ -323,13 +324,13 @@ fn doctor_include_and_exclude_together_is_a_clap_error() {
 }
 
 #[test]
-fn doctor_json_emits_array_with_kind_discriminator() {
+fn lint_json_emits_array_with_kind_discriminator() {
     let tmp = tempfile::tempdir().unwrap();
     let real = tmp.path().join("real");
     fs::create_dir_all(&real).unwrap();
     let absent = tmp.path().join("definitely_does_not_exist_xyz");
     let path = join_path(&[&real, &real, &absent]);
-    let (code, stdout, _) = run_doctor_args(&path, &["--json"]);
+    let (code, stdout, _) = run_lint_args(&path, &["--json"]);
     assert_eq!(code, 0);
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     assert!(v.is_array(), "stdout: {stdout}");
@@ -352,14 +353,14 @@ fn doctor_json_emits_array_with_kind_discriminator() {
 }
 
 #[test]
-fn doctor_json_respects_include_filter() {
+fn lint_json_respects_include_filter() {
     let tmp = tempfile::tempdir().unwrap();
     let real = tmp.path().join("real");
     fs::create_dir_all(&real).unwrap();
     let absent = tmp.path().join("definitely_does_not_exist_xyz");
     let path = join_path(&[&real, &real, &absent]);
     // Same setup as the human-view filter test, but in JSON.
-    let (code, stdout, _) = run_doctor_args(&path, &["--include", "duplicate", "--json"]);
+    let (code, stdout, _) = run_lint_args(&path, &["--include", "duplicate", "--json"]);
     assert_eq!(code, 0);
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect(&stdout);
     let arr = v.as_array().unwrap();
@@ -373,7 +374,7 @@ fn doctor_json_respects_include_filter() {
 }
 
 #[test]
-fn doctor_warns_when_mise_shim_and_install_coexist() {
+fn lint_warns_when_mise_shim_and_install_coexist() {
     // 0.0.11: doctor reads ConflictsWhenBothInPath from the merged
     // catalog. The built-in relation references mise_shims and
     // mise_installs source paths under $HOME, but the tests must
@@ -413,7 +414,7 @@ fn doctor_warns_when_mise_shim_and_install_coexist() {
     let out = Command::new(BIN)
         .arg("--config")
         .arg(&rules)
-        .arg("doctor")
+        .arg("lint")
         .env("PATH", &path)
         .env_remove("XDG_CONFIG_HOME")
         .output()
@@ -433,7 +434,7 @@ fn doctor_warns_when_mise_shim_and_install_coexist() {
 }
 
 #[test]
-fn doctor_include_accepts_user_defined_diagnostic() {
+fn lint_include_accepts_user_defined_diagnostic() {
     // 0.0.13: a user [[relation]] kind = "conflicts_when_both_in_path"
     // declares an arbitrary diagnostic name; --include must accept
     // it instead of failing the typo check (Z17a-M2).
@@ -454,7 +455,7 @@ diagnostic = "foo_overlap"
     let out = Command::new(BIN)
         .arg("--config")
         .arg(&rules)
-        .arg("doctor")
+        .arg("lint")
         .arg("--include")
         .arg("foo_overlap")
         .env("PATH", "/usr/bin")
@@ -471,11 +472,11 @@ diagnostic = "foo_overlap"
         code, 2,
         "--include foo_overlap was rejected: stderr: {stderr}"
     );
-    assert!(!stderr.contains("unknown doctor kind"), "stderr: {stderr}");
+    assert!(!stderr.contains("unknown lint kind"), "stderr: {stderr}");
 }
 
 #[test]
-fn doctor_include_still_rejects_unknown_typos() {
+fn lint_include_still_rejects_unknown_typos() {
     // 0.0.13: even with user-defined diagnostics accepted, a name
     // that is neither built-in nor user-declared still fails.
     let tmp = tempfile::tempdir().unwrap();
@@ -485,7 +486,7 @@ fn doctor_include_still_rejects_unknown_typos() {
     let out = Command::new(BIN)
         .arg("--config")
         .arg(&rules)
-        .arg("doctor")
+        .arg("lint")
         .arg("--include")
         .arg("duplicat") // typo of "duplicate"
         .env("PATH", "/usr/bin")
@@ -495,5 +496,5 @@ fn doctor_include_still_rejects_unknown_typos() {
     let code = out.status.code().unwrap_or(-1);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(code, 2, "stderr: {stderr}");
-    assert!(stderr.contains("unknown doctor kind"), "stderr: {stderr}");
+    assert!(stderr.contains("unknown lint kind"), "stderr: {stderr}");
 }

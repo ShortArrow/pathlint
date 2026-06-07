@@ -32,7 +32,16 @@ pub enum Command {
 
     /// Lint the PATH itself (duplicates, missing dirs, env-var
     /// shortening candidates, Windows 8.3 short names, malformed
-    /// entries). Independent of `[[expect]]` rules.
+    /// entries) plus semantic validation of `pathlint.toml` against
+    /// the catalog. Independent of `[[expect]]` rules. New in 0.0.34;
+    /// inherits the detector kinds previously emitted by `doctor`
+    /// (see ADR-0028).
+    Lint(LintArgs),
+
+    /// Check that pathlint itself is functional in this environment:
+    /// the running binary's PATH placement, `pathlint.toml` discovery
+    /// and parse, and `env_lookup` operational. Does NOT inspect PATH
+    /// for anomalies — that moved to `lint` in 0.0.34 (ADR-0028).
     Doctor(DoctorArgs),
 
     /// Show where a command resolves from, which sources it matches,
@@ -100,10 +109,24 @@ pub struct TraceArgs {
 
 #[derive(Debug, clap::Args)]
 pub struct DoctorArgs {
+    /// Emit selfcheck diagnostics as a `{ diagnostics: [...] }` JSON
+    /// envelope. Each diagnostic carries `severity` and `kind` (small
+    /// enum: `binary_not_in_path`, `binary_shadowed`,
+    /// `config_not_found`, `config_parse_error`, `env_lookup_failed`).
+    /// Schema: `schemas/doctor.schema.json`. Reduced in 0.0.34 from
+    /// the 12-kind PATH-anomaly enum to selfcheck only (ADR-0028);
+    /// the old behaviour is now `pathlint lint --json`.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct LintArgs {
     /// Only show diagnostics whose kind matches one of the listed
     /// values. Mutually exclusive with `--exclude`. Accepts a comma
     /// or repeated flag form: `--include duplicate,missing` or
-    /// `--include duplicate --include missing`.
+    /// `--include duplicate --include missing`. Inherited from the
+    /// 0.0.33 doctor surface (ADR-0028).
     #[arg(long, value_delimiter = ',', conflicts_with = "exclude")]
     pub include: Vec<String>,
 
@@ -113,15 +136,15 @@ pub struct DoctorArgs {
     #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,
 
-    /// Emit the (already-filtered) diagnostics as a JSON array —
-    /// machine-readable counterpart of the human view. Each element
-    /// has `index`, `entry`, `severity`, `kind`, plus any per-kind
-    /// payload fields (`suggestion`, `canonical`, `first_index`,
-    /// `reason`, or `diagnostic` + `groups` for the `conflict`
-    /// kind). Schema is stable through 0.0.x, parallels
-    /// `check --json`. The include / exclude filters still apply;
-    /// `--quiet` is ignored in JSON mode (the output is intended
-    /// to be complete).
+    /// Emit the (already-filtered) diagnostics as a JSON envelope —
+    /// machine-readable counterpart of the human view. Top-level
+    /// shape: `{ diagnostics: [...] }`. Each element has `index`,
+    /// `entry`, `severity`, `kind`, plus any per-kind payload fields
+    /// (`suggestion`, `canonical`, `first_index`, `reason`, or
+    /// `diagnostic` + `groups` for the `conflict` kind). Schema:
+    /// `schemas/lint.schema.json`. The include / exclude filters
+    /// still apply; `--quiet` is ignored in JSON mode (the output
+    /// is intended to be complete).
     #[arg(long)]
     pub json: bool,
 }

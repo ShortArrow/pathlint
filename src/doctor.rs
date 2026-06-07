@@ -307,6 +307,10 @@ pub fn fs_list_dir_real(path: &str) -> Vec<String> {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
+    /// Informational; does not affect exit code. 0.0.34+ for the
+    /// `config_not_found` selfcheck (running pathlint without a
+    /// config is legitimate).
+    Info,
     Warn,
     Error,
 }
@@ -387,6 +391,28 @@ pub enum Kind {
     /// expanded first; missing or unreadable directories are
     /// skipped (the `Missing` detector covers them). 0.0.21+.
     WriteablePathDir,
+    /// Selfcheck: the running pathlint binary's absolute path was
+    /// not found anywhere on PATH. Either invoked by absolute path
+    /// or PATH was unset. 0.0.34+ (ADR-0028).
+    BinaryNotInPath {
+        running: String,
+    },
+    /// Selfcheck: a `pathlint.toml` was located but failed to parse.
+    /// `reason` carries the parser's error string. 0.0.34+.
+    ConfigParseError {
+        config_path: String,
+        reason: String,
+    },
+    /// Selfcheck: no `pathlint.toml` found via the standard search
+    /// (cwd then `$XDG_CONFIG_HOME`). Info severity because running
+    /// without a config is legitimate. 0.0.34+.
+    ConfigNotFound,
+    /// Selfcheck: a required env var (`PATH`, `PATHEXT` on Windows,
+    /// `HOME`/`USERPROFILE`) returned `None`. `entry` field carries
+    /// the var name. 0.0.34+.
+    EnvLookupFailed {
+        var: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -421,6 +447,10 @@ pub fn kind_name(kind: &Kind) -> &str {
         Kind::DuplicateButShadowed { .. } => "duplicate_but_shadowed",
         Kind::RelativePathEntry => "relative_path_entry",
         Kind::WriteablePathDir => "writeable_path_dir",
+        Kind::BinaryNotInPath { .. } => "binary_not_in_path",
+        Kind::ConfigParseError { .. } => "config_parse_error",
+        Kind::ConfigNotFound => "config_not_found",
+        Kind::EnvLookupFailed { .. } => "env_lookup_failed",
     }
 }
 
@@ -444,6 +474,10 @@ pub fn all_kind_names() -> &'static [&'static str] {
         "duplicate_but_shadowed",
         "relative_path_entry",
         "writeable_path_dir",
+        "binary_not_in_path",
+        "config_parse_error",
+        "config_not_found",
+        "env_lookup_failed",
     ]
 }
 
@@ -504,7 +538,7 @@ pub fn validate_filter_names(filter: &Filter, extra_known: &[String]) -> Result<
             let mut all: Vec<String> = known.iter().cloned().collect();
             all.sort();
             return Err(format!(
-                "unknown doctor kind `{name}`; valid values: {}",
+                "unknown lint kind `{name}`; valid values: {}",
                 all.join(", ")
             ));
         }
@@ -1260,6 +1294,147 @@ fn add_case_variant_diagnostics(entries: &[Attribution], out: &mut Vec<Diagnosti
             });
         }
     }
+}
+
+/// Selfcheck: does pathlint itself work in this environment?
+///
+/// Three checks (ADR-0028, 0.0.34+):
+/// 1. Binary self-locate — is the running pathlint binary on PATH?
+/// 2. `pathlint.toml` discovery + parse — if `explicit_config` is
+///    `Some`, use it; otherwise walk cwd → `$XDG_CONFIG_HOME`.
+/// 3. `env_lookup` operational — `PATH`, plus `PATHEXT` on Windows
+///    and `HOME`/`USERPROFILE` for config search.
+///
+/// Each diagnostic uses `index = usize::MAX, entry = ""` because
+/// selfcheck findings are not bound to a PATH entry. The CLI
+/// formatter renders them via `format::selfcheck_line`.
+pub fn selfcheck(explicit_config: Option<&Path>) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+
+    // 1. Binary self-locate.
+    if let Ok(running) = std::env::current_exe() {
+        let running_str = running.display().to_string();
+        match std::env::var("PATH") {
+            Ok(path_value) => {
+                let sep = if cfg!(windows) { ';' } else { ':' };
+                let on_path = path_value.split(sep).any(|dir| {
+                    if dir.is_empty() {
+                        return false;
+                    }
+                    let candidate = Path::new(dir).join(
+                        running
+                            .file_name()
+                            .map(|f| f.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    );
+                    candidate.exists()
+                });
+                if !on_path {
+                    out.push(Diagnostic {
+                        index: usize::MAX,
+                        entry: String::new(),
+                        severity: Severity::Warn,
+                        kind: Kind::BinaryNotInPath {
+                            running: running_str,
+                        },
+                    });
+                }
+            }
+            Err(_) => {
+                out.push(Diagnostic {
+                    index: usize::MAX,
+                    entry: String::new(),
+                    severity: Severity::Error,
+                    kind: Kind::EnvLookupFailed {
+                        var: "PATH".to_string(),
+                    },
+                });
+            }
+        }
+    }
+
+    // 2. pathlint.toml discovery + parse.
+    let config_path = explicit_config
+        .map(|p| Some(p.to_path_buf()))
+        .unwrap_or_else(|| {
+            let cwd = std::path::PathBuf::from("pathlint.toml");
+            if cwd.exists() {
+                return Some(cwd);
+            }
+            if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+                let p = std::path::PathBuf::from(xdg)
+                    .join("pathlint")
+                    .join("pathlint.toml");
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+            None
+        });
+
+    match config_path {
+        Some(p) if p.exists() => {
+            if let Err(e) = crate::config::Config::from_path(&p) {
+                out.push(Diagnostic {
+                    index: usize::MAX,
+                    entry: String::new(),
+                    severity: Severity::Error,
+                    kind: Kind::ConfigParseError {
+                        config_path: p.display().to_string(),
+                        reason: e.to_string(),
+                    },
+                });
+            }
+        }
+        _ => {
+            out.push(Diagnostic {
+                index: usize::MAX,
+                entry: String::new(),
+                severity: Severity::Info,
+                kind: Kind::ConfigNotFound,
+            });
+        }
+    }
+
+    // 3. env_lookup operational. PATH was already checked under (1).
+    #[cfg(windows)]
+    {
+        if std::env::var("PATHEXT").is_err() {
+            out.push(Diagnostic {
+                index: usize::MAX,
+                entry: String::new(),
+                severity: Severity::Error,
+                kind: Kind::EnvLookupFailed {
+                    var: "PATHEXT".to_string(),
+                },
+            });
+        }
+        if std::env::var("USERPROFILE").is_err() {
+            out.push(Diagnostic {
+                index: usize::MAX,
+                entry: String::new(),
+                severity: Severity::Warn,
+                kind: Kind::EnvLookupFailed {
+                    var: "USERPROFILE".to_string(),
+                },
+            });
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if std::env::var("HOME").is_err() {
+            out.push(Diagnostic {
+                index: usize::MAX,
+                entry: String::new(),
+                severity: Severity::Warn,
+                kind: Kind::EnvLookupFailed {
+                    var: "HOME".to_string(),
+                },
+            });
+        }
+    }
+
+    out
 }
 
 #[cfg(test)]
