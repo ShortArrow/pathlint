@@ -1,6 +1,6 @@
 # ADR-0028: `doctor` is pathlint's selfcheck; PATH analysis moves to a new `lint` subcommand
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-06-07
 - **Release**: 0.0.34
 - **Category**: 1. Public lib/CLI surface (+8. CLI subcommand topology)
@@ -75,23 +75,42 @@ Three checks only:
    against PATH. Warn if it is absent from PATH (running by
    absolute path), or if more than one `pathlint` resolves on PATH
    (the running one is *not* the first match).
-2. **`pathlint.toml` discovery and parse.** Walk from cwd upward
-   to find a `pathlint.toml`. Report not-found as info (legitimate
-   case: user runs `pathlint` without a config), and parse failure
-   as error. **Semantic validity (does `[source.x] path` exist?
-   does `[[expect]] command` match a catalog entry?) is not
-   checked here** — that is `pathlint lint`'s responsibility.
+2. **`pathlint.toml` discovery and parse.** Use the same discovery
+   helper (`locate_rules` in the CLI layer) every other subcommand
+   uses: explicit `--config` path → `./pathlint.toml` →
+   `$XDG_CONFIG_HOME/pathlint/pathlint.toml` →
+   `$HOME/.config/pathlint/pathlint.toml` →
+   `$USERPROFILE/.config/pathlint/pathlint.toml`. Report not-found
+   as info (legitimate case: user runs `pathlint` without a
+   config), and parse failure as error. **Semantic validity (does
+   `[source.x] path` exist? does `[[expect]] command` match a
+   catalog entry?) is not checked here** — that is `pathlint lint`'s
+   responsibility. Reusing `locate_rules` matters because doctor
+   should report the *same* config status every other subcommand
+   would see; a separate, narrower walk would create false negatives
+   (e.g. a config in `$HOME/.config` would be reported as missing
+   even though `check` / `lint` / `sort` read it correctly).
 3. **`env_lookup` operational.** Verify `PATH` is readable; on
    Windows also `PATHEXT`; verify `HOME` (Unix) or `USERPROFILE`
    (Windows) is readable. Report each missing variable as error;
    they are pathlint's hard dependencies (ADR-0027).
 
 Output: JSON top-level **array** of selfcheck diagnostics, each
-with `severity` in {`error`, `warn`, `info`} and `kind` in a small
-enum (proposed: `binary_not_in_path`, `binary_shadowed`,
-`config_not_found`, `config_parse_error`, `env_lookup_failed`).
+with `severity` in {`error`, `warn`, `info`} and `kind` in the
+4-variant selfcheck enum: `binary_not_in_path`,
+`config_parse_error`, `config_not_found`, `env_lookup_failed`.
 The array shape matches `pathlint lint --json` for consumer
 uniformity.
+
+Severity assignment for selfcheck kinds:
+- `binary_not_in_path` — warn (pathlint *runs*; user just can't
+  invoke it by bare name).
+- `config_parse_error` — error (config exists but breaks parse).
+- `config_not_found` — info (running without a config is a
+  legitimate use case; not a problem).
+- `env_lookup_failed` — error for `PATH`/`PATHEXT`, warn for
+  `HOME`/`USERPROFILE` (the latter only affects config search,
+  the former make pathlint useless).
 
 ### What `pathlint lint` does (new in 0.0.34)
 
@@ -180,17 +199,23 @@ the template. This ADR does not invalidate ADR-0019; it records
 - **Other subcommands** (`check`, `sort`, `trace`, `catalog`,
   `init`): unchanged.
 
-### Module shape
+### Module shape (0.0.34)
 
-- `src/doctor.rs` shrinks to selfcheck-only (~150 LOC).
-- The 12 detector kinds plus pathlint.toml semantic validation
-  move to a new module (`src/lint_detector.rs` or extend
-  `src/lint.rs`; chosen during implementation).
+- `src/doctor.rs` keeps both the existing `analyze` (12 detector
+  kinds, called by `pathlint lint`) and the new `selfcheck`
+  function (4 selfcheck kinds, called by `pathlint doctor`). The
+  `Kind` enum hosts all 16 variants; `Severity` gains the `Info`
+  variant additively.
 - `src/lint.rs::evaluate` (the `[[expect]]` evaluator backing
   `pathlint check`) is unchanged.
-- `src/config.rs` gains a `validate_semantic` function (or
-  similar) that takes a `Config` and a `Catalog` and returns
-  validation diagnostics; called only by lint, not by parse.
+- Physical module rename (splitting selfcheck and PATH-anomaly
+  detection into separate files) is scoped for a future ADR — the
+  responsibility split lives in the CLI subcommand topology and
+  the function-level naming, not in file boundaries.
+- `pathlint.toml` semantic validation (a `validate_semantic`
+  function on `src/config.rs` that takes a `Config` + `Catalog`
+  and returns validation diagnostics) is deferred from 0.0.34;
+  see Consequences §Follow-up.
 
 ## Alternatives considered
 

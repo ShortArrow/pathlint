@@ -11,18 +11,6 @@ use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_pathlint");
 
-fn run_doctor() -> (i32, String, String) {
-    let out = Command::new(BIN)
-        .arg("doctor")
-        .env_remove("XDG_CONFIG_HOME")
-        .output()
-        .expect("failed to run pathlint binary");
-    let code = out.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    (code, stdout, stderr)
-}
-
 fn run_doctor_in(cwd: &std::path::Path) -> (i32, String, String) {
     let out = Command::new(BIN)
         .arg("doctor")
@@ -170,13 +158,84 @@ fn doctor_emits_selfcheck_kinds_only() {
 }
 
 #[test]
-#[ignore = "best-effort selfcheck; binary self-locate behaviour depends on host PATH"]
-fn doctor_locates_running_binary_on_path() {
-    // When the running pathlint binary is on PATH, doctor should
-    // succeed without binary_not_in_path. Run with the test
-    // harness's PATH inherited (do not override) so the host's
-    // pathlint is reachable, then check there is no binary error.
-    let (code, stdout, _stderr) = run_doctor();
-    assert_eq!(code, 0);
-    assert!(!stdout.contains("binary_not_in_path"));
+fn doctor_emits_binary_not_in_path_when_running_dir_not_on_path() {
+    // Deterministic green-path opposite: when PATH doesn't contain
+    // the running binary's directory, doctor must surface
+    // binary_not_in_path. The test harness's BIN lives under
+    // target/debug, so a PATH of just `/tmp` (or C:\) on Windows
+    // will reliably miss it.
+    let tmp = tempfile::tempdir().unwrap();
+    let other = tmp.path().join("other");
+    fs::create_dir_all(&other).unwrap();
+    let out = Command::new(BIN)
+        .arg("doctor")
+        .current_dir(tmp.path())
+        .env("PATH", other.display().to_string())
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("not on PATH"),
+        "expected binary_not_in_path: {stdout}"
+    );
+}
+
+#[test]
+fn doctor_binary_self_locate_green_path() {
+    // Deterministic green-path: when PATH contains the running
+    // binary's directory, doctor must NOT emit binary_not_in_path.
+    let tmp = tempfile::tempdir().unwrap();
+    let bin_dir = std::path::Path::new(BIN).parent().unwrap();
+    let path_value = bin_dir.display().to_string();
+    let out = Command::new(BIN)
+        .arg("doctor")
+        .current_dir(tmp.path())
+        .env("PATH", &path_value)
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("not on PATH"),
+        "binary should self-locate: {stdout}"
+    );
+}
+
+#[test]
+#[cfg(not(windows))]
+fn doctor_emits_env_lookup_failed_when_home_unset() {
+    // Unix: HOME unset triggers env_lookup_failed (warn — HOME
+    // only affects config search, not pathlint's core).
+    let tmp = tempfile::tempdir().unwrap();
+    let out = Command::new(BIN)
+        .arg("doctor")
+        .current_dir(tmp.path())
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("HOME")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("env_lookup failed for HOME"),
+        "expected env_lookup_failed for HOME: {stdout}"
+    );
+}
+
+#[test]
+#[cfg(windows)]
+fn doctor_emits_env_lookup_failed_when_userprofile_unset() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = Command::new(BIN)
+        .arg("doctor")
+        .current_dir(tmp.path())
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("USERPROFILE")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("env_lookup failed for USERPROFILE"),
+        "expected env_lookup_failed for USERPROFILE: {stdout}"
+    );
 }

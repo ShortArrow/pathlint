@@ -158,7 +158,13 @@ pub fn execute(cli: Cli) -> Result<u8> {
 /// pathlint.toml discovery + parse, and env_lookup operational.
 /// PATH anomaly detection moved to `pathlint lint` (ADR-0028).
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
-    let diags = doctor::selfcheck(global.config.as_deref());
+    // Reuse locate_rules so doctor reports the same config location
+    // every other subcommand would have found (ADR-0028 §discovery).
+    // locate_rules errors only on an explicit --config that is not a
+    // file; treat that as the "explicit config does not exist" case
+    // and let selfcheck still emit other diagnostics.
+    let located = locate_rules(global.config.as_deref()).ok().flatten();
+    let diags = doctor::selfcheck(located.as_deref(), global.config.is_some());
     if args.json {
         let json = format::doctor_json(&diags.iter().collect::<Vec<_>>())?;
         println!("{json}");

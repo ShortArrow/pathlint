@@ -109,13 +109,16 @@ pub struct TraceArgs {
 
 #[derive(Debug, clap::Args)]
 pub struct DoctorArgs {
-    /// Emit selfcheck diagnostics as a `{ diagnostics: [...] }` JSON
-    /// envelope. Each diagnostic carries `severity` and `kind` (small
-    /// enum: `binary_not_in_path`, `binary_shadowed`,
-    /// `config_not_found`, `config_parse_error`, `env_lookup_failed`).
-    /// Schema: `schemas/doctor.schema.json`. Reduced in 0.0.34 from
-    /// the 12-kind PATH-anomaly enum to selfcheck only (ADR-0028);
-    /// the old behaviour is now `pathlint lint --json`.
+    /// Emit selfcheck diagnostics as a JSON array. Each diagnostic
+    /// carries `index` / `entry` (sentinels for selfcheck: index =
+    /// `2^64 - 1`, entry = ""), `severity` (`error` / `warn` /
+    /// `info` — info is new in 0.0.34), and `kind` (4-variant enum:
+    /// `binary_not_in_path`, `config_parse_error`, `config_not_found`,
+    /// `env_lookup_failed`). Schema: `schemas/doctor.schema.json`
+    /// (shared with `pathlint lint --json` — the schema lists all 16
+    /// variants, doctor only emits the 4 selfcheck ones). Replaced
+    /// the 0.0.33 PATH-anomaly output (ADR-0028); the old behaviour
+    /// is now `pathlint lint --json`.
     #[arg(long)]
     pub json: bool,
 }
@@ -136,15 +139,17 @@ pub struct LintArgs {
     #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,
 
-    /// Emit the (already-filtered) diagnostics as a JSON envelope —
-    /// machine-readable counterpart of the human view. Top-level
-    /// shape: `{ diagnostics: [...] }`. Each element has `index`,
-    /// `entry`, `severity`, `kind`, plus any per-kind payload fields
-    /// (`suggestion`, `canonical`, `first_index`, `reason`, or
-    /// `diagnostic` + `groups` for the `conflict` kind). Schema:
-    /// `schemas/lint.schema.json`. The include / exclude filters
-    /// still apply; `--quiet` is ignored in JSON mode (the output
-    /// is intended to be complete).
+    /// Emit the (already-filtered) diagnostics as a JSON array —
+    /// machine-readable counterpart of the human view. Each element
+    /// has `index`, `entry`, `severity`, `kind`, plus any per-kind
+    /// payload fields (`suggestion`, `canonical`, `first_index`,
+    /// `reason`, or `diagnostic` + `groups` for the `conflict` kind).
+    /// Schema: `schemas/doctor.schema.json` (shared with
+    /// `pathlint doctor --json` since 0.0.34, see ADR-0028 —
+    /// the schema lists all 16 variants, lint only emits the 12
+    /// PATH-anomaly ones). The include / exclude filters still apply;
+    /// `--quiet` is ignored in JSON mode (the output is intended
+    /// to be complete).
     #[arg(long)]
     pub json: bool,
 }

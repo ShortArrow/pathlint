@@ -1300,15 +1300,26 @@ fn add_case_variant_diagnostics(entries: &[Attribution], out: &mut Vec<Diagnosti
 ///
 /// Three checks (ADR-0028, 0.0.34+):
 /// 1. Binary self-locate — is the running pathlint binary on PATH?
-/// 2. `pathlint.toml` discovery + parse — if `explicit_config` is
-///    `Some`, use it; otherwise walk cwd → `$XDG_CONFIG_HOME`.
+/// 2. `pathlint.toml` discovery + parse — the caller resolves the
+///    config location through whichever helper every other subcommand
+///    uses (`locate_rules` in the CLI; embedders may pass an explicit
+///    path or `None`). `selfcheck` only acts on the located path.
 /// 3. `env_lookup` operational — `PATH`, plus `PATHEXT` on Windows
 ///    and `HOME`/`USERPROFILE` for config search.
 ///
 /// Each diagnostic uses `index = usize::MAX, entry = ""` because
 /// selfcheck findings are not bound to a PATH entry. The CLI
 /// formatter renders them via `format::selfcheck_line`.
-pub fn selfcheck(explicit_config: Option<&Path>) -> Vec<Diagnostic> {
+///
+/// Arguments:
+/// * `located_config` — the path the caller's discovery helper found
+///   (or `None` if no config was located).
+/// * `explicit_requested` — true if the user passed `--config` at
+///   the CLI; used to differentiate "no config sought, none found"
+///   (info) from "user asked for a config we couldn't locate"
+///   (error from the CLI layer before selfcheck is even called, so
+///   this parameter only affects whether the info diagnostic fires).
+pub fn selfcheck(located_config: Option<&Path>, explicit_requested: bool) -> Vec<Diagnostic> {
     let mut out = Vec::new();
 
     // 1. Binary self-locate.
@@ -1353,28 +1364,14 @@ pub fn selfcheck(explicit_config: Option<&Path>) -> Vec<Diagnostic> {
         }
     }
 
-    // 2. pathlint.toml discovery + parse.
-    let config_path = explicit_config
-        .map(|p| Some(p.to_path_buf()))
-        .unwrap_or_else(|| {
-            let cwd = std::path::PathBuf::from("pathlint.toml");
-            if cwd.exists() {
-                return Some(cwd);
-            }
-            if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-                let p = std::path::PathBuf::from(xdg)
-                    .join("pathlint")
-                    .join("pathlint.toml");
-                if p.exists() {
-                    return Some(p);
-                }
-            }
-            None
-        });
-
-    match config_path {
+    // 2. pathlint.toml discovery + parse — the located config (if
+    //    any) is what every other subcommand will read; just verify
+    //    parse on the same file. config_not_found is info unless the
+    //    user explicitly asked for one (in which case the CLI layer
+    //    will have already errored out before reaching selfcheck).
+    match located_config {
         Some(p) if p.exists() => {
-            if let Err(e) = crate::config::Config::from_path(&p) {
+            if let Err(e) = crate::config::Config::from_path(p) {
                 out.push(Diagnostic {
                     index: usize::MAX,
                     entry: String::new(),
@@ -1387,12 +1384,17 @@ pub fn selfcheck(explicit_config: Option<&Path>) -> Vec<Diagnostic> {
             }
         }
         _ => {
-            out.push(Diagnostic {
-                index: usize::MAX,
-                entry: String::new(),
-                severity: Severity::Info,
-                kind: Kind::ConfigNotFound,
-            });
+            // Suppress the info diagnostic when the user explicitly
+            // wanted a config and the CLI surfaced its own error
+            // (avoids double-reporting).
+            if !explicit_requested {
+                out.push(Diagnostic {
+                    index: usize::MAX,
+                    entry: String::new(),
+                    severity: Severity::Info,
+                    kind: Kind::ConfigNotFound,
+                });
+            }
         }
     }
 

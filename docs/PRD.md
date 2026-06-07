@@ -27,10 +27,14 @@ directory of the same name? Is the symlink broken? Adding
 the resolved path is a real executable file on top of the source
 check.
 
-**R3 — PATH hygiene.** Even before any expectation is evaluated,
-the `PATH` itself is often a mess: duplicates, dangling directories,
-8.3 short names, entries that could be written more concisely.
-`pathlint doctor` lints the PATH on its own.
+**R3 — PATH hygiene + selfcheck.** Even before any expectation
+is evaluated, the `PATH` itself is often a mess: duplicates,
+dangling directories, 8.3 short names, entries that could be
+written more concisely. `pathlint lint` lints the PATH on its
+own (new name in 0.0.34, per ADR-0028; previously this was
+`pathlint doctor`). `pathlint doctor` now answers a different
+question — is pathlint itself functional in this environment?
+(binary on PATH, `pathlint.toml` parseable, env vars readable).
 
 **R4 — Provenance.** `pathlint trace <command>` reports the
 resolved binary's full path, the catalog sources it matches, and
@@ -231,7 +235,8 @@ Mapping subcommands to roles (see §1):
 |---|---|---|
 | R1 — resolve order | `pathlint check` (default) | implemented (0.0.2) |
 | R2 — existence and shape | reuses `[[expect]]` with a `kind` field, exposed in `check` | implemented (0.0.4) |
-| R3 — PATH hygiene | `pathlint doctor` | implemented (0.0.3) |
+| R3 — PATH hygiene | `pathlint lint` (formerly `pathlint doctor`) | implemented (0.0.3); renamed in 0.0.34 per ADR-0028 |
+| R3' — selfcheck | `pathlint doctor` | implemented (0.0.34) |
 | R4 — provenance | `pathlint trace <command>` | implemented (0.0.4) |
 
 `pathlint init` and `pathlint catalog list` are infrastructure
