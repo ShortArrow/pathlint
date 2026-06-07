@@ -307,6 +307,10 @@ pub fn fs_list_dir_real(path: &str) -> Vec<String> {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
+    /// Informational; does not affect exit code. 0.0.34+ for the
+    /// `config_not_found` selfcheck (running pathlint without a
+    /// config is legitimate).
+    Info,
     Warn,
     Error,
 }
@@ -387,6 +391,28 @@ pub enum Kind {
     /// expanded first; missing or unreadable directories are
     /// skipped (the `Missing` detector covers them). 0.0.21+.
     WriteablePathDir,
+    /// Selfcheck: the running pathlint binary's absolute path was
+    /// not found anywhere on PATH. Either invoked by absolute path
+    /// or PATH was unset. 0.0.34+ (ADR-0028).
+    BinaryNotInPath {
+        running: String,
+    },
+    /// Selfcheck: a `pathlint.toml` was located but failed to parse.
+    /// `reason` carries the parser's error string. 0.0.34+.
+    ConfigParseError {
+        config_path: String,
+        reason: String,
+    },
+    /// Selfcheck: no `pathlint.toml` found via the standard search
+    /// (cwd then `$XDG_CONFIG_HOME`). Info severity because running
+    /// without a config is legitimate. 0.0.34+.
+    ConfigNotFound,
+    /// Selfcheck: a required env var (`PATH`, `PATHEXT` on Windows,
+    /// `HOME`/`USERPROFILE`) returned `None`. `entry` field carries
+    /// the var name. 0.0.34+.
+    EnvLookupFailed {
+        var: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
@@ -421,6 +447,10 @@ pub fn kind_name(kind: &Kind) -> &str {
         Kind::DuplicateButShadowed { .. } => "duplicate_but_shadowed",
         Kind::RelativePathEntry => "relative_path_entry",
         Kind::WriteablePathDir => "writeable_path_dir",
+        Kind::BinaryNotInPath { .. } => "binary_not_in_path",
+        Kind::ConfigParseError { .. } => "config_parse_error",
+        Kind::ConfigNotFound => "config_not_found",
+        Kind::EnvLookupFailed { .. } => "env_lookup_failed",
     }
 }
 
@@ -444,6 +474,10 @@ pub fn all_kind_names() -> &'static [&'static str] {
         "duplicate_but_shadowed",
         "relative_path_entry",
         "writeable_path_dir",
+        "binary_not_in_path",
+        "config_parse_error",
+        "config_not_found",
+        "env_lookup_failed",
     ]
 }
 
@@ -504,7 +538,7 @@ pub fn validate_filter_names(filter: &Filter, extra_known: &[String]) -> Result<
             let mut all: Vec<String> = known.iter().cloned().collect();
             all.sort();
             return Err(format!(
-                "unknown doctor kind `{name}`; valid values: {}",
+                "unknown lint kind `{name}`; valid values: {}",
                 all.join(", ")
             ));
         }
@@ -1260,6 +1294,149 @@ fn add_case_variant_diagnostics(entries: &[Attribution], out: &mut Vec<Diagnosti
             });
         }
     }
+}
+
+/// Selfcheck: does pathlint itself work in this environment?
+///
+/// Three checks (ADR-0028, 0.0.34+):
+/// 1. Binary self-locate — is the running pathlint binary on PATH?
+/// 2. `pathlint.toml` discovery + parse — the caller resolves the
+///    config location through whichever helper every other subcommand
+///    uses (`locate_rules` in the CLI; embedders may pass an explicit
+///    path or `None`). `selfcheck` only acts on the located path.
+/// 3. `env_lookup` operational — `PATH`, plus `PATHEXT` on Windows
+///    and `HOME`/`USERPROFILE` for config search.
+///
+/// Each diagnostic uses `index = usize::MAX, entry = ""` because
+/// selfcheck findings are not bound to a PATH entry. The CLI
+/// formatter renders them via `format::selfcheck_line`.
+///
+/// Arguments:
+/// * `located_config` — the path the caller's discovery helper found
+///   (or `None` if no config was located).
+/// * `explicit_requested` — true if the user passed `--config` at
+///   the CLI; used to differentiate "no config sought, none found"
+///   (info) from "user asked for a config we couldn't locate"
+///   (error from the CLI layer before selfcheck is even called, so
+///   this parameter only affects whether the info diagnostic fires).
+pub fn selfcheck(located_config: Option<&Path>, explicit_requested: bool) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+
+    // 1. Binary self-locate.
+    if let Ok(running) = std::env::current_exe() {
+        let running_str = running.display().to_string();
+        match std::env::var("PATH") {
+            Ok(path_value) => {
+                let sep = if cfg!(windows) { ';' } else { ':' };
+                let on_path = path_value.split(sep).any(|dir| {
+                    if dir.is_empty() {
+                        return false;
+                    }
+                    let candidate = Path::new(dir).join(
+                        running
+                            .file_name()
+                            .map(|f| f.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    );
+                    candidate.exists()
+                });
+                if !on_path {
+                    out.push(Diagnostic {
+                        index: usize::MAX,
+                        entry: String::new(),
+                        severity: Severity::Warn,
+                        kind: Kind::BinaryNotInPath {
+                            running: running_str,
+                        },
+                    });
+                }
+            }
+            Err(_) => {
+                out.push(Diagnostic {
+                    index: usize::MAX,
+                    entry: String::new(),
+                    severity: Severity::Error,
+                    kind: Kind::EnvLookupFailed {
+                        var: "PATH".to_string(),
+                    },
+                });
+            }
+        }
+    }
+
+    // 2. pathlint.toml discovery + parse — the located config (if
+    //    any) is what every other subcommand will read; just verify
+    //    parse on the same file. config_not_found is info unless the
+    //    user explicitly asked for one (in which case the CLI layer
+    //    will have already errored out before reaching selfcheck).
+    match located_config {
+        Some(p) if p.exists() => {
+            if let Err(e) = crate::config::Config::from_path(p) {
+                out.push(Diagnostic {
+                    index: usize::MAX,
+                    entry: String::new(),
+                    severity: Severity::Error,
+                    kind: Kind::ConfigParseError {
+                        config_path: p.display().to_string(),
+                        reason: e.to_string(),
+                    },
+                });
+            }
+        }
+        _ => {
+            // Suppress the info diagnostic when the user explicitly
+            // wanted a config and the CLI surfaced its own error
+            // (avoids double-reporting).
+            if !explicit_requested {
+                out.push(Diagnostic {
+                    index: usize::MAX,
+                    entry: String::new(),
+                    severity: Severity::Info,
+                    kind: Kind::ConfigNotFound,
+                });
+            }
+        }
+    }
+
+    // 3. env_lookup operational. PATH was already checked under (1).
+    #[cfg(windows)]
+    {
+        if std::env::var("PATHEXT").is_err() {
+            out.push(Diagnostic {
+                index: usize::MAX,
+                entry: String::new(),
+                severity: Severity::Error,
+                kind: Kind::EnvLookupFailed {
+                    var: "PATHEXT".to_string(),
+                },
+            });
+        }
+        if std::env::var("USERPROFILE").is_err() {
+            out.push(Diagnostic {
+                index: usize::MAX,
+                entry: String::new(),
+                severity: Severity::Warn,
+                kind: Kind::EnvLookupFailed {
+                    var: "USERPROFILE".to_string(),
+                },
+            });
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if std::env::var("HOME").is_err() {
+            out.push(Diagnostic {
+                index: usize::MAX,
+                entry: String::new(),
+                severity: Severity::Warn,
+                kind: Kind::EnvLookupFailed {
+                    var: "HOME".to_string(),
+                },
+            });
+        }
+    }
+
+    out
 }
 
 #[cfg(test)]

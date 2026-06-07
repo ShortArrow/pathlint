@@ -44,6 +44,7 @@ directory belongs to one or more of those categories.
 | [0025](0025-criterion-5-closure.md) | Graduation criterion 5 fully satisfied (11/11 Breaking releases ADR-linked) | 8 | Accepted (supersedes ADR-0013 §Criterion 5) | 0.0.32 |
 | [0026](0026-trybuild-for-negative-invariants.md) | Adopt `trybuild` as dev-dependency for compile-fail negative-invariant tests | 6 (+8) | Accepted | 0.0.33 |
 | [0027](0027-lib-env-read-boundaries.md) | Lib has two intentional env-read boundaries; `_with` is the injection seam, wrapper is CLI-convenience | 3 (+4) | Accepted | 0.0.33 |
+| [0028](0028-doctor-lint-responsibility-split.md) | `doctor` is pathlint's selfcheck; PATH analysis moves to a new `lint` subcommand | 1 (+8) | Proposed | 0.0.34 |
 
 ## Index by category (topical view)
 
@@ -63,6 +64,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0017](0017-lib-surface-nine-modules.md) — Lib surface narrowed to 9 supported `pub mod` + `#[doc(hidden)] pub` middle tier
 - [ADR-0018](0018-resolver-outcome-type-simplification.md) — Resolver `Option<PathBuf>` + unit-variant `Status` with `Outcome::reason`
 - [ADR-0020](0020-doctor-analyze-closure-tuple.md) — `doctor::analyze` open-ended closure tuple (superseded by ADR-0007)
+- [ADR-0028](0028-doctor-lint-responsibility-split.md) — `doctor` is selfcheck; PATH analysis moves to a new `lint` subcommand
 
 ### 2. Module boundary / dependency direction
 
@@ -111,6 +113,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0024](0024-color-flag-activation.md) — `--color` flag activation
 - [ADR-0025](0025-criterion-5-closure.md) — graduation criterion 5 fully satisfied (supersedes ADR-0013 §Criterion 5)
 - [ADR-0026](0026-trybuild-for-negative-invariants.md) — secondary (test-infra policy)
+- [ADR-0028](0028-doctor-lint-responsibility-split.md) — secondary (CLI subcommand topology)
 
 ## When to write an ADR
 

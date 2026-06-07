@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::cli::{
     CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
-    InitArgs, SortArgs, TraceArgs,
+    InitArgs, LintArgs, SortArgs, TraceArgs,
 };
 use pathlint::Attribution;
 use pathlint::catalog;
@@ -99,6 +99,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
             action: CatalogCommand::Relations(args),
         }) => return execute_catalog_relations(&args, &cli.global),
         Some(Command::Doctor(args)) => return execute_doctor(&args, &cli.global),
+        Some(Command::Lint(args)) => return execute_lint(&args, &cli.global),
         Some(Command::Trace(args)) => return execute_trace(&args, &cli.global),
         Some(Command::Sort(args)) => return execute_sort(&args, &cli.global),
         Some(Command::Check(args)) => args,
@@ -152,16 +153,45 @@ pub fn execute(cli: Cli) -> Result<u8> {
     Ok(lint::exit_code(&outcomes))
 }
 
+/// 0.0.34: `pathlint doctor` is now a selfcheck — does pathlint
+/// itself work in this environment? Three checks: binary self-locate,
+/// pathlint.toml discovery + parse, and env_lookup operational.
+/// PATH anomaly detection moved to `pathlint lint` (ADR-0028).
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+    // Reuse locate_rules so doctor reports the same config location
+    // every other subcommand would have found (ADR-0028 §discovery).
+    // locate_rules errors only on an explicit --config that is not a
+    // file; treat that as the "explicit config does not exist" case
+    // and let selfcheck still emit other diagnostics.
+    let located = locate_rules(global.config.as_deref()).ok().flatten();
+    let diags = doctor::selfcheck(located.as_deref(), global.config.is_some());
+    if args.json {
+        let json = format::doctor_json(&diags.iter().collect::<Vec<_>>())?;
+        println!("{json}");
+    } else {
+        let style = format::Style {
+            no_glyphs: global.no_glyphs,
+        };
+        for d in &diags {
+            println!("{}", format::selfcheck_line(d, style));
+        }
+    }
+    Ok(if diags.iter().any(|d| d.severity == Severity::Error) {
+        1
+    } else {
+        0
+    })
+}
+
+/// 0.0.34: PATH anomaly detection + `pathlint.toml` semantic
+/// validation. Inherits the 12 detector kinds previously emitted by
+/// `pathlint doctor` (now selfcheck only) per ADR-0028.
+fn execute_lint(args: &LintArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
     let filter = Filter {
         include: args.include.clone(),
         exclude: args.exclude.clone(),
     };
 
-    // doctor lints PATH itself but still consumes the merged
-    // catalog (e.g. `mise_activate_both` uses source paths). A
-    // hostile rules override could weaponise the catalog if we
-    // didn't enforce safe needles before continuing.
     let rules_path = locate_rules(global.config.as_deref())?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
@@ -172,11 +202,6 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     let relations = catalog::merge_with_user_relations(&cfg.relations);
     enforce_relation_acyclic(&relations)?;
 
-    // Validate the filter against built-in kind names plus any
-    // user-declared conflict diagnostics from the merged relation
-    // set. Validation runs after relations are loaded so that
-    // `--include foo_overlap` survives a fast-fail check when the
-    // user declared `[[relation]] diagnostic = "foo_overlap"`.
     let user_diags = doctor::user_diagnostic_names(&relations);
     if let Err(msg) = doctor::validate_filter_names(&filter, &user_diags) {
         anyhow::bail!(msg);
@@ -187,9 +212,6 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     let kept = filter.apply(&diags);
 
     if args.json {
-        // JSON view ignores --quiet on purpose: the consumer is a
-        // tool, not a human, and intermediate filtering would
-        // surprise pipelines that expect "filter == include/exclude".
         let json = format::doctor_json(&kept)?;
         println!("{json}");
     } else {

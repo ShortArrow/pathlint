@@ -228,6 +228,82 @@
           ]
         }
       }
+    },
+    {
+      "description": "Selfcheck: the running pathlint binary's absolute path was not found anywhere on PATH. Either invoked by absolute path or PATH was unset. 0.0.34+ (ADR-0028).",
+      "type": "object",
+      "required": [
+        "kind",
+        "running"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "binary_not_in_path"
+          ]
+        },
+        "running": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "description": "Selfcheck: a `pathlint.toml` was located but failed to parse. `reason` carries the parser's error string. 0.0.34+.",
+      "type": "object",
+      "required": [
+        "config_path",
+        "kind",
+        "reason"
+      ],
+      "properties": {
+        "config_path": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "config_parse_error"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "description": "Selfcheck: no `pathlint.toml` found via the standard search (cwd then `$XDG_CONFIG_HOME`). Info severity because running without a config is legitimate. 0.0.34+.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "config_not_found"
+          ]
+        }
+      }
+    },
+    {
+      "description": "Selfcheck: a required env var (`PATH`, `PATHEXT` on Windows, `HOME`/`USERPROFILE`) returned `None`. `entry` field carries the var name. 0.0.34+.",
+      "type": "object",
+      "required": [
+        "kind",
+        "var"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "env_lookup_failed"
+          ]
+        },
+        "var": {
+          "type": "string"
+        }
+      }
     }
   ],
   "required": [
@@ -250,10 +326,21 @@
   },
   "definitions": {
     "Severity": {
-      "type": "string",
-      "enum": [
-        "warn",
-        "error"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "warn",
+            "error"
+          ]
+        },
+        {
+          "description": "Informational; does not affect exit code. 0.0.34+ for the `config_not_found` selfcheck (running pathlint without a config is legitimate).",
+          "type": "string",
+          "enum": [
+            "info"
+          ]
+        }
       ]
     }
   }

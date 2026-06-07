@@ -23,9 +23,13 @@ pathlint がチェックする。元来の用途であり、ツールの背骨�
 `kind = "executable"` を付ければ、source チェックに加えて解決パスが
 実在の実行可能ファイルかも検証する。
 
-**R3 — PATH 衛生。** expectation を 1 つも評価する前に、PATH 自体が
-散らかっている — 重複、不在ディレクトリ、8.3 短縮名、より簡潔に
-書ける エントリ。`pathlint doctor` が PATH 単体で lint する。
+**R3 — PATH 衛生 + selfcheck。** expectation を 1 つも評価する前
+に、PATH 自体が 散らかっている — 重複、不在ディレクトリ、8.3 短縮
+名、より簡潔に 書ける エントリ。`pathlint lint` が PATH 単体で lint
+する（0.0.34 で `pathlint doctor` から改名、ADR-0028）。
+`pathlint doctor` は別の問いに答える — pathlint 自身がこの環境で
+動くか?（バイナリが PATH 上にあるか、`pathlint.toml` が parse でき
+るか、env 変数が読めるか）。
 
 **R4 — 出自。** `pathlint trace <command>` が解決済みバイナリの
 フルパス、マッチしたカタログ source、最も妥当な uninstall コマンド
@@ -203,7 +207,8 @@ backlog drainage に割当済、 verification record は後の番号に
 |---|---|---|
 | R1 — 解決順 | `pathlint check`（デフォルト） | 実装ずみ（0.0.2） |
 | R2 — 存在と形状 | `[[expect]] kind = "..."` を `check` に拡張 | 実装ずみ（0.0.4） |
-| R3 — PATH 衛生 | `pathlint doctor` | 実装ずみ（0.0.3） |
+| R3 — PATH 衛生 | `pathlint lint`（旧 `pathlint doctor`） | 実装ずみ（0.0.3）、 0.0.34 で 改名（ADR-0028） |
+| R3' — selfcheck | `pathlint doctor` | 実装ずみ（0.0.34） |
 | R4 — 出自 | `pathlint trace <command>` | 実装ずみ（0.0.4） |
 
 `pathlint init` と `pathlint catalog list` はインフラ系（設定の
@@ -278,7 +283,39 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 - デフォルトは現 OS のパスのみ。`--all` で全 OS のフィールドを縦
   展開。`--names-only` で名前だけ（シェル連携用）。
 
-### 7.5 `pathlint doctor`（実装ずみ）
+### 7.5 `pathlint lint` と `pathlint doctor`（0.0.34+、ADR-0028）
+
+R3 は 0.0.34 で 2 つの兄弟コマンドに分離した。背景: Round 1 で
+dotfiles dogfooding を 行った結果、0.0.33 の `doctor` が PATH 衛生
+と pathlint selfcheck の 2 つの 無関係な仕事を 1 つの 名前で 抱え
+ている のが 問題と 判明。
+
+#### `pathlint lint`（PATH 衛生）
+
+0.0.33 までの `doctor` が 出していた 12 detector kind を継承。
+`Diagnostic` の JSON shape、kind enum、`--include` / `--exclude`
+filter UX、`--json` 出力配列、schema（`schemas/doctor.schema.json`
+を新 doctor と共有）、exit code 規約 — すべて そのまま、CLI 動詞だ
+け が `doctor` → `lint` に変わる。
+
+#### `pathlint doctor`（selfcheck）
+
+3 つの確認 だけ（ADR-0028）:
+1. binary 自己発見 — 動作中の pathlint binary が PATH 上にあるか。
+2. `pathlint.toml` 発見 + parse — `locate_rules` と同じ探索
+   （cwd → `$XDG_CONFIG_HOME` → `$HOME/.config` → `$USERPROFILE/.config`）
+   で見つかった config が parse できるか。意味検証は別件（lint
+   側、将来）。
+3. `env_lookup` 動作 — `PATH`、Windows なら `PATHEXT`、config
+   検索用に `HOME` / `USERPROFILE`。
+
+selfcheck kind（共有 schema に additive）:
+`binary_not_in_path`、`config_parse_error`、`config_not_found`（info
+severity — config なしで pathlint を 走らせる のは 正当）、
+`env_lookup_failed`。`Severity` enum に `info` discriminant を
+`warn` / `error` と並列に additively 追加。
+
+#### 0.0.33 doctor と共有の振る舞い（現在は `lint` 配下）:
 
 - `[[expect]]` とは独立に PATH 自体を lint。
 - **Error**（exit 1）: 形式破損（NUL 埋め込み、Windows の NTFS 非合

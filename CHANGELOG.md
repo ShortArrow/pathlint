@@ -16,6 +16,80 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.34] — 2026-06-07
+
+**BREAKING release — `pathlint doctor` responsibility split.**
+First BREAKING since 0.0.18 (16-release additive streak resets;
+graduation criterion 1's counter restarts at 0.0.35+). Drives the
+split from Round 1 dotfiles dogfooding (PR ShortArrow/dotfiles #3)
+where the 0.0.33 `doctor --json` surfaced 202 diagnostics on a
+real Windows host and revealed that doctor was doing two
+unrelated jobs (PATH hygiene + pathlint selfcheck) under one
+name.
+
+### Breaking
+
+- **`pathlint doctor` is now selfcheck only.** Three checks
+  (binary self-locate, `pathlint.toml` discovery + parse,
+  `env_lookup` operational); does **not** inspect PATH for
+  duplicates / shortenable / shadowed / etc. The 0.0.33 doctor
+  output is gone — that JSON wire shape no longer comes out of
+  `pathlint doctor`. Migration: scripts calling
+  `pathlint doctor --json` for PATH anomalies should switch to
+  `pathlint lint --json` (same `Diagnostic` JSON shape, same
+  kind names, same `--include` / `--exclude` filter UX). No
+  `--legacy` flag, no alias runway — see
+  [ADR-0028](docs/decisions/0028-doctor-lint-responsibility-split.md)
+  for why a runway was not adopted (no observed JSON consumers,
+  0.0.x BREAKING licence, code simplicity).
+- **`Severity` enum gains `info`** as a discriminant alongside
+  `warn` / `error`. Selfcheck's `config_not_found` emits at info
+  severity (running pathlint without a config is legitimate).
+  JSON consumers parsing the `severity` enum strictly must
+  accept `info` or filter it out client-side.
+
+### Added
+
+- **`pathlint lint` subcommand** — inherits the 12 detector
+  kinds previously emitted by `pathlint doctor` (0.0.13–0.0.33):
+  `duplicate`, `missing`, `shortenable`, `trailing_slash`,
+  `case_variant`, `short_name`, `malformed`, `conflict`
+  (incl. user-declared `[[relation]]` diagnostics),
+  `per_source_missing_required`, `duplicate_but_shadowed`,
+  `relative_path_entry`, `writeable_path_dir`. The
+  `--include` / `--exclude` filter UX, `--json` output array,
+  and `Diagnostic` schema are preserved verbatim.
+- **Selfcheck `Kind` variants** in
+  `schemas/doctor.schema.json` (shared by both subcommands):
+  `binary_not_in_path`, `config_parse_error`,
+  `config_not_found`, `env_lookup_failed`.
+- [ADR-0028](docs/decisions/0028-doctor-lint-responsibility-split.md)
+  (Cat 1 + 8): doctor is pathlint's selfcheck; PATH analysis
+  moves to the new `lint` subcommand. Records 6 rejected
+  alternatives (keep doctor as-is + add lint; rename doctor to
+  lint; alias runway; fold into check; text-only output;
+  detector kinds in check).
+
+### Changed
+
+- **`tests/doctor.rs` → `tests/lint.rs`** (17 PATH-hygiene
+  integration tests moved verbatim; the only edits are
+  subcommand-name substitutions and a header comment).
+- **PRD §3 R3 description** updated to reflect the
+  doctor/lint split (graduation criterion "PRD matches
+  implementation" maintained).
+- **PRD §7.5** rewritten to document `pathlint lint` and
+  `pathlint doctor` as sibling commands; the 0.0.33 doctor
+  description survives as historical context inside the new
+  `lint` section.
+- **Source-validation gate** (catalog-needle-too-short / root
+  path rejection) and **relation-acyclicity gate** moved from
+  `doctor` to `lint`. `pathlint check`, `pathlint trace`,
+  `pathlint sort` continue to enforce both gates as before.
+- **Test renames in `tests/security.rs`:** two doctor-flavoured
+  scenarios become lint-flavoured (`lint_rejects_user_source_pointing_at_root`,
+  `lint_rejects_user_relation_cycle`).
+
 ### Note on intermediate release publishing (0.0.29–0.0.32)
 
 CHANGELOG entries for 0.0.29 / 0.0.30 / 0.0.31 / 0.0.32 are

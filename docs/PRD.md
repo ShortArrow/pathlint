@@ -27,10 +27,14 @@ directory of the same name? Is the symlink broken? Adding
 the resolved path is a real executable file on top of the source
 check.
 
-**R3 — PATH hygiene.** Even before any expectation is evaluated,
-the `PATH` itself is often a mess: duplicates, dangling directories,
-8.3 short names, entries that could be written more concisely.
-`pathlint doctor` lints the PATH on its own.
+**R3 — PATH hygiene + selfcheck.** Even before any expectation
+is evaluated, the `PATH` itself is often a mess: duplicates,
+dangling directories, 8.3 short names, entries that could be
+written more concisely. `pathlint lint` lints the PATH on its
+own (new name in 0.0.34, per ADR-0028; previously this was
+`pathlint doctor`). `pathlint doctor` now answers a different
+question — is pathlint itself functional in this environment?
+(binary on PATH, `pathlint.toml` parseable, env vars readable).
 
 **R4 — Provenance.** `pathlint trace <command>` reports the
 resolved binary's full path, the catalog sources it matches, and
@@ -107,10 +111,20 @@ Per-role:
   the path must point at an actually-executable file. Symlinks
   must be alive; "executable" must mean it. Today only `not_found`
   is reported; the rest is 0.0.4+.
-- **R3 (PATH hygiene).** Even with no `[[expect]]` written,
-  `pathlint doctor` flags duplicates, dangling directories,
-  8.3 short names, env-var-shortenable entries, and malformed
-  entries that would never resolve.
+- **R3 (PATH hygiene + selfcheck).** Two sibling commands since
+  0.0.34 (ADR-0028):
+  - `pathlint lint` — even with no `[[expect]]` written, flags
+    duplicates, dangling directories, 8.3 short names, env-var-
+    shortenable entries, shadowed commands across PATH dirs,
+    relative entries, world-writable directories, and malformed
+    entries that would never resolve. Inherits the 12 detector
+    kinds previously emitted by `pathlint doctor` (0.0.13–0.0.33).
+  - `pathlint doctor` — checks pathlint itself is functional in
+    this environment: binary self-locate on PATH,
+    `pathlint.toml` discovery + parse, and `env_lookup`
+    operational (`PATH`, `PATHEXT` on Windows, `HOME` /
+    `USERPROFILE` for config search). Does not inspect PATH for
+    anomalies.
 - **R4 (provenance).** Given a resolved binary, name the installer
   it most plausibly came from, and the corresponding uninstall
   command. Useful when the user can't remember whether they ran
@@ -221,7 +235,8 @@ Mapping subcommands to roles (see §1):
 |---|---|---|
 | R1 — resolve order | `pathlint check` (default) | implemented (0.0.2) |
 | R2 — existence and shape | reuses `[[expect]]` with a `kind` field, exposed in `check` | implemented (0.0.4) |
-| R3 — PATH hygiene | `pathlint doctor` | implemented (0.0.3) |
+| R3 — PATH hygiene | `pathlint lint` (formerly `pathlint doctor`) | implemented (0.0.3); renamed in 0.0.34 per ADR-0028 |
+| R3' — selfcheck | `pathlint doctor` | implemented (0.0.34) |
 | R4 — provenance | `pathlint trace <command>` | implemented (0.0.4) |
 
 `pathlint init` and `pathlint catalog list` are infrastructure
@@ -322,9 +337,42 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
   `--all` shows every per-OS field; `--names-only` strips paths and
   descriptions for shell pipelines.
 
-### 7.5 `pathlint doctor` (implemented)
+### 7.5 `pathlint lint` and `pathlint doctor` (0.0.34+, ADR-0028)
 
-- Lints the PATH itself, independent of `[[expect]]`.
+R3 splits into two sibling commands as of 0.0.34. The
+responsibility split was driven by Round 1 dotfiles dogfooding
+revealing that the 0.0.33 `doctor` did two unrelated jobs (PATH
+hygiene vs pathlint selfcheck) under one name.
+
+#### `pathlint lint` (PATH hygiene)
+
+Inherits the 12 detector kinds previously emitted by
+`pathlint doctor` (0.0.13–0.0.33). The `Diagnostic` JSON shape,
+the kind enum, the `--include` / `--exclude` filter UX, the
+`--json` output array, the schema (`schemas/doctor.schema.json`,
+shared with the new doctor surface), and the exit-code semantics
+are all preserved verbatim — only the CLI verb changes from
+`doctor` to `lint`.
+
+#### `pathlint doctor` (selfcheck)
+
+Three checks only (ADR-0028):
+1. Binary self-locate — running pathlint binary is on PATH.
+2. `pathlint.toml` discovery + parse — found via cwd or
+   `$XDG_CONFIG_HOME`, and the parser succeeds. Semantic
+   validation (does `[source.x] path` resolve? does
+   `[[expect]] command` match a catalog entry?) is not checked
+   here; that is scoped for a future release.
+3. `env_lookup` operational — `PATH`, plus `PATHEXT` on Windows,
+   `HOME`/`USERPROFILE` for config search.
+
+Selfcheck kinds (additive to the shared schema):
+`binary_not_in_path`, `config_parse_error`, `config_not_found`
+(info severity — running without a config is legitimate),
+`env_lookup_failed`. The `Severity` enum gains `info` as a new
+discriminant alongside `warn` / `error`.
+
+#### Behaviour shared with the 0.0.33 doctor (now under `lint`):
 - **Error** (exits 1): malformed entries — embedded NUL, NTFS-
   illegal chars on Windows. The OS cannot use these as directories
   so they're escalated.
