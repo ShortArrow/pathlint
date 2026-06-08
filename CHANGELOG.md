@@ -16,6 +16,47 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.35] — 2026-06-09
+
+**Additive release** — workflow recovery + 0.0.34 crates.io
+publishing follow-up. No CLI or lib surface change vs 0.0.34;
+the `lint`/`doctor` split shipped in 0.0.34 stands. First
+release of the new BREAKING streak after the 0.0.18→0.0.33
+additive streak ended at 0.0.34.
+
+### Added
+
+- `.github/workflows/release.yml` tolerates an existing tag at
+  HEAD across re-runs (PR #34). The prepare job now detects an
+  already-pushed `v<version>` tag, verifies it points at the
+  current HEAD (hard-error otherwise), and skips the `git tag`
+  step in that case. Lets the workflow be re-run with a different
+  `publish_crates` value after a partial first run.
+
+### Note on 0.0.34 crates.io publishing
+
+0.0.34 shipped as a GitHub Release with binary archives and
+schema assets on 2026-06-07, but **was not published to
+crates.io**. The first release-workflow run had
+`publish_crates=false` (default) so the crates.io publish step
+was skipped; the re-run with `publish_crates=true` failed at the
+`git tag` step because `v0.0.34` already existed from the first
+run. PR #34 patched the workflow to tolerate an existing tag at
+HEAD, but by the time the patch merged, `main` had moved past
+`f9845b1` (the 0.0.34 release commit) — the patched workflow's
+safety check refused to publish a tree that no longer matched the
+existing tag.
+
+The recovery path is to fold the crates.io publish into the next
+release (0.0.35). The 0.0.34 functional surface (lint / doctor
+split) is available via `cargo install --git
+https://github.com/ShortArrow/pathlint --tag v0.0.34` or by
+downloading the GitHub Release binary directly. This mirrors the
+0.0.29–0.0.32 publishing-gap pattern documented above; the same
+mechanical mismatch caused both, and graduation criterion 1 (count
+of consecutive additive CHANGELOG entries) is unaffected since it
+counts CHANGELOG entries, not crates.io publishes.
+
 ## [0.0.34] — 2026-06-07
 
 **BREAKING release — `pathlint doctor` responsibility split.**
