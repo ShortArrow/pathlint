@@ -94,8 +94,24 @@ jobs:
             git commit -m "chore: release ${{ inputs.version }}"
             git push origin HEAD:main
           fi
-          git tag -a "v${{ inputs.version }}" -m "pathlint ${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
+          # Tolerate an existing tag so the workflow can be re-run with
+          # a different `publish_crates` value after a prior partial
+          # release (e.g. the 0.0.34 first run shipped GitHub Release
+          # only; a second run flips publish_crates=true to fill in the
+          # crates.io publish). Verify the existing tag points at the
+          # same commit before continuing — a mismatch is a hard error.
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            existing=$(git rev-parse "v${{ inputs.version }}^{commit}")
+            head=$(git rev-parse HEAD)
+            if [ "$existing" != "$head" ]; then
+              echo "::error::tag v${{ inputs.version }} already exists at $existing but HEAD is $head; refusing to re-tag" >&2
+              exit 1
+            fi
+            echo "tag v${{ inputs.version }} already exists at HEAD; skipping tag step"
+          else
+            git tag -a "v${{ inputs.version }}" -m "pathlint ${{ inputs.version }}"
+            git push origin "v${{ inputs.version }}"
+          fi
 
   build:
     name: build ${{ matrix.target }}
