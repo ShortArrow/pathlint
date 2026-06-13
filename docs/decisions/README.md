@@ -26,7 +26,7 @@ directory belongs to one or more of those categories.
 | [0007](0007-deps-bag-layered.md) | layered `*Deps` carriers + per-function production wrappers | 2 (+1) | Accepted | 0.0.27 |
 | [0008](0008-attribution-type-split.md) | split `Attribution` out of `PathEntry` | 1 (+2) | Accepted (closes ADR-0001 & 0004 Follow-up) | 0.0.28 |
 | [0009](0009-read-only-stance.md) | Read-only stance (no PATH / registry / dotfiles mutation) | 5 (+4) | Accepted | 0.0.x (recorded retroactively in 0.0.30) |
-| [0010](0010-release-workflow-bump-skip.md) | Release workflow tolerates an already-bumped `Cargo.toml` | 8 | Accepted | 0.0.24 (recorded retroactively in 0.0.30) |
+| [0010](0010-release-workflow-bump-skip.md) | Release workflow tolerates an already-bumped `Cargo.toml` | 8 | Superseded by ADR-0029 | 0.0.24 (recorded retroactively in 0.0.30; superseded in 0.0.36) |
 | [0011](0011-normalize-substring-match-policy.md) | `expand::normalize` policy (case-insensitive + slash unify, substring match without canonicalisation) | 3 | Accepted | 0.0.x (recorded retroactively in 0.0.30) |
 | [0012](0012-schemars-1-0-deferred.md) | Defer schemars 1.0 migration past 0.0.x graduation | 6 | Accepted | 0.0.31 |
 | [0013](0013-graduation-criteria-record.md) | Graduation criteria satisfaction record (0.0.31 snapshot) | 8 | Accepted (Criterion 5 section superseded by ADR-0025) | 0.0.31 |
@@ -44,7 +44,8 @@ directory belongs to one or more of those categories.
 | [0025](0025-criterion-5-closure.md) | Graduation criterion 5 fully satisfied (11/11 Breaking releases ADR-linked) | 8 | Accepted (supersedes ADR-0013 §Criterion 5) | 0.0.32 |
 | [0026](0026-trybuild-for-negative-invariants.md) | Adopt `trybuild` as dev-dependency for compile-fail negative-invariant tests | 6 (+8) | Accepted | 0.0.33 |
 | [0027](0027-lib-env-read-boundaries.md) | Lib has two intentional env-read boundaries; `_with` is the injection seam, wrapper is CLI-convenience | 3 (+4) | Accepted | 0.0.33 |
-| [0028](0028-doctor-lint-responsibility-split.md) | `doctor` is pathlint's selfcheck; PATH analysis moves to a new `lint` subcommand | 1 (+8) | Proposed | 0.0.34 |
+| [0028](0028-doctor-lint-responsibility-split.md) | `doctor` is pathlint's selfcheck; PATH analysis moves to a new `lint` subcommand | 1 (+8) | Accepted | 0.0.34 |
+| [0029](0029-release-trigger-tag-push.md) | Release workflow trigger moves from `workflow_dispatch` to `on: push: tags` (supersedes ADR-0010) | 8 | Proposed | 0.0.36 |
 
 ## Index by category (topical view)
 
@@ -107,13 +108,14 @@ is **not** a universal ADR hierarchy.
 
 - [ADR-0000](0000-adr-categories.md) — this index, ADR categories and application criteria
 - [ADR-0005](0005-pre-1-0-breaking-policy.md) — pre-1.0 BREAKING licence
-- [ADR-0010](0010-release-workflow-bump-skip.md) — release workflow tolerates an already-bumped `Cargo.toml` (PR #22 formalised)
+- [ADR-0010](0010-release-workflow-bump-skip.md) — release workflow tolerates an already-bumped `Cargo.toml` (PR #22 formalised; **superseded by ADR-0029**)
 - [ADR-0013](0013-graduation-criteria-record.md) — graduation criteria satisfaction record (0.0.31 snapshot; Criterion 5 superseded)
 - [ADR-0021](0021-build-rs-aggregate-violations.md) — `build.rs` aggregates plugin referential-integrity violations
 - [ADR-0024](0024-color-flag-activation.md) — `--color` flag activation
 - [ADR-0025](0025-criterion-5-closure.md) — graduation criterion 5 fully satisfied (supersedes ADR-0013 §Criterion 5)
 - [ADR-0026](0026-trybuild-for-negative-invariants.md) — secondary (test-infra policy)
 - [ADR-0028](0028-doctor-lint-responsibility-split.md) — secondary (CLI subcommand topology)
+- [ADR-0029](0029-release-trigger-tag-push.md) — release trigger moves to `on: push: tags`; supersedes ADR-0010
 
 ## When to write an ADR
 

@@ -1,9 +1,17 @@
 # ADR-0010: release workflow tolerates an already-bumped `Cargo.toml`
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0029](0029-release-trigger-tag-push.md)
 - **Date**: 2026-05-31
-- **Release**: 0.0.24 (workflow change shipped via PR #22; ADR backfilled in 0.0.30)
+- **Supersession date**: 2026-06-13
+- **Release**: 0.0.24 (workflow change shipped via PR #22; ADR backfilled in 0.0.30; superseded in 0.0.36)
 - **Category**: 8. Process / governance (release engineering)
+
+> **Superseded.** ADR-0029 changes the release trigger from
+> `workflow_dispatch` to `on: push: tags: ["v*"]`. Under the new
+> shape CI never runs `cargo set-version`, so the "tolerate an
+> already-bumped Cargo.toml" branch this ADR records has nothing
+> to handle. Body kept verbatim for history; do not rely on the
+> behavior described here for releases at or after 0.0.36.
 
 ## Context
 

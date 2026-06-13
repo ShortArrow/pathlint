@@ -2,89 +2,133 @@
 
 🌐 [English](RELEASE.md) | **日本語**
 
-リリースは `main` ブランチに対して GitHub Actions の `release`
-ワークフローを実行することで行う。version bump、tag、build、
-GitHub Release はワークフローが行う。crates.io への publish は
-opt-in。
+0.0.36 以降のリリースは、`main` ブランチに **`vX.Y.Z` 形式の
+tag を push する** ことで実行する。 tag push が workflow を
+trigger し、 ビルド、 schema 生成、 GitHub Release 作成、
+crates.io への publish までが自動で走る。 Actions タブの dispatch
+は使わず、 version 入力もない。 tag そのものがリリース指示。 設計
+変更の経緯は
+[ADR-0029](decisions/0029-release-trigger-tag-push.md) を参照
+(ADR-0029 は
+[ADR-0010](decisions/0010-release-workflow-bump-skip.md) を
+supersede している)。
 
 ## 手順
 
-ワークフロー起動前のチェックリスト：
+### 1. 事前チェックリスト
 
-- `README.md` の schema-pin 例を更新する。`<TAG>` の placeholder
+- `README.md` の schema-pin 例を更新する。 `<TAG>` の placeholder
   例が **直前のリリース版** を指すようにする (copy-paste した user
   が known-good URL を得るため、未公開バージョンを指さないため)。
   `README.md` 内で
   `https://github.com/ShortArrow/pathlint/releases/download/` を
   検索。
-- (任意、推奨) `scripts/bench.sh` を走らせて hyperfine の表を
-  release notes 草案に貼る。host の情報 (CPU モデル、OS) も書いて
-  おくと後から数字を比較しやすい。PRD §12 の `<50 ms startup`
+- (任意、 推奨) `scripts/bench.sh` を走らせて hyperfine の表を
+  release notes 草案に貼る。 host の情報 (CPU モデル、 OS) も書いて
+  おくと後から数字を比較しやすい。 PRD §12 の `<50 ms startup`
   claim の検証手段。
-- **英日 parity check。** 以下 3 ペアそれぞれについて、前回
-  リリース以降の差分を diff し、両ファイルが同時に更新されたか
+- **英日 parity check。** 以下 3 ペアそれぞれについて、 前回
+  リリース以降の差分を diff し、 両ファイルが同時に更新されたか
   確認する：
     - `README.md` ↔ `docs/README.jp.md`
     - `docs/RELEASE.md` ↔ `docs/RELEASE.jp.md`
     - `docs/PRD.md` ↔ `docs/PRD.jp.md`
   例えば 0.0.14 で導入された `os_baseline_linux_sbin` が JP
-  README には反映されないまま 0.0.18 まで残っていた、ような
+  README には反映されないまま 0.0.18 まで残っていた、 ような
   drift をこの checklist で防ぐ。
 
-  注: `docs/ARCHITECTURE.md` と `CHANGELOG.md` は意図的に英語のみ。 user feedback
-  次第で将来 JP 版を別 release で追加する余地はあるが、 現時点では
-  この parity check の対象外。
+  注: `docs/ARCHITECTURE.md` と `CHANGELOG.md` は意図的に英語のみ。
+  user feedback 次第で将来 JP 版を別 release で追加する余地は
+  あるが、 現時点ではこの parity check の対象外。
 
-それから：
+### 2. Bump PR
 
-1. GitHub のリポジトリで **Actions** → **release** → **Run
-   workflow** を開く。
-2. 新しいバージョン番号を入力する（例：`0.0.10`）。`v` は付け
-   ない。tag には自動で付く。
-3. crates.io にも公開するかどうか決める。チェックはデフォルト
-   off。Trusted Publishing の設定が済んだら on にする（後述）。
-4. **Run workflow** をクリック。
+以下を行う PR を 1 本立てる：
 
-ワークフローは以下を順に行う：
+- `Cargo.toml` を新バージョンに bump (例: `version = "0.0.36"`)、
+  `Cargo.lock` も更新。
+- `CHANGELOG.md` に `[X.Y.Z]` entry を追加。
+- ユーザ向け変更を含むなら `docs/PRD.md` / `docs/README.jp.md` /
+  `docs/PRD.jp.md` も同 PR で更新。
 
-1. `Cargo.toml` を bump し、`Cargo.lock` を更新する (idempotent:
-   入力 version と `Cargo.toml` が既に一致していれば `cargo
-   set-version` は no-op、 `chore: release` commit は skip
-   される。 詳細は
-   [ADR-0010](decisions/0010-release-workflow-bump-skip.md))。
-2. fmt / clippy / test / package を走らせる。
-3. `chore: release X.Y.Z` をコミットし (差分が無ければ skip)、
-   `vX.Y.Z` を tag、 `main` に push する。
-4. Linux / macOS / Windows 向けにクロスビルドする。
-5. リリースノートを自動生成して GitHub Release を作る。
-6. （指定された場合のみ）crates.io に公開する。
+squash merge する。 このリリースで crates.io publish を **skip**
+したい場合は、 squash 後の commit message に `[skip publish]`
+(半角スペース 1 つ、 角括弧、 小文字、 exact spelling) を含める。
+デフォルトは publish する。
+
+```text
+chore: release 0.0.36
+
+リリースノート本文。
+
+[skip publish]   ← crates.io を skip したい release だけこの行を入れる
+```
+
+### 3. main 上で tag を切って push
+
+Bump PR が merge されたら、 きれいな `main` で：
+
+```sh
+git switch main
+git pull --ff-only origin main
+git tag -a vX.Y.Z -m "pathlint X.Y.Z"
+git push origin vX.Y.Z
+```
+
+`git push origin vX.Y.Z` が workflow を trigger する。 workflow
+は以下を順に実行：
+
+1. tag 先の commit の `Cargo.toml` version が `X.Y.Z` と一致する
+   ことを check。 不一致なら即 fail。
+2. Linux / macOS / Windows 向けにクロスビルド。
+3. tag された commit から JSON schema を再生成。
+4. リリースノートを自動生成して GitHub Release を作成。
+5. (tag commit の message に `[skip publish]` が含まれない限り)
+   Trusted Publishing 経由で OIDC token を交換し `cargo publish`
+   を実行。
+
+### tag-on-`main` ルール
+
+tag は `main` でのみ切る。 workflow 側での enforcement は今は
+していない (runex も同じ運用、 かつ pathlint は releaser が 1 人
+なので)。 規律で守る。 hotfix branch からリリースしたい場合は、
+先に hotfix を `main` に merge する。
+
+### `[skip publish]` token
+
+正確な spelling は `[skip publish]` — 角括弧、 小文字、 `skip`
+と `publish` の間は半角スペース 1 つ。 `[skip-publish]` /
+`[skip_publish]` / `[ skip publish ]` といった変形は workflow の
+`contains()` check に **match しない** ので、 結果的に crates.io
+に publish される。 skip させたい場合は bump PR の squash commit
+message を merge 前に再確認する。
 
 ## ブランチと merge ポリシー
 
 長く維持するブランチは `main` 1 本だけ。
 
-- 日常作業は feature ブランチ（`feat/...`、`fix/...` など）で
-  行い、PR の squash merge で `main` に入れる。
-- PR タイトルは Conventional Commits に従う（`feat:`、`fix:`、
-  `refactor:`、`chore:`、`docs:`、`test:`、`ci:` ほか）。squash
-  後の commit subject は PR タイトルそのものになり、リリース
+- 日常作業は feature ブランチ (`feat/...`、 `fix/...` など) で
+  行い、 PR の squash merge で `main` に入れる。
+- PR タイトルは Conventional Commits に従う (`feat:`、 `fix:`、
+  `refactor:`、 `chore:`、 `docs:`、 `test:`、 `ci:` ほか)。 squash
+  後の commit subject は PR タイトルそのものになり、 リリース
   ノートの自動生成はこの行を拾う。
-- PR レビューを通らずに `main` に入る唯一の例外は、リリース
-  ワークフローの `prepare` ジョブが `github-actions[bot]` と
-  して打つ `chore: release X.Y.Z` コミット。
+- PR レビューを通らずに `main` に入る commit は **ない**。 0.0.36
+  以降は workflow が `main` に push しない (version bump は通常の
+  PR に同梱)。
 
 リポ設定の推奨：
 
-- Pull Requests: squash merge のみ許可。squash の subject に PR
+- Pull Requests: squash merge のみ許可。 squash の subject に PR
   タイトルを使う設定を on に。
-- `main` の branch protection: PR + status checks（`ci`、
-  `pr-title-check`）必須、linear history 必須、リリースコミット
-  のために `github-actions` のみ push を許可。
+- `main` の branch protection: PR + status checks (`ci`、
+  `pr-title-check`) 必須、 linear history 必須。 旧 release flow
+  で必要だった `github-actions[bot]` の push 例外は不要。
 
 ## バージョン
 
-バージョンが `0.` で始まる間は、minor / patch 双方で TOML schema
-や CLI を壊しうる。`0.1.0` 以降は通常の semver に従う。
+バージョンが `0.` で始まる間は、 minor / patch 双方で TOML schema
+や CLI を壊しうる。 `0.1.0` 以降は通常の semver に従う。
 
 ## crates.io への publish
 
@@ -95,44 +139,46 @@ cargo publish
 ```
 
 そのあと crates.io のクレート設定画面で Trusted Publishing を
-設定すれば、`release` ワークフローからも公開できるようになる。
-ワークフロー実行時に **Also publish to crates.io** にチェックを
-入れる。
+設定済み。 0.0.36 以降は tag push のたびに デフォルトで publish
+される。 特定リリースで skip したい場合は bump 時の commit
+message に `[skip publish]` を含める。
 
 ## 失敗時の対応
 
-- **prepare が失敗。** 何も push されていない。`main` で直して
-  ワークフローを再実行。
-- **prepare 成功後 build が失敗。** bump コミットと tag は既に
-  `main` に乗っている。fix-forward で次バージョンに進むか、tag
-  を消して（`git push origin :refs/tags/vX.Y.Z`）同じバージョン
-  で再実行する。
-- **publish-github が失敗。** そのジョブだけ再実行する。アー
-  ティファクトは build ジョブに残っている。
-- **publish-crates が失敗。** crates.io は同じバージョンの再
-  公開を受け付けないので、次のバージョンに上げる必要がある。
+新 flow は、 旧 `workflow_dispatch` flow が必要としていた
+partial-release recovery 経路を構造的に取り除いた。 同じ tag を
+再 push しても `git push` が non-fast-forward で reject、 仮に
+tag を force-delete して再 push しても crates.io が同一 version
+の publish を reject する。
 
-リリース全体を取り消す場合：
+**recovery は次の patch release を切ること**。 これは 0.0.34 →
+0.0.35 で pathlint が苦労して学んだ規律と同じ：途中で release が
+失敗したら、 同じ version で retry せず、 次の patch を bump して
+新しく release を切る。
+
+具体的な失敗モード：
+
+- **Version mismatch guard が fail**: tag 先の `Cargo.toml` が
+  別 version。 tag を削除 (`git push origin :refs/tags/vX.Y.Z`)、
+  `Cargo.toml` を正しく bump し直す PR を立て、 再度 tag を切る。
+- **特定 OS の build matrix が fail**: 一時的なら Actions タブで
+  そのジョブだけ再実行する。 本質的な失敗なら fix forward で
+  次 patch release を切る。
+- **publish-github が fail**: そのジョブだけ再実行する。 build
+  artifact は build job に残っており、 tag は変わらない。
+- **publish-crates が fail**: crates.io は同 version の再 publish
+  を受け付けない。 fix forward で次 patch release を切る。 再 tag
+  しない。
+
+リリース全体を取り消したい場合：
 
 ```sh
 git switch main
 git pull --ff-only
-git reset --hard HEAD~1
-git push --force-with-lease origin main
 git push origin :refs/tags/vX.Y.Z
+gh release delete vX.Y.Z --yes
 ```
 
-## 手動 fallback
-
-ワークフロー自体が壊れているとき：
-
-```sh
-./scripts/release-check.sh X.Y.Z   # ローカルで fmt/clippy/test/package
-cargo install cargo-edit --locked  # `cargo set-version` を提供
-cargo set-version X.Y.Z
-git commit -am "chore: release X.Y.Z"
-git tag -a vX.Y.Z -m "pathlint X.Y.Z"
-git push origin main vX.Y.Z
-gh release create vX.Y.Z --generate-notes ...
-cargo publish      # crates.io にも出す場合
-```
+Bump PR の commit は `main` に残る。 それを消すには `main` への
+force push が必要で、 branch protection で拒否される想定。 代わり
+に bump を revert する follow-up PR を立てる。
