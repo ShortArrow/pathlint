@@ -2,13 +2,19 @@
 
 🌐 **English** | [日本語](RELEASE.jp.md)
 
-Releases are cut from `main` by running the `release` workflow on
-GitHub Actions. The workflow handles the version bump, tag, build,
-and GitHub Release. crates.io publishing is opt-in.
+From 0.0.36 onward, releases are cut from `main` by **pushing a
+`vX.Y.Z` tag** from a human's machine. The workflow runs
+automatically on the tag, builds binaries, generates schemas,
+publishes a GitHub Release, and publishes to crates.io. There is
+no Actions tab dispatch and no version input — the tag itself is
+the authoritative trigger. See
+[ADR-0029](decisions/0029-release-trigger-tag-push.md) for why
+the shape changed (it supersedes
+[ADR-0010](decisions/0010-release-workflow-bump-skip.md)).
 
 ## How to release
 
-Before kicking off the workflow:
+### 1. Pre-release checklist
 
 - Update `README.md`'s schema-pin example so the `<TAG>` placeholder
   example reads as the **previous** released version (so users
@@ -35,29 +41,67 @@ Before kicking off the workflow:
   if user feedback asks for it, but neither is gated by this parity
   check today.
 
-Then:
+### 2. Bump PR
 
-1. Open the repo on GitHub. Go to **Actions** → **release** →
-   **Run workflow**.
-2. Enter the new version number (e.g. `0.0.10`). Don't include the
-   `v`; the workflow adds it for the tag.
-3. Decide whether to publish to crates.io. The checkbox is off by
-   default. Tick it once Trusted Publishing is set up (see below).
-4. Click **Run workflow**.
+Open a PR that:
 
-The workflow will:
+- Bumps `Cargo.toml` to the new version (e.g. `version = "0.0.36"`)
+  and refreshes `Cargo.lock`.
+- Adds the `[X.Y.Z]` entry to `CHANGELOG.md`.
+- Updates `docs/PRD.md` / `docs/README.jp.md` / `docs/PRD.jp.md`
+  if the release ships any user-facing change.
 
-1. bump `Cargo.toml` and refresh `Cargo.lock` (idempotent: if
-   `Cargo.toml` already matches the input version, `cargo
-   set-version` is a no-op and the `chore: release` commit is
-   skipped — see
-   [ADR-0010](decisions/0010-release-workflow-bump-skip.md)),
-2. run fmt / clippy / test / package,
-3. commit `chore: release X.Y.Z` (or skip if no diff) and tag
-   `vX.Y.Z`, push to `main`,
-4. cross-build for Linux / macOS / Windows,
-5. create a GitHub Release with auto-generated notes,
-6. (if asked) publish to crates.io.
+Squash-merge it. If this release should **skip** the crates.io
+publish, put the literal token `[skip publish]` (exact spelling,
+one space, square brackets) in the squash commit message. The
+default is to publish.
+
+```text
+chore: release 0.0.36
+
+Release notes here.
+
+[skip publish]   ← include this line only if you want to skip crates.io
+```
+
+### 3. Tag and push from main
+
+Right after the bump PR merges, on a clean `main`:
+
+```sh
+git switch main
+git pull --ff-only origin main
+git tag -a vX.Y.Z -m "pathlint X.Y.Z"
+git push origin vX.Y.Z
+```
+
+That `git push origin vX.Y.Z` triggers the workflow. The workflow
+will:
+
+1. Check that the `Cargo.toml` version at the tagged commit
+   matches `X.Y.Z`. If not, the build fails immediately.
+2. Cross-build for Linux / macOS / Windows.
+3. Re-generate the JSON schemas from the tagged commit.
+4. Create a GitHub Release with auto-generated notes.
+5. (unless the tagged commit's message contains `[skip publish]`)
+   exchange an OIDC token via Trusted Publishing and run
+   `cargo publish`.
+
+### Tag-on-`main` rule
+
+Tags are cut on `main` only. The workflow does not enforce this
+(runex follows the same convention, and pathlint has one releaser
+today); the rule is upheld by discipline. If you need to release
+from a hotfix branch, merge the hotfix to `main` first.
+
+### `[skip publish]` token
+
+The exact spelling is `[skip publish]` — square brackets, lowercase,
+one space between `skip` and `publish`. Variants like
+`[skip-publish]`, `[skip_publish]`, or `[ skip publish ]` do **not**
+match the `contains()` check in the workflow and will publish to
+crates.io anyway. Review the bump PR's squash commit message
+carefully if you intend to skip.
 
 ## Branch and merge policy
 
@@ -69,17 +113,17 @@ The workflow will:
   `refactor:`, `chore:`, `docs:`, `test:`, `ci:`, ...). The squash
   commit's subject is the PR title; that becomes the line
   GitHub's auto-generated release notes pick up.
-- The only commits that bypass PR review are `chore: release
-  X.Y.Z` from the release workflow's `prepare` job, run as
-  `github-actions[bot]`.
+- No commits bypass PR review. From 0.0.36 onward the workflow
+  never pushes to `main` (the version bump rides in a normal PR).
 
 Recommended GitHub repo settings:
 
 - Pull requests: allow squash merging only; default to PR title
   for the squash commit subject.
 - Branch protection on `main`: require PR + status checks (`ci`,
-  `pr-title-check`), require linear history, allow
-  `github-actions` to push for the release commit.
+  `pr-title-check`), require linear history. The
+  `github-actions[bot]` push exemption that earlier releases
+  needed is no longer required.
 
 ## Versioning
 
@@ -95,45 +139,48 @@ The first publish has to be done by hand:
 cargo publish
 ```
 
-After that, set up Trusted Publishing on the crate's settings
-page on crates.io and the `release` workflow can do it. Tick
-**Also publish to crates.io** when running the workflow.
+After that, Trusted Publishing is configured on the crate's
+settings page on crates.io. From 0.0.36 onward every tag push
+publishes by default; include `[skip publish]` in the bump commit
+message to opt out for a specific release.
 
 ## When something goes wrong
 
-- **prepare fails.** Nothing was pushed. Fix on `main`, run the
-  workflow again.
-- **build fails after prepare succeeded.** The bump commit and
-  tag are already on `main`. Either fix forward and bump again,
-  or delete the tag (`git push origin :refs/tags/vX.Y.Z`) and
-  re-run with the same version.
-- **publish-github fails.** Re-run that job alone; the artifacts
-  are still on the build job.
-- **publish-crates fails.** crates.io won't accept a republish of
-  the same version, so any retry has to use the next version
-  number.
+The new shape removes the partial-release recovery branch that
+the `workflow_dispatch` flow needed. Re-pushing the same tag is
+rejected by `git push` (non-fast-forward), and even if the tag
+were force-deleted and re-pushed crates.io would reject the
+duplicate publish.
 
-To abandon a release entirely:
+**Recovery is the next patch release.** This is the same
+discipline that 0.0.34 → 0.0.35 had to discover the hard way:
+when a release fails partway, do not retry the same version; bump
+to the next patch and re-release.
+
+Specific failure modes:
+
+- **Version mismatch guard fails.** The tag points at a commit
+  whose `Cargo.toml` is at a different version. Delete the tag
+  (`git push origin :refs/tags/vX.Y.Z`), open a PR that bumps
+  `Cargo.toml` correctly, then re-tag.
+- **Build fails on one OS matrix entry.** Re-run that job from
+  the Actions tab if the failure looks transient. If the failure
+  is real, fix forward and cut the next patch release.
+- **publish-github fails.** Re-run that job. The build artifacts
+  are still on the build job and the tag is unchanged.
+- **publish-crates fails.** crates.io will not accept a republish
+  of the same version. Cut the next patch release with the fix.
+  Do not re-tag.
+
+If a release needs to be abandoned entirely:
 
 ```sh
 git switch main
 git pull --ff-only
-git reset --hard HEAD~1
-git push --force-with-lease origin main
 git push origin :refs/tags/vX.Y.Z
+gh release delete vX.Y.Z --yes
 ```
 
-## Manual fallback
-
-If the workflow itself is broken:
-
-```sh
-./scripts/release-check.sh X.Y.Z   # local fmt/clippy/test/package
-cargo install cargo-edit --locked  # provides `cargo set-version`
-cargo set-version X.Y.Z
-git commit -am "chore: release X.Y.Z"
-git tag -a vX.Y.Z -m "pathlint X.Y.Z"
-git push origin main vX.Y.Z
-gh release create vX.Y.Z --generate-notes ...
-cargo publish      # if you want it on crates.io
-```
+The bump PR's commit stays on `main`; deleting that history is a
+force-push to `main`, which branch protection should refuse.
+Instead, open a follow-up PR that reverts the bump.
