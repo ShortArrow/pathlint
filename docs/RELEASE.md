@@ -99,9 +99,42 @@ from a hotfix branch, merge the hotfix to `main` first.
 The exact spelling is `[skip publish]` — square brackets, lowercase,
 one space between `skip` and `publish`. Variants like
 `[skip-publish]`, `[skip_publish]`, or `[ skip publish ]` do **not**
-match the `contains()` check in the workflow and will publish to
+match the workflow's standalone-line check and will publish to
 crates.io anyway. Review the bump PR's squash commit message
 carefully if you intend to skip.
+
+The check requires the token to appear as a **standalone line**
+(surrounding whitespace is trimmed). Mentions inside a sentence
+(for example, "set `[skip publish]` in the bump commit message")
+do **not** count — that is intentional, so CHANGELOG entries
+and PR descriptions can reference the token without accidentally
+suppressing a real publish. 0.0.36 hit exactly this surprise (the
+release commit's body discussed the token in prose and the
+publish was skipped), so 0.0.37 added the standalone-line gate.
+
+A commit body that wants to skip looks like:
+
+```text
+chore: release 0.0.40
+
+Release notes here.
+
+[skip publish]
+```
+
+`[skip publish]` is on its own line; that triggers the skip. A
+commit body that wants to *publish* but happens to reference the
+token in prose looks like:
+
+```text
+chore: release 0.0.40
+
+Release notes here. Note that adding `[skip publish]` to a release
+commit would suppress crates.io publishing.
+```
+
+Here the token is part of a sentence, so the standalone-line check
+does not match and crates.io publishing proceeds.
 
 ## Branch and merge policy
 
