@@ -1,20 +1,32 @@
 name: release
 
-# Triggered by hand from the Actions tab. The single input is the
-# new version number (e.g. 0.0.8). The job sequence is:
+# Triggered by pushing a `vX.Y.Z` tag to `main`. The tag IS the
+# release signal — there is no Actions-tab dispatch, no version
+# input, and no CI-side `cargo set-version`. The human-side bump
+# happens in a normal PR before the tag is pushed; the workflow
+# only builds, publishes, and verifies.
 #
-#   prepare → build (matrix) → publish-github → publish-crates
+# See docs/decisions/0029-release-trigger-tag-push.md for the
+# decision record (supersedes ADR-0010), and docs/RELEASE.md for
+# the human-facing release procedure.
 #
-# 1. prepare:        bumps Cargo.toml to the input version, commits
-#                    that as `chore: release X.Y.Z`, tags `vX.Y.Z`,
-#                    pushes both back to main using GITHUB_TOKEN.
+# Job sequence:
+#
+#   guard → build (matrix) → publish-github → publish-crates
+#
+# 1. guard:          asserts that `Cargo.toml` at the tagged
+#                    commit reads `version = "${tag#v}"`. Catches
+#                    a tag pushed against the wrong commit before
+#                    any expensive job runs.
 # 2. build:          cross-builds release binaries on three OS
 #                    runners.
 # 3. publish-github: assembles checksums and creates the GitHub
-#                    Release with auto-generated notes (PR titles).
+#                    Release with auto-generated notes.
 # 4. publish-crates: exchanges an OIDC token via
 #                    rust-lang/crates-io-auth-action and runs
-#                    `cargo publish`. Requires Trusted Publishing
+#                    `cargo publish`. Skipped when the head
+#                    commit's message contains the literal token
+#                    `[skip publish]`. Requires Trusted Publishing
 #                    to be configured on crates.io for this repo +
 #                    workflow filename (one-time setup).
 #
@@ -22,15 +34,8 @@ name: release
 # trust is established via OIDC, not via CARGO_REGISTRY_TOKEN.
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'New version (e.g. 0.0.8). The "v" prefix is added automatically for the tag.'
-        required: true
-      publish_crates:
-        description: 'Also publish to crates.io. Requires Trusted Publishing to be set up for this crate.'
-        type: boolean
-        default: false
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -40,82 +45,45 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  prepare:
-    name: bump, commit, tag, push
+  guard:
+    name: guard (Cargo.toml version matches tag)
     runs-on: ubuntu-latest
     outputs:
-      tag: v${{ inputs.version }}
+      tag: ${{ github.ref_name }}
+      version: ${{ steps.derive.outputs.version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
 
-      - name: Validate version format
+      - name: Derive version from tag and check Cargo.toml
+        id: derive
+        # `${GITHUB_REF_NAME}` is the tag (e.g. `v0.0.36`).
+        # `${GITHUB_REF_NAME#v}` strips the leading `v`. We then
+        # read the version from `Cargo.toml` and fail if they do
+        # not match — the most common footgun under the human-tag
+        # flow is "tagged the wrong commit". Catching it here
+        # avoids burning ~10 min of build matrix on a tag that
+        # will never publish.
         run: |
           set -euo pipefail
-          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "error: version must be in X.Y.Z form (got: ${{ inputs.version }})" >&2
+          tag="${GITHUB_REF_NAME}"
+          if ! echo "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag $tag is not in vX.Y.Z form" >&2
             exit 1
           fi
-
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
-      - name: Install cargo-edit (for `cargo set-version`)
-        # Pin the version so a future cargo-edit release cannot
-        # change `set-version` semantics under us. Bump
-        # deliberately when needed.
-        run: cargo install cargo-edit --version 0.13.0 --locked
-
-      - name: Bump Cargo.toml
-        run: cargo set-version "${{ inputs.version }}"
-
-      - name: Sanity-check the build at the new version
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
-          cargo package --allow-dirty >/dev/null
-
-      - name: Commit, tag, and push
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Cargo.toml Cargo.lock
-          # If the input version already matches what main has (e.g.
-          # the PR that introduced the feature also bumped Cargo.toml),
-          # `cargo set-version` is a no-op and `git add` stages
-          # nothing — skip the commit but still tag the existing HEAD
-          # so the rest of the release pipeline can proceed.
-          if git diff --cached --quiet; then
-            echo "Cargo.toml already at ${{ inputs.version }}; tagging HEAD without a release commit."
-          else
-            git commit -m "chore: release ${{ inputs.version }}"
-            git push origin HEAD:main
+          version="${tag#v}"
+          manifest_version=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          if [ "$manifest_version" != "$version" ]; then
+            echo "::error::tag $tag implies version $version, but Cargo.toml reads $manifest_version" >&2
+            exit 1
           fi
-          # Tolerate an existing tag so the workflow can be re-run with
-          # a different `publish_crates` value after a prior partial
-          # release (e.g. the 0.0.34 first run shipped GitHub Release
-          # only; a second run flips publish_crates=true to fill in the
-          # crates.io publish). Verify the existing tag points at the
-          # same commit before continuing — a mismatch is a hard error.
-          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
-            existing=$(git rev-parse "v${{ inputs.version }}^{commit}")
-            head=$(git rev-parse HEAD)
-            if [ "$existing" != "$head" ]; then
-              echo "::error::tag v${{ inputs.version }} already exists at $existing but HEAD is $head; refusing to re-tag" >&2
-              exit 1
-            fi
-            echo "tag v${{ inputs.version }} already exists at HEAD; skipping tag step"
-          else
-            git tag -a "v${{ inputs.version }}" -m "pathlint ${{ inputs.version }}"
-            git push origin "v${{ inputs.version }}"
-          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "guard ok: tag=$tag version=$version Cargo.toml=$manifest_version"
 
   build:
     name: build ${{ matrix.target }}
-    needs: prepare
+    needs: guard
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -143,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
@@ -160,7 +128,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          name="pathlint-${{ needs.prepare.outputs.tag }}-${{ matrix.target }}"
+          name="pathlint-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
@@ -182,12 +150,12 @@ jobs:
 
   publish-github:
     name: publish GitHub Release
-    needs: [prepare, build]
+    needs: [guard, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          persist-credentials: false
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -220,9 +188,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
+          tag_name: ${{ github.ref_name }}
           draft: false
-          prerelease: ${{ startsWith(needs.prepare.outputs.tag, 'v0.') }}
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
           generate_release_notes: true
           files: |
             dist/*.tar.gz
@@ -236,29 +204,40 @@ jobs:
 
   publish-crates:
     name: publish to crates.io (OIDC)
-    if: ${{ inputs.publish_crates }}
-    needs: [prepare, publish-github]
+    # Opt-out via `[skip publish]` in the head commit's message.
+    # The default for a tagged release is "publish everywhere".
+    # See ADR-0029 for why the default flipped from opt-in.
+    if: ${{ !contains(github.event.head_commit.message, '[skip publish]') }}
+    needs: [guard, publish-github]
     runs-on: ubuntu-latest
-    # The `id-token: write` permission is inherited from the
-    # top-level block; this job exchanges that token for a
-    # short-lived crates.io token via Trusted Publishing.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Exchange OIDC token for crates.io token
         id: auth
-        # Pin to v1.0.4: the floating @v1 tag still resolves to a
-        # Node 20 build at the time of writing; v1.0.4 (2026-03-23)
-        # is the first release on Node 24, which silences the
-        # "Node.js 20 actions are deprecated" warning. Re-evaluate
-        # when v1.1 / v2 ships.
+        # Pin to v1.0.4: the first release on Node 24, silences
+        # the "Node.js 20 actions are deprecated" warning.
+        # Re-evaluate when v1.1 / v2 ships.
         uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
 
-      - name: cargo publish
+      - name: Publish pathlint
+        # Skip when this version is already on crates.io. Reruns
+        # of a partially-failed publish-crates job would otherwise
+        # abort here with "crate already exists on crates.io
+        # index"; same guard pattern as runex.
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: cargo publish
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          status=$(curl -fsS -o /dev/null -w '%{http_code}' \
+            "https://crates.io/api/v1/crates/pathlint/$version" || echo "000")
+          if [ "$status" = "200" ]; then
+            echo "pathlint $version already on crates.io — skipping publish"
+          else
+            cargo publish
+          fi

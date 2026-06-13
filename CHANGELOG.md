@@ -16,6 +16,83 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.36] — 2026-06-13
+
+**BREAKING release** — release workflow migrates from
+`workflow_dispatch` (CI-managed tag) to `on: push: tags`
+(human-managed tag). Default crates.io publishing flips from
+opt-in to opt-out. See
+[ADR-0029](docs/decisions/0029-release-trigger-tag-push.md)
+(supersedes
+[ADR-0010](docs/decisions/0010-release-workflow-bump-skip.md)) for
+the decision record, and
+[docs/RELEASE.md](docs/RELEASE.md) for the human-facing procedure.
+
+### Breaking
+
+- `.github/workflows/release.yml` trigger changes from
+  `workflow_dispatch` (with `version` / `publish_crates` inputs)
+  to `on: push: tags: ["v*"]`. The `prepare` job (which ran
+  `cargo set-version`, then committed and tagged from CI) is
+  removed entirely. **Version bump and tag creation are now
+  human responsibilities**: open a PR that bumps `Cargo.toml`
+  and `CHANGELOG.md`, squash-merge, then on `main` run
+  `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`. The
+  tag push triggers the workflow. The 0.0.34 partial-release
+  failure mode (tagged-but-not-published) becomes structurally
+  impossible because the tag *is* the trigger.
+- The `publish-crates` job's default flips from opt-in (`if:
+  inputs.publish_crates`) to **opt-out** (`if:
+  !contains(github.event.head_commit.message, '[skip publish]')`).
+  Tagged releases publish to crates.io by default. To skip
+  publishing for a specific release, include the literal token
+  `[skip publish]` (exact spelling, one space, square brackets)
+  in the bump commit's message. Variants like `[skip-publish]`
+  do not match the `contains()` check and will publish anyway —
+  review the squash commit message carefully before merge.
+- The PR #34 "tolerate an existing tag at HEAD" recovery branch
+  introduced in 0.0.35 is removed. Re-tagging the same version
+  is no longer supported (and `git push` would reject it as
+  non-fast-forward anyway). Recovery from a partial release is
+  exclusively "cut the next patch release" — the same
+  discipline pathlint had to discover the hard way during the
+  0.0.34 → 0.0.35 incident.
+- [ADR-0010](docs/decisions/0010-release-workflow-bump-skip.md)
+  is marked **Superseded by ADR-0029**. Its "tolerate an
+  already-bumped Cargo.toml" branch becomes inapplicable because
+  CI no longer runs `cargo set-version` — `Cargo.toml` is
+  authoritative at the tagged commit, and a `version` /
+  `${GITHUB_REF_NAME#v}` mismatch fails the new `guard` job
+  before any expensive build runs.
+
+### Added
+
+- `.github/workflows/release.yml` gains a `guard` job that
+  reads `Cargo.toml` at the tagged commit and fails the build
+  if its `version =` line does not equal `${GITHUB_REF_NAME#v}`.
+  Catches the most likely new footgun under the human-tag flow
+  ("tagged the wrong commit") at workflow start instead of after
+  ~10 minutes of build matrix.
+- The `publish-crates` job gains an idempotency guard that
+  queries `https://crates.io/api/v1/crates/pathlint/$version`
+  before publishing. If the version is already on crates.io the
+  step skips with a message, instead of failing with "crate
+  already exists on crates.io index". Lets the `publish-crates`
+  job be re-run safely after a transient failure of a later
+  step.
+
+### Changed
+
+- `docs/RELEASE.md` and `docs/RELEASE.jp.md` rewritten end-to-end
+  for the human-tag flow. New section ordering: pre-release
+  checklist → bump PR → tag-and-push. The §"Manual fallback"
+  section is removed (the new normal flow IS what the manual
+  fallback used to be).
+- `docs/decisions/README.md` index reflects ADR-0029 (Proposed
+  → Accepted in this release), ADR-0010 supersession, and a
+  status fix for ADR-0028 (Proposed → Accepted; the file itself
+  had been Accepted since 0.0.34, only the index was stale).
+
 ## [0.0.35] — 2026-06-09
 
 **Additive release** — workflow recovery + 0.0.34 crates.io
