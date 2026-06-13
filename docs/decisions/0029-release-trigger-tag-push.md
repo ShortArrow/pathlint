@@ -1,6 +1,6 @@
 # ADR-0029: release workflow trigger moves from `workflow_dispatch` to `on: push: tags`
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-06-13
 - **Release**: 0.0.36
 - **Category**: 8. Process / governance (release engineering)

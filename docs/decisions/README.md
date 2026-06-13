@@ -45,7 +45,7 @@ directory belongs to one or more of those categories.
 | [0026](0026-trybuild-for-negative-invariants.md) | Adopt `trybuild` as dev-dependency for compile-fail negative-invariant tests | 6 (+8) | Accepted | 0.0.33 |
 | [0027](0027-lib-env-read-boundaries.md) | Lib has two intentional env-read boundaries; `_with` is the injection seam, wrapper is CLI-convenience | 3 (+4) | Accepted | 0.0.33 |
 | [0028](0028-doctor-lint-responsibility-split.md) | `doctor` is pathlint's selfcheck; PATH analysis moves to a new `lint` subcommand | 1 (+8) | Accepted | 0.0.34 |
-| [0029](0029-release-trigger-tag-push.md) | Release workflow trigger moves from `workflow_dispatch` to `on: push: tags` (supersedes ADR-0010) | 8 | Proposed | 0.0.36 |
+| [0029](0029-release-trigger-tag-push.md) | Release workflow trigger moves from `workflow_dispatch` to `on: push: tags` (supersedes ADR-0010) | 8 | Accepted | 0.0.36 |
 
 ## Index by category (topical view)
 
