@@ -27,6 +27,11 @@ supersede している)。
   release notes 草案に貼る。 host の情報 (CPU モデル、 OS) も書いて
   おくと後から数字を比較しやすい。 PRD §12 の `<50 ms startup`
   claim の検証手段。
+- (release が `doctor` selfcheck / `lint` 検出器 / 組み込み catalog
+  / `/etc/os-release` 読み取り / `expand_env` のどれかに触る場合)
+  `scripts/e2e/run.sh` を走らせて Ubuntu / Arch / Fedora container
+  で smoke する。 意図的に local-only — 詳細は
+  [ADR-0030](decisions/0030-container-e2e-for-linux-portability.md)。
 - **英日 parity check。** 以下 3 ペアそれぞれについて、 前回
   リリース以降の差分を diff し、 両ファイルが同時に更新されたか
   確認する：

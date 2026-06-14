@@ -3,16 +3,23 @@
 # Smoke test executed *inside* a distro container by run.sh.
 #
 # The harness mounts the pathlint binary at /usr/local/bin/pathlint.
-# This script exercises the four CLI surfaces that have a real
-# distro dependency — the PATH layout differs between ubuntu, arch,
-# and fedora, and we want to know that pathlint copes with each
-# without crashing.
+# This script exercises the CLI surfaces that have a real distro
+# dependency — the PATH layout differs between ubuntu, arch, and
+# fedora, and we want to know that pathlint copes with each without
+# crashing.
 #
 # It does NOT pin exact human output (that would drift every time a
 # detector changes its wording); it pins:
 #   - exit codes
 #   - subcommand availability
 #   - presence of structured fields in --json output
+#
+# Since 0.0.34 (ADR-0028) `doctor` is selfcheck only (binary
+# self-locate / config parse / env_lookup) and `lint` carries the
+# PATH detectors. The script exercises both: `doctor --json` should
+# be a (usually empty) JSON array confirming pathlint runs cleanly
+# in this environment; `lint --json` exercises the detectors against
+# the container's actual PATH.
 #
 # Exit 0 = pass, anything else = fail (set -e propagates the first
 # failure).
@@ -54,6 +61,7 @@ section "--help"
 pathlint --help >/dev/null
 pathlint check --help >/dev/null
 pathlint doctor --help >/dev/null
+pathlint lint --help >/dev/null
 pathlint trace --help >/dev/null
 pathlint sort --help >/dev/null
 pathlint catalog list --help >/dev/null
@@ -72,13 +80,16 @@ if [[ "${catalog_lines}" -lt 10 ]]; then
 fi
 
 # ----------------------------------------------------------------
-# 4. doctor (uses the container's actual PATH; should never crash)
+# 4. doctor (selfcheck since 0.0.34: binary self-locate / config
+#    parse / env_lookup. Empty diagnostic array means pathlint is
+#    healthy in this environment — the canonical container PATH
+#    has no config file and no env_lookup failure, so we expect
+#    `[]` plus exit 0. PATH analysis lives under `lint` (§5).)
 # ----------------------------------------------------------------
 section "doctor (human)"
-# Capture and echo for debugging; exit code 0 (clean) or 0 (warns
-# but no errors) is acceptable here. doctor only escalates to
-# exit 1 if there is a Severity::Error diagnostic — distro defaults
-# generally do not produce errors, only warnings.
+# Capture and echo for debugging; exit code 0 (clean selfcheck) is
+# the expected case in a vanilla distro container. Severity::Error
+# would escalate to exit 1; we accept that too for robustness.
 set +e
 doctor_out="$(pathlint doctor 2>&1)"
 doctor_code=$?
@@ -109,7 +120,31 @@ if [[ "${doctor_json:0:1}" != "[" ]]; then
 fi
 
 # ----------------------------------------------------------------
-# 5. trace (resolves a guaranteed-present command on each distro)
+# 5. lint (PATH analysis since 0.0.34 — the detectors that used to
+#    live under `doctor` moved here. The container's PATH typically
+#    surfaces shortenable / writable / duplicate findings; we only
+#    pin that the output is a JSON array and the exit code is in
+#    {0, 1} — exit 0 if clean, 1 if there is any diagnostic.)
+# ----------------------------------------------------------------
+section "lint --json"
+set +e
+lint_json="$(pathlint lint --json 2>&1)"
+lint_json_code=$?
+set -e
+say "exit ${lint_json_code}"
+if [[ ${lint_json_code} -ne 0 && ${lint_json_code} -ne 1 ]]; then
+    echo "smoke: lint --json exited with unexpected code ${lint_json_code}" >&2
+    echo "${lint_json}" >&2
+    exit 1
+fi
+if [[ "${lint_json:0:1}" != "[" ]]; then
+    echo "smoke: lint --json did not produce a JSON array (first char: ${lint_json:0:1})" >&2
+    echo "${lint_json}" >&2
+    exit 1
+fi
+
+# ----------------------------------------------------------------
+# 6. trace (resolves a guaranteed-present command on each distro)
 # ----------------------------------------------------------------
 section "trace ls"
 # /bin/ls or /usr/bin/ls is on every distro we test.
@@ -131,7 +166,7 @@ fi
 say "kind discriminator present"
 
 # ----------------------------------------------------------------
-# 6. check (no rules file; should print no expectations and exit 0)
+# 7. check (no rules file; should print no expectations and exit 0)
 # ----------------------------------------------------------------
 section "check (no rules)"
 set +e
@@ -154,7 +189,7 @@ if [[ "${check_json:0:1}" != "[" ]]; then
 fi
 
 # ----------------------------------------------------------------
-# 7. init (write a starter rules file to a tempdir)
+# 8. init (write a starter rules file to a tempdir)
 # ----------------------------------------------------------------
 section "init"
 tmpdir="$(mktemp -d)"
