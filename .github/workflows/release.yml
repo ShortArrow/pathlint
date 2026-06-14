@@ -12,7 +12,8 @@ name: release
 #
 # Job sequence:
 #
-#   guard → build (matrix) → publish-github → publish-crates
+#   guard ┬→ build (matrix) → publish-github → publish-crates
+#         └→ publish-gate ───────────────────┘
 #
 # 1. guard:          asserts that `Cargo.toml` at the tagged
 #                    commit reads `version = "${tag#v}"`. Catches
@@ -22,13 +23,20 @@ name: release
 #                    runners.
 # 3. publish-github: assembles checksums and creates the GitHub
 #                    Release with auto-generated notes.
-# 4. publish-crates: exchanges an OIDC token via
+# 4. publish-gate:   parses the head commit's message line by
+#                    line and outputs `publish=true|false`. Only
+#                    a STANDALONE `[skip publish]` line counts
+#                    as a skip; mentions of the token inside a
+#                    sentence do not. Runs in parallel with
+#                    build so it does not lengthen the critical
+#                    path.
+# 5. publish-crates: exchanges an OIDC token via
 #                    rust-lang/crates-io-auth-action and runs
-#                    `cargo publish`. Skipped when the head
-#                    commit's message contains the literal token
-#                    `[skip publish]`. Requires Trusted Publishing
-#                    to be configured on crates.io for this repo +
-#                    workflow filename (one-time setup).
+#                    `cargo publish`, but only if
+#                    `publish-gate.outputs.publish == 'true'`.
+#                    Requires Trusted Publishing to be configured
+#                    on crates.io for this repo + workflow
+#                    filename (one-time setup).
 #
 # No long-lived secrets. GITHUB_TOKEN is auto-provided; crates.io
 # trust is established via OIDC, not via CARGO_REGISTRY_TOKEN.
@@ -202,13 +210,50 @@ jobs:
             dist/sort.schema.json
             dist/SHA256SUMS
 
+  publish-gate:
+    name: decide whether to publish to crates.io
+    # `contains(..., '[skip publish]')` is substring match — it
+    # fires when the release commit's body merely *mentions* the
+    # token, even inside an explanatory paragraph. That bit
+    # 0.0.36, whose commit body discussed the token spelling and
+    # accidentally got its own publish skipped. This job parses
+    # the commit message line by line and only flags a skip when
+    # the literal string `[skip publish]` is a STANDALONE LINE
+    # (whitespace-trimmed). Documentation that merely references
+    # the token no longer trips the gate.
+    needs: guard
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+    steps:
+      - name: Inspect head commit message
+        id: gate
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          # `grep -Fxq` matches the whole line literally; the
+          # leading awk trim collapses surrounding whitespace so
+          # `  [skip publish]  ` still counts. Mentions inside a
+          # sentence ("set `[skip publish]` in the bump commit")
+          # never appear as their own line, so they do not match.
+          if printf '%s' "$COMMIT_MSG" | awk '{$1=$1;print}' | grep -Fxq '[skip publish]'; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Found '[skip publish]' as a standalone line — crates.io publish will be skipped."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "No standalone '[skip publish]' line — will publish to crates.io."
+          fi
+
   publish-crates:
     name: publish to crates.io (OIDC)
-    # Opt-out via `[skip publish]` in the head commit's message.
-    # The default for a tagged release is "publish everywhere".
-    # See ADR-0029 for why the default flipped from opt-in.
-    if: ${{ !contains(github.event.head_commit.message, '[skip publish]') }}
-    needs: [guard, publish-github]
+    # Opt-out via `[skip publish]` on its own line in the head
+    # commit's message. The default for a tagged release is
+    # "publish everywhere". See ADR-0029 for why the default
+    # flipped from opt-in; the standalone-line gate logic lives
+    # in `publish-gate` above.
+    if: ${{ needs.publish-gate.outputs.publish == 'true' }}
+    needs: [guard, publish-github, publish-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

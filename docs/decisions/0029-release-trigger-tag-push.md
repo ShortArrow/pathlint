@@ -196,6 +196,17 @@ follow-up if mis-tagging ever happens.
   with a copy-pasteable example, and the bump PR's commit
   message is reviewed before merge.
 
+  **Update (0.0.37)**: the dual of this risk fired during 0.0.36
+  — the release commit's *body* discussed the `[skip publish]`
+  token in prose, the `contains()` expression matched the
+  in-prose mention, and crates.io publishing was skipped for an
+  intended-publish release. 0.0.37 hardens this by adding a
+  `publish-gate` job that walks the commit message line by line
+  and only flags a skip when `[skip publish]` appears as a
+  STANDALONE LINE (with surrounding whitespace trimmed). In-prose
+  mentions no longer trip the gate. The standalone-line semantics
+  are documented in `docs/RELEASE.md` and `docs/RELEASE.jp.md`.
+
 - **Negative.** A human tagging the wrong commit (a commit
   whose `Cargo.toml` does not match the tag) is now possible
   because CI no longer rewrites the version. The version

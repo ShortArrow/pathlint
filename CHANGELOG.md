@@ -16,6 +16,55 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.37] — 2026-06-13
+
+**Additive follow-up to 0.0.36** — robustness fix for the
+`[skip publish]` opt-out gate, and the smoke release that
+exercises crates.io publishing through the new tag-push
+workflow for the first time. No CLI or lib surface change.
+
+### Note on 0.0.36 crates.io publishing
+
+0.0.36 shipped as a GitHub Release on 2026-06-13 but **was not
+published to crates.io**. The `publish-crates` job's `if:
+!contains(github.event.head_commit.message, '[skip publish]')`
+check fired because the release commit's body *discussed* the
+`[skip publish]` token in prose (the CHANGELOG entry and the PR
+description both quoted the literal string). The `contains()`
+expression is substring match and does not distinguish a token
+mention from a token directive.
+
+This was acknowledged as a residual risk in ADR-0029
+(Negative: a typo of `[skip publish]` silently publishes; the
+dual risk is an in-prose mention silently skipping), but the
+fix was deferred until the mode actually fired. It fired on the
+very first release under the new flow. 0.0.37 ships the fix,
+and the 0.0.36 functional change (workflow rewrite) is available
+via `cargo install --git
+https://github.com/ShortArrow/pathlint --tag v0.0.36` or by
+downloading the GitHub Release binary directly.
+
+### Changed
+
+- `.github/workflows/release.yml` adds a `publish-gate` job
+  between `guard` and `publish-crates`. The new job parses the
+  head commit's message line by line and outputs
+  `publish=true|false`. Only a **standalone** `[skip publish]`
+  line (whitespace-trimmed) flags a skip; in-prose mentions of
+  the token do not. `publish-crates`' `if` condition becomes
+  `needs.publish-gate.outputs.publish == 'true'`. The
+  publish-gate job runs in parallel with `build`, so it does
+  not lengthen the critical path.
+- `docs/RELEASE.md` and `docs/RELEASE.jp.md` document the
+  standalone-line semantics with copy-pasteable examples for
+  both "skip" and "publish-but-mention-the-token" commit
+  bodies.
+- ADR-0029 Consequences gets an Update (0.0.37) note under the
+  existing "Negative: typo of `[skip publish]`" entry,
+  recording that the dual risk fired in 0.0.36 and was closed
+  by the standalone-line gate. Body of ADR-0029 unchanged
+  otherwise.
+
 ## [0.0.36] — 2026-06-13
 
 **BREAKING release** — release workflow migrates from

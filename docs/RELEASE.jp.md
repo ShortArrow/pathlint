@@ -99,9 +99,42 @@ tag は `main` でのみ切る。 workflow 側での enforcement は今は
 正確な spelling は `[skip publish]` — 角括弧、 小文字、 `skip`
 と `publish` の間は半角スペース 1 つ。 `[skip-publish]` /
 `[skip_publish]` / `[ skip publish ]` といった変形は workflow の
-`contains()` check に **match しない** ので、 結果的に crates.io
-に publish される。 skip させたい場合は bump PR の squash commit
+標準行 check に **match しない** ので、 結果的に crates.io に
+publish される。 skip させたい場合は bump PR の squash commit
 message を merge 前に再確認する。
+
+check は token が **単独の行として** 現れる場合のみ skip と判定
+する (前後の whitespace は trim される)。 文中での言及 (例:
+「bump commit に `[skip publish]` を書く」) は **count しない** —
+これは意図的で、 CHANGELOG entry や PR description で token を
+言及しても 本物の publish を 誤って 止めない ため。 0.0.36 は
+ちょうど この pitfall を踏んだ (release commit body が token を
+prose の中で説明していて、 publish が skip された)。 0.0.37 で
+standalone-line gate を追加した。
+
+skip したい commit body の例：
+
+```text
+chore: release 0.0.40
+
+リリースノート本文。
+
+[skip publish]
+```
+
+`[skip publish]` が単独行にある — skip される。
+
+publish したいが token を prose で言及したい commit body の例：
+
+```text
+chore: release 0.0.40
+
+リリースノート本文。`[skip publish]` を release commit に追加
+すると crates.io publish が抑制される。
+```
+
+token が文の一部なので standalone-line check に match せず、
+crates.io publish が走る。
 
 ## ブランチと merge ポリシー
 
