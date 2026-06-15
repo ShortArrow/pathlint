@@ -56,12 +56,13 @@ Exit codes:
 exact human output:
 
 1. `pathlint --version` mentions `pathlint`
-2. `--help` works on every subcommand
+2. `--help` works on every subcommand (including `lint`, added in 0.0.34)
 3. `pathlint catalog list` produces non-trivial output
-4. `pathlint doctor` exits 0 or 1 and `--json` output starts with `[`
-5. `pathlint trace ls` resolves and emits a `kind` field in JSON
-6. `pathlint check` (no rules) exits 0 and `--json` is a JSON array
-7. `pathlint init` writes `pathlint.toml` to a tempdir
+4. `pathlint doctor` selfcheck (0.0.34 split, ADR-0028): exits 0 or 1 and `--json` is a JSON array
+5. `pathlint lint --json` PATH analysis (0.0.34 split): exits 0 or 1 and produces a JSON array
+6. `pathlint trace ls` resolves and emits a `kind` field in JSON
+7. `pathlint check` (no rules) exits 0 and `--json` is a JSON array
+8. `pathlint init` writes `pathlint.toml` to a tempdir
 
 The aim is portability assertion (each distro's PATH does not
 crash pathlint), not output drift detection. Output drift is

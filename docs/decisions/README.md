@@ -46,6 +46,7 @@ directory belongs to one or more of those categories.
 | [0027](0027-lib-env-read-boundaries.md) | Lib has two intentional env-read boundaries; `_with` is the injection seam, wrapper is CLI-convenience | 3 (+4) | Accepted | 0.0.33 |
 | [0028](0028-doctor-lint-responsibility-split.md) | `doctor` is pathlint's selfcheck; PATH analysis moves to a new `lint` subcommand | 1 (+8) | Accepted | 0.0.34 |
 | [0029](0029-release-trigger-tag-push.md) | Release workflow trigger moves from `workflow_dispatch` to `on: push: tags` (supersedes ADR-0010) | 8 | Accepted | 0.0.36 |
+| [0030](0030-container-e2e-for-linux-portability.md) | Container e2e for Linux portability (Ubuntu / Arch / Fedora), local-only, no Vagrant / no post-publish smoke | 8 (+6) | Accepted | 0.0.14 / 0.0.21 (recorded retroactively in 0.0.38) |
 
 ## Index by category (topical view)
 
@@ -116,6 +117,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0026](0026-trybuild-for-negative-invariants.md) — secondary (test-infra policy)
 - [ADR-0028](0028-doctor-lint-responsibility-split.md) — secondary (CLI subcommand topology)
 - [ADR-0029](0029-release-trigger-tag-push.md) — release trigger moves to `on: push: tags`; supersedes ADR-0010
+- [ADR-0030](0030-container-e2e-for-linux-portability.md) — container e2e for Linux portability, local-only, no Vagrant / no post-publish smoke
 
 ## When to write an ADR
 

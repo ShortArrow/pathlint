@@ -26,6 +26,12 @@ the shape changed (it supersedes
   description (CPU model, OS) so the numbers stay interpretable
   later. PRD §12 claims `<50 ms startup` — the bench script is the
   receipt.
+- (when the release touches the `doctor` selfcheck, the `lint`
+  detectors, the built-in catalog, or anything that reads
+  `/etc/os-release` / uses `expand_env`) Run `scripts/e2e/run.sh`
+  to smoke pathlint inside Ubuntu / Arch / Fedora containers.
+  Local-only on purpose — see
+  [ADR-0030](decisions/0030-container-e2e-for-linux-portability.md).
 - **English / Japanese parity check.** For each of the three pairs
   below, diff the change set since the last release and confirm
   both files were updated together:
