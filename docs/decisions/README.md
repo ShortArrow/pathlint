@@ -47,6 +47,7 @@ directory belongs to one or more of those categories.
 | [0028](0028-doctor-lint-responsibility-split.md) | `doctor` is pathlint's selfcheck; PATH analysis moves to a new `lint` subcommand | 1 (+8) | Accepted | 0.0.34 |
 | [0029](0029-release-trigger-tag-push.md) | Release workflow trigger moves from `workflow_dispatch` to `on: push: tags` (supersedes ADR-0010) | 8 | Accepted | 0.0.36 |
 | [0030](0030-container-e2e-for-linux-portability.md) | Container e2e for Linux portability (Ubuntu / Arch / Fedora), local-only, no Vagrant / no post-publish smoke | 8 (+6) | Accepted | 0.0.14 / 0.0.21 (recorded retroactively in 0.0.38) |
+| [0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) | Ecosystem integration via SARIF + json-schema-store, no LSP server / no bespoke RPC | 7 (+6) | Accepted | 0.0.38 (decision); implementation 0.0.40+ |
 
 ## Index by category (topical view)
 
@@ -98,12 +99,14 @@ is **not** a universal ADR hierarchy.
 
 - [ADR-0012](0012-schemars-1-0-deferred.md) — defer schemars 1.0 migration past 0.0.x graduation; trigger conditions for revisiting recorded.
 - [ADR-0026](0026-trybuild-for-negative-invariants.md) — adopt `trybuild` as dev-dependency for compile-fail negative tests
+- [ADR-0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) — secondary (SARIF crate dependency planned for 0.0.40+)
 
 ### 7. Persistence / data format
 
 - [ADR-0014](0014-source-naming-convention.md) — Source naming convention + `os_baseline_*` split
 - [ADR-0016](0016-json-wire-shape-kind-discriminator.md) — JSON wire shape uses top-level `kind` discriminator + schema `required` honesty
 - [ADR-0023](0023-catalog-version-reserved-for-embedded.md) — `catalog_version` reserved for embedded catalog (user TOML rejection)
+- [ADR-0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) — ecosystem integration via SARIF + json-schema-store, no LSP server
 
 ### 8. Process / governance
 

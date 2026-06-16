@@ -332,6 +332,29 @@ also ships `check.schema.json`, which describes the JSON shape of
 [Taplo]: https://taplo.tamasfe.dev/
 [ebt]: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml
 
+### Streaming findings to a log shipper
+
+`pathlint lint --json` emits an array of findings. To feed log
+shippers that expect one-event-per-line (Cloudflare Logpush, Loki,
+Datadog, Splunk HEC, ELK / Fluent Bit, etc.), flatten the array
+with `jq`:
+
+```sh
+pathlint lint --json | jq -c '.[]'
+```
+
+Each line is a single finding with the schema documented in
+`pathlint.schema.json`, so downstream parsers can rely on the
+same `kind` discriminator and field shape as the array form.
+For unattended runs, set `--no-glyphs` and `--color=never` to
+guarantee the underlying JSON is uncoloured and ASCII even when
+stdout is a terminal.
+
+A SARIF 2.1.0 output mode (`pathlint lint --sarif`) for GitHub
+Code Scanning and other static-analysis aggregators is planned
+for a future release — see
+[ADR-0031](docs/decisions/0031-ecosystem-integration-via-sarif-and-schemastore.md).
+
 ### Pinning the catalog version
 
 The built-in source catalog evolves: a new pathlint version may
