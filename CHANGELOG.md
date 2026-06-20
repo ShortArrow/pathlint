@@ -16,6 +16,59 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.38] — 2026-06-20
+
+**Documentation release** — two new ADRs codify
+release-engineering and ecosystem-integration policy. No CLI,
+schema, or library surface change vs 0.0.37. The release exists
+to ship the ADRs as part of the release notes and to exercise the
+(new in 0.0.36) tag-push workflow a third time under normal
+conditions (the first two runs shipped a release-engineering
+BREAKING change and a follow-up fix, respectively; 0.0.38 is the
+first ordinary additive release under the new flow).
+
+### Documented
+
+- [ADR-0030](docs/decisions/0030-container-e2e-for-linux-portability.md)
+  records the existing `scripts/e2e/` harness as the Linux
+  portability gate: container smoke against Ubuntu / Arch /
+  Fedora, run locally before any release that touches the
+  `doctor` selfcheck, the `lint` detector set, the built-in
+  catalog, `/etc/os-release`, or `expand_env`. Explicitly rejects
+  four adjacent options (Vagrant multi-VM, macOS / Windows
+  post-publish smoke, CI integration, fork-repo release
+  rehearsal) with one paragraph each. The ADR is retroactive —
+  the harness has been in place since 0.0.14 / 0.0.21; ADR-0029
+  prompted the sweep that surfaced this gap.
+- [ADR-0031](docs/decisions/0031-ecosystem-integration-via-sarif-and-schemastore.md)
+  commits pathlint to SARIF 2.1.0 output and schemastore.org
+  registration as its ecosystem integration points. Implementation
+  deferred to 0.0.40 or later; the ADR records the policy plus
+  six rejected alternatives (LSP server, bespoke RPC, ESLint
+  plugin, OpenTelemetry / OTLP exporter, "wait for someone else",
+  "JSON only"). The OTLP rejection is the load-bearing one — it
+  explains why Cloudflare Workers Logs / Datadog interop goes
+  through SARIF or JSONL streaming, not OTLP.
+
+### Changed
+
+- `scripts/e2e/smoke.sh` and `scripts/e2e/README.md` synced with
+  the 0.0.34 `doctor`-vs-`lint` split (ADR-0028). The smoke
+  script now exercises both `doctor --json` (selfcheck — typically
+  `[]`) and `lint --json` (PATH detectors). The README's "What is
+  checked" list grew from 7 entries to 8.
+- `docs/RELEASE.md` and `docs/RELEASE.jp.md` pre-release checklist
+  gains one line pointing the releaser at `scripts/e2e/run.sh`
+  when the release touches doctor / lint / catalog /
+  `/etc/os-release` / `expand_env`. Honour-based, not enforced,
+  per ADR-0030.
+- `README.md` gains a "Streaming findings to a log shipper"
+  subsection under Operational details with the
+  `pathlint lint --json | jq -c '.[]'` recipe for Cloudflare
+  Logpush / Loki / Datadog / Splunk / ELK ingestion. Links
+  forward to ADR-0031 so the SARIF-coming-later context is one
+  click away.
+
 ## [0.0.37] — 2026-06-13
 
 **Additive follow-up to 0.0.36** — robustness fix for the
