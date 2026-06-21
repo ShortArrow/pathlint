@@ -155,10 +155,17 @@ crates.io publish が走る。
   以降は workflow が `main` に push しない (version bump は通常の
   PR に同梱)。
 
-リポ設定の推奨：
+リポ設定の推奨 (現状値もこの通り)：
 
-- Pull Requests: squash merge のみ許可。 squash の subject に PR
-  タイトルを使う設定を on に。
+- Pull Requests: squash merge のみ許可。 **squash commit subject =
+  PR title** (API: `squash_merge_commit_title=PR_TITLE`、 つまり
+  `COMMIT_OR_PR_TITLE` ではない。 後者は PR が 1 commit だけのとき
+  個別 commit の subject を採用するため、 PR title を edit しても
+  古い / scope 違反の subject が main に滑り込みうる。 0.0.37 の
+  `fix(release):` slip がそれ。 0.0.38 で `PR_TITLE` に flip した)。
+- Squash commit body は squash 対象 commit の message を結合
+  (`squash_merge_commit_message=COMMIT_MESSAGES`)。 commit body
+  はそのまま残る。
 - `main` の branch protection: PR + status checks (`ci`、
   `pr-title-check`) 必須、 linear history 必須。 旧 release flow
   で必要だった `github-actions[bot]` の push 例外は不要。
