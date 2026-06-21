@@ -155,10 +155,19 @@ does not match and crates.io publishing proceeds.
 - No commits bypass PR review. From 0.0.36 onward the workflow
   never pushes to `main` (the version bump rides in a normal PR).
 
-Recommended GitHub repo settings:
+Recommended GitHub repo settings (the live values match this list):
 
-- Pull requests: allow squash merging only; default to PR title
-  for the squash commit subject.
+- Pull requests: allow squash merging only. **Squash commit
+  subject = PR title** (API: `squash_merge_commit_title=PR_TITLE`,
+  not `COMMIT_OR_PR_TITLE` — the latter falls back to the
+  individual commit's subject when the PR has only one commit,
+  which lets a stale or scope-violating commit subject slip into
+  `main` even after the PR title has been edited. 0.0.37's
+  `fix(release):` slip happened that way; the setting was flipped
+  to `PR_TITLE` in 0.0.38.)
+- Squash commit body = the squashed commits' messages
+  (`squash_merge_commit_message=COMMIT_MESSAGES`), so the full
+  authored bodies survive.
 - Branch protection on `main`: require PR + status checks (`ci`,
   `pr-title-check`), require linear history. The
   `github-actions[bot]` push exemption that earlier releases
