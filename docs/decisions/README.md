@@ -48,6 +48,7 @@ directory belongs to one or more of those categories.
 | [0029](0029-release-trigger-tag-push.md) | Release workflow trigger moves from `workflow_dispatch` to `on: push: tags` (supersedes ADR-0010) | 8 | Accepted | 0.0.36 |
 | [0030](0030-container-e2e-for-linux-portability.md) | Container e2e for Linux portability (Ubuntu / Arch / Fedora), local-only, no Vagrant / no post-publish smoke | 8 (+6) | Accepted | 0.0.14 / 0.0.21 (recorded retroactively in 0.0.38) |
 | [0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) | Ecosystem integration via SARIF + json-schema-store, no LSP server / no bespoke RPC | 7 (+6) | Accepted | 0.0.38 (decision); implementation 0.0.40+ |
+| [0032](0032-scope-os-knowledge-tool-meta-declaration.md) | pathlint scope — OS knowledge + tool-meta declaration, no tool behavior | 5 (+7, +8) | Accepted | 0.0.39 |
 
 ## Index by category (topical view)
 
@@ -94,6 +95,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0009](0009-read-only-stance.md) — pathlint is read-only on `PATH`, registry, and dotfiles
 - [ADR-0019](0019-cli-alias-deprecation-runway.md) — 6-release deprecation runway for CLI renames
 - [ADR-0022](0022-depends-on-descriptive-only.md) — `depends_on` relation is descriptive-only
+- [ADR-0032](0032-scope-os-knowledge-tool-meta-declaration.md) — pathlint scope: OS knowledge + tool-meta declaration, no tool behavior
 
 ### 6. External dependency
 
@@ -107,6 +109,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0016](0016-json-wire-shape-kind-discriminator.md) — JSON wire shape uses top-level `kind` discriminator + schema `required` honesty
 - [ADR-0023](0023-catalog-version-reserved-for-embedded.md) — `catalog_version` reserved for embedded catalog (user TOML rejection)
 - [ADR-0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) — ecosystem integration via SARIF + json-schema-store, no LSP server
+- [ADR-0032](0032-scope-os-knowledge-tool-meta-declaration.md) — secondary (the `[[relation]]` vocabulary + `[source.<name>]` TOML are the only persistence shape for tool meta)
 
 ### 8. Process / governance
 
@@ -121,6 +124,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0028](0028-doctor-lint-responsibility-split.md) — secondary (CLI subcommand topology)
 - [ADR-0029](0029-release-trigger-tag-push.md) — release trigger moves to `on: push: tags`; supersedes ADR-0010
 - [ADR-0030](0030-container-e2e-for-linux-portability.md) — container e2e for Linux portability, local-only, no Vagrant / no post-publish smoke
+- [ADR-0032](0032-scope-os-knowledge-tool-meta-declaration.md) — secondary (anchors the maintainer-side rejection criterion for "should pathlint know tool X's state?" requests)
 
 ## When to write an ADR
 

@@ -176,6 +176,14 @@ backlog drainage に割当済、 verification record は後の番号に
   AUR / `make install` / 任意 prefix は不可視のまま（ユーザーが
   `[source.<name>]` を足すまで）。0.2 で再考（§16 参照）。
 
+§3 / §4 の境界 — OS レイアウト知識を first-class に持ち、ツールメタは
+宣言的なカタログエントリのみで、ツールの runtime 挙動はモデル化しない
+— は
+[ADR-0032](decisions/0032-scope-os-knowledge-tool-meta-declaration.md)
+に明文化されている。「mise / asdf / volta が今アクティブにしている
+ものを pathlint が知るべきでは？」型の将来 request に対する canonical
+な reject 先がこの ADR。
+
 ## 5. ターゲットユーザー
 
 - 自分の `doctor` ステップで source ドリフトを検出したい dotfiles
