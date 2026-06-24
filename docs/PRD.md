@@ -202,6 +202,13 @@ The roles above also imply specific *non-roles*:
   AUR / `make install` / custom prefixes are invisible until the
   user adds a `[source.<name>]`. Revisiting in 0.2 (see §16).
 
+The shape of the §3 / §4 boundary — OS layout knowledge as first-class,
+tool meta as declarative-only catalog entries, no modelling of tool
+runtime behavior — is anchored in
+[ADR-0032](decisions/0032-scope-os-knowledge-tool-meta-declaration.md).
+That ADR is the canonical rejection target for future "should pathlint
+know what mise / asdf / volta currently has active?" requests.
+
 ## 5. Target users
 
 - Dotfiles maintainers wanting their `doctor` step to catch source

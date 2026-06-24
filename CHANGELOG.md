@@ -16,6 +16,42 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.39] — 2026-06-23
+
+**Documentation release** — single new ADR anchors pathlint's scope
+policy (OS knowledge first-class, tool meta declarative-only, no
+modelling of tool runtime behavior). No CLI, schema, or library
+surface change vs 0.0.38. The policy itself has been in force since
+0.0.3 and is reflected in every catalog addition since; 0.0.39 records
+the *why* in one citable place so future "should pathlint know mise /
+asdf / volta state?" requests have a canonical answer.
+
+### Documented
+
+- [ADR-0032](docs/decisions/0032-scope-os-knowledge-tool-meta-declaration.md)
+  consolidates the scope boundary that has been implicit across
+  ADR-0009 (read-only), ADR-0014 (`os_baseline_*` naming split),
+  ADR-0015 (wrapper-installer generalisation), ADR-0022
+  (descriptive-only relations), ADR-0023 (catalog identity), and
+  ADR-0031 (SARIF as the integration layer). Rejects five
+  alternatives: absorbing tool behavior into pathlint, dynamic
+  plugin loaders, sidecar binary protocols, Cargo feature flag
+  plugins, and "PRD prose only without an ADR". Defines "plugin"
+  as "a catalog `[source.<name>]` entry" — the same mechanism the
+  built-in catalog uses.
+- PRD §4 (EN) and §4 (JP) each gain one trailing paragraph linking
+  to ADR-0032 as the canonical rejection target for future
+  tool-state-query requests. No other PRD content changes.
+
+### Next
+
+- 0.0.40 candidate: extend `locate_rules()` to walk from cwd up to
+  the enclosing `.git` boundary for monorepo config discovery, and
+  add a `--scope=auto|local|global|system` global option (default
+  `auto`, preserving today's precedence — additive, no BREAKING).
+  Design and trade-offs will land in a separate ADR (tentative
+  ADR-0033) at the moment the implementation does.
+
 ## [0.0.38] — 2026-06-20
 
 **Documentation release** — two new ADRs codify
