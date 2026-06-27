@@ -67,6 +67,10 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 
 ## 3. ゴール
 
+以下 7 つの横断原則は、PRD §3 番号に依存せずに引用できるように
+[docs/PRINCIPLES.jp.md](PRINCIPLES.jp.md)（EN: [PRINCIPLES.md](PRINCIPLES.md)）
+にも独立ドキュメントとして公開している。両者の本文は同期維持。
+
 4 役割すべて（R1〜R4）に共通：
 
 - **宣言的。** pathlint が気にすることはすべて、dotfiles リポに置ける
