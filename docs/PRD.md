@@ -73,6 +73,12 @@ form you can commit to a dotfiles repo and check on every machine.
 
 ## 3. Goals
 
+The seven cross-cutting principles below are also published as a
+standalone reference at [docs/PRINCIPLES.md](PRINCIPLES.md) (JP:
+[PRINCIPLES.jp.md](PRINCIPLES.jp.md)) so they can be cited
+independently of the PRD's section numbering. The text in both
+places is kept in sync.
+
 Across all four roles (R1 – R4):
 
 - **Declarative.** Whatever pathlint cares about is expressible in a

@@ -16,6 +16,45 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.40] — 2026-06-27
+
+**Documentation release** — the seven cross-cutting product
+principles previously embedded in PRD §3 are extracted to a
+standalone document so they can be cited independently of PRD
+section numbering. The text is duplicated, not moved: PRD §3
+still carries the same content and now links to the standalone
+file. No CLI, schema, or library surface change vs 0.0.39.
+
+### Documented
+
+- New `docs/PRINCIPLES.md` (EN) and `docs/PRINCIPLES.jp.md` (JP)
+  reproduce the seven principles — Declarative; Source labels,
+  not paths; Built-in catalog with override; One file, all OSes;
+  Substring + case-insensitive match; Honest exit codes;
+  Read-only — verbatim from PRD §3, with a short header
+  explaining the cross-cutting role and a "How the principles
+  cross-cut the rest of the docs" section linking back to PRD §3,
+  PRD §4 (Non-goals), ADR-0009 (read-only), ADR-0014 / 0015 /
+  0023 / 0031 (catalog as extension surface), and ADR-0032 (scope
+  anchor).
+- PRD.md §3 / PRD.jp.md §3 each gain one leading paragraph
+  pointing to the standalone file. PRD content is otherwise
+  unchanged; the principles remain canonically stated in PRD §3
+  with the standalone file as a duplicate for citation
+  convenience.
+
+### Next
+
+- 0.0.41 candidate: extend `locate_rules()` to walk cwd → enclosing
+  `.git` boundary for monorepo config discovery, and add a
+  `--scope=auto|local|global|system` global option (default `auto`,
+  preserving today's precedence — additive, no BREAKING). Design
+  and trade-offs will land in a separate ADR (tentative ADR-0033).
+  Originally scoped for 0.0.40 in 0.0.39's release notes; 0.0.40
+  carved out the principles extraction as a docs-only intermediate
+  release so the implementation lands in 0.0.41 with a focused
+  PR.
+
 ## [0.0.39] — 2026-06-23
 
 **Documentation release** — single new ADR anchors pathlint's scope
