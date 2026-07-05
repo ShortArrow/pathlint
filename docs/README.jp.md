@@ -138,10 +138,15 @@ kind    = "executable"
 - `pathlint check --explain` — expectation が失敗したときに
   resolved / matched / prefer / avoid / diagnosis / hint を多行表示。
 - `pathlint check --json` — CI パイプライン向け機械可読出力。
-- `pathlint doctor` — PATH 自体の衛生チェック（重複、不在
+- `pathlint lint` — PATH 自体の衛生チェック（重複、不在
   ディレクトリ、8.3 短縮、env-var 短縮候補、形式破損エントリ、
-  同名コマンドが別 dir に実体を持つ shadow）。 `[[expect]]` から
-  独立。
+  同名コマンドが別 dir に実体を持つ shadow、world-writable
+  ディレクトリ、相対パスエントリ）。 `[[expect]]` から独立。
+  0.0.34 で改名（ADR-0028）；0.0.34 以前はこの表面が
+  `pathlint doctor` だった。
+- `pathlint doctor` — pathlint 自身の selfcheck（バイナリが PATH
+  上にあるか、`pathlint.toml` が発見 + parse できるか、
+  `env_lookup` が動くか）。0.0.34 からの新挙動。
 - `pathlint trace <command>` — コマンドの解決元、マッチ source、
   最も妥当な uninstall コマンドを表示。mise については plugin-aware
   ([mise を使うとき](#mise-を使うとき) 参照)。
@@ -271,9 +276,9 @@ unix = "/data/tools/mise/installs"
 
 ## 運用情報
 
-0.0.x ラインで 6 サブコマンドが動きます: `check`（デフォルト）/
-`doctor` / `trace` / `sort` / `init` / `catalog`（`list` と
-`relations`）。`pathlint where` は `pathlint trace` の visible
+0.0.x ラインで 7 サブコマンドが動きます: `check`（デフォルト）/
+`lint`（0.0.34 で新設）/ `doctor` / `trace` / `sort` / `init` /
+`catalog`（`list` と `relations`）。`pathlint where` は `pathlint trace` の visible
 alias、`--rules` は `--config` の visible alias として 0.0.x
 線では残します。両 alias は将来のリリースで削除予定（時期未定、
 破壊リリース前に告知）。TOML スキーマと CLI 表面は引き続き動き

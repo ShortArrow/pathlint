@@ -16,6 +16,24 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+### Documented
+
+- Swept the last three leftovers of the 0.0.34 `doctor` / `lint`
+  split (ADR-0028) out of the docs, found by a full-project docs
+  audit:
+  - PRD §11 CLI surface table (EN + JP) now lists `lint` and
+    describes `doctor` as the selfcheck; previously the table
+    omitted `lint` entirely and still described `doctor` with its
+    pre-0.0.34 PATH-hygiene wording.
+  - `docs/README.jp.md` gains the `lint` bullet (mirroring the EN
+    README) and its subcommand count goes 6 → 7; previously the JP
+    README never mentioned `lint` and described `doctor` with the
+    old behaviour.
+  - PRD.jp.md §3's R3 bullet now describes the two sibling
+    commands (`lint` + `doctor` selfcheck) matching the EN PRD;
+    it was the last JP paragraph still describing the merged
+    pre-0.0.34 `doctor`.
+
 ## [0.0.40] — 2026-06-27
 
 **Documentation release** — the seven cross-cutting product

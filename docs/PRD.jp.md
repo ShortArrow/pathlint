@@ -105,9 +105,19 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
   は本当に実行可能ファイルを指している必要がある。symlink は生き
   ていて、「実行可能」が嘘でないこと。今は `not_found` しか報告
   しないが、それ以外は 0.0.4 以降。
-- **R3（PATH 衛生）。** `[[expect]]` を書いていなくても、`pathlint
-  doctor` が重複、不在ディレクトリ、8.3 短縮名、env-var で短縮できる
-  エントリ、形式破損エントリ（resolve できないもの）を検出する。
+- **R3（PATH 衛生 + selfcheck）。** 0.0.34 以降は 2 つの兄弟コマンド
+  （ADR-0028）：
+  - `pathlint lint` — `[[expect]]` を書いていなくても、重複、不在
+    ディレクトリ、8.3 短縮名、env-var で短縮できるエントリ、PATH
+    ディレクトリ間で shadow される同名コマンド、相対パスエントリ、
+    world-writable ディレクトリ、resolve できない形式破損エントリを
+    検出する。`pathlint doctor`（0.0.13〜0.0.33）が出していた 12
+    detector kind を引き継ぐ。
+  - `pathlint doctor` — pathlint 自身がこの環境で機能するかを検査
+    する：バイナリの PATH 上 self-locate、`pathlint.toml` の発見 +
+    parse、`env_lookup` の動作（`PATH`、Windows では `PATHEXT`、
+    config 探索用の `HOME` / `USERPROFILE`）。PATH の異常検査は
+    しない。
 - **R4（出自）。** 解決済みバイナリについて、最も妥当なインストーラ
   名と対応する uninstall コマンドを答える。半年前に
   `cargo install` したのか `mise use cargo:tool` したのか思い出せ
@@ -945,7 +955,8 @@ Commands:
   catalog  source カタログを inspect
     list       全 source を列挙（組み込み + ユーザー定義）
     relations  source 間の宣言された [[relation]] を列挙
-  doctor   PATH 自体を lint（重複、不在ディレクトリ等）
+  lint     PATH 自体を lint（重複、不在ディレクトリ等）
+  doctor   selfcheck: pathlint 自身がこの環境で機能するか
   trace    コマンドがどこから来るかと uninstall ヒント
   sort     全 [[expect]] を満たす PATH 順序を提案
   help     ヘルプ表示
