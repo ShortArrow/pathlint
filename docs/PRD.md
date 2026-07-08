@@ -118,7 +118,7 @@ Per-role:
   must be alive; "executable" must mean it. Today only `not_found`
   is reported; the rest is 0.0.4+.
 - **R3 (PATH hygiene + selfcheck).** Two sibling commands since
-  0.0.34 (ADR-0028):
+  0.0.34:
   - `pathlint lint` — even with no `[[expect]]` written, flags
     duplicates, dangling directories, 8.3 short names, env-var-
     shortenable entries, shadowed commands across PATH dirs,
@@ -1031,7 +1031,8 @@ Commands:
   catalog  Inspect the source catalog
     list       list every known source (built-in + user)
     relations  list declared [[relation]] between sources
-  doctor   Lint the PATH itself (duplicates, missing dirs, etc.)
+  lint     Lint the PATH itself (duplicates, missing dirs, etc.)
+  doctor   Selfcheck: is pathlint functional in this environment?
   trace    Show where a command resolves from + uninstall hint
   sort     Propose a PATH order satisfying every [[expect]] rule
   help     Print help

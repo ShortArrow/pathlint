@@ -146,7 +146,7 @@ kind    = "executable"
   8.3 short names, env-var-shortenable entries, malformed entries,
   same-command-different-dir shadows, writeable directories,
   relative entries). Independent of `[[expect]]`. New name as of
-  0.0.34 (ADR-0028); pre-0.0.34 this surface was `pathlint doctor`.
+  0.0.34; pre-0.0.34 this surface was `pathlint doctor`.
 - `pathlint doctor` — selfcheck pathlint itself (binary on PATH,
   `pathlint.toml` discoverable + parseable, `env_lookup` working).
   New behaviour as of 0.0.34.
