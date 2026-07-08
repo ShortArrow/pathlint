@@ -118,7 +118,7 @@ Per-role:
   must be alive; "executable" must mean it. Today only `not_found`
   is reported; the rest is 0.0.4+.
 - **R3 (PATH hygiene + selfcheck).** Two sibling commands since
-  0.0.34 (ADR-0028):
+  0.0.34:
   - `pathlint lint` — even with no `[[expect]]` written, flags
     duplicates, dangling directories, 8.3 short names, env-var-
     shortenable entries, shadowed commands across PATH dirs,

@@ -142,8 +142,8 @@ kind    = "executable"
   ディレクトリ、8.3 短縮、env-var 短縮候補、形式破損エントリ、
   同名コマンドが別 dir に実体を持つ shadow、world-writable
   ディレクトリ、相対パスエントリ）。 `[[expect]]` から独立。
-  0.0.34 で改名（ADR-0028）；0.0.34 以前はこの表面が
-  `pathlint doctor` だった。
+  0.0.34 で改名；0.0.34 以前はこの表面が `pathlint doctor`
+  だった。
 - `pathlint doctor` — pathlint 自身の selfcheck（バイナリが PATH
   上にあるか、`pathlint.toml` が発見 + parse できるか、
   `env_lookup` が動くか）。0.0.34 からの新挙動。
