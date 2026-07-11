@@ -31,7 +31,7 @@ check.
 is evaluated, the `PATH` itself is often a mess: duplicates,
 dangling directories, 8.3 short names, entries that could be
 written more concisely. `pathlint lint` lints the PATH on its
-own (new name in 0.0.34, per ADR-0028; previously this was
+own (new name in 0.0.34; previously this was
 `pathlint doctor`). `pathlint doctor` now answers a different
 question — is pathlint itself functional in this environment?
 (binary on PATH, `pathlint.toml` parseable, env vars readable).
@@ -140,8 +140,8 @@ Per-role:
 
 The 0.0.x → 0.1.0 bump is gated on the following criteria. None
 of them is "implemented enough"; each is a concrete pin a
-reviewer can verify. ADR-0005 records the pre-1.0 BREAKING
-licence that this gate retires.
+reviewer can verify. The decision log records the pre-1.0
+BREAKING licence that this gate retires.
 
 1. **Public API freeze (lib).** The 10 modules listed in
    `tests/public_api.rs` keep their surfaces for ≥ 2 consecutive
@@ -168,10 +168,7 @@ licence that this gate retires.
 Criteria 1, 2, 5, 6, 7 are mechanical (countable). 3 and 4 are
 narrative gates. The graduation verification record is itself an
 ADR (planned), written at the moment the criteria audit passes;
-its number depends on what else has shipped by then (ADR-0009
-through ADR-0011 were assigned to other backlog drainage entries
-in 0.0.30, so the verification record will land at a later
-number).
+its number will be whatever the decision log is at then.
 
 ## 4. Non-goals
 
@@ -210,10 +207,11 @@ The roles above also imply specific *non-roles*:
 
 The shape of the §3 / §4 boundary — OS layout knowledge as first-class,
 tool meta as declarative-only catalog entries, no modelling of tool
-runtime behavior — is anchored in
-[ADR-0032](decisions/0032-scope-os-knowledge-tool-meta-declaration.md).
-That ADR is the canonical rejection target for future "should pathlint
-know what mise / asdf / volta currently has active?" requests.
+runtime behavior — is itself a standing commitment. Future "should
+pathlint know what mise / asdf / volta currently has active?" requests
+are rejected against this boundary, not evaluated case by case; a
+tool-state query is a side effect, and the catalog's declarative
+vocabulary is the extension point instead.
 
 ## 5. Target users
 
@@ -248,7 +246,7 @@ Mapping subcommands to roles (see §1):
 |---|---|---|
 | R1 — resolve order | `pathlint check` (default) | implemented (0.0.2) |
 | R2 — existence and shape | reuses `[[expect]]` with a `kind` field, exposed in `check` | implemented (0.0.4) |
-| R3 — PATH hygiene | `pathlint lint` (formerly `pathlint doctor`) | implemented (0.0.3); renamed in 0.0.34 per ADR-0028 |
+| R3 — PATH hygiene | `pathlint lint` (formerly `pathlint doctor`) | implemented (0.0.3); renamed in 0.0.34 |
 | R3' — selfcheck | `pathlint doctor` | implemented (0.0.34) |
 | R4 — provenance | `pathlint trace <command>` | implemented (0.0.4) |
 
@@ -350,7 +348,7 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
   `--all` shows every per-OS field; `--names-only` strips paths and
   descriptions for shell pipelines.
 
-### 7.5 `pathlint lint` and `pathlint doctor` (0.0.34+, ADR-0028)
+### 7.5 `pathlint lint` and `pathlint doctor` (0.0.34+)
 
 R3 splits into two sibling commands as of 0.0.34. The
 responsibility split was driven by Round 1 dotfiles dogfooding
@@ -369,7 +367,7 @@ are all preserved verbatim — only the CLI verb changes from
 
 #### `pathlint doctor` (selfcheck)
 
-Three checks only (ADR-0028):
+Three checks only:
 1. Binary self-locate — running pathlint binary is on PATH.
 2. `pathlint.toml` discovery + parse — found via cwd or
    `$XDG_CONFIG_HOME`, and the parser succeeds. Semantic
@@ -701,7 +699,7 @@ Two stable URLs for users to pin:
 - **Latest main** (auto-updates per merge):
   `https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json`
 - **Specific release** (frozen at tag — replace `<TAG>` with
-  the version you want, e.g. `v0.0.13`):
+  the version you want, e.g. `v0.0.40`):
   `https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json`
 
 Users opt in with a single line at the top of `pathlint.toml`:
@@ -936,7 +934,7 @@ form of the previous `expand::expand_env` (kept as a thin
 wrapper over `expand_env_with` with the live process env).
 
 0.0.26+ extends the closure-injection pattern across the rest of
-the lib's public matching surface (ADR-0006). `expand` exposes
+the lib's public matching surface. `expand` exposes
 `expand_and_normalize_with(input, env_lookup)` alongside the
 existing `expand_and_normalize(input)` wrapper, and `source_match`
 exposes `find_with(haystack, sources, os, env_lookup)`,
@@ -947,7 +945,7 @@ exclusively can resolve catalog source paths without ever
 reading the process env — closure injection is complete at the
 lib boundary.
 
-0.0.27+ closes the internal call-graph threading (ADR-0007). The
+0.0.27+ closes the internal call-graph threading. The
 four headline entry points — `doctor::analyze`, `lint::evaluate`,
 `trace::locate`, `sort::sort_path` — now take typed `*Deps<'_>`
 carriers (`AnalyzeDeps`, `EvaluateDeps`, `LocateDeps`, `SortDeps`)
@@ -971,8 +969,8 @@ raw-preservation fix protects `--target user` / `--target machine`
 (which read the registry directly) but does nothing for the
 default `--target process`.
 
-0.0.24 introduced a cross-source overlay; 0.0.28 (ADR-0008) split
-it out of `PathEntry` into its own carrier `pathlint::Attribution`:
+0.0.24 introduced a cross-source overlay; 0.0.28 split it out of
+`PathEntry` into its own carrier `pathlint::Attribution`:
 
 ```rust
 pub struct Attribution {
@@ -1048,7 +1046,9 @@ Options (global):
   -V, --version
 ```
 
-`pathlint sort` is a read-only proposal (see §7.8). `--apply` is
+`pathlint sort` is a read-only proposal (see §7.8) and requires
+`--dry-run`: running `sort` without it exits 2 with an
+explanatory message, as a deliberate speed bump. `--apply` is
 held back by PRD §4's "no PATH mutation" policy and is on the
 post-1.0 list.
 
@@ -1161,25 +1161,6 @@ Tagged with the role(s) each touches.
 
 ### R1 — resolve order
 
-- **[R1] Symlinked system dirs.** *(Resolved in 0.0.14 by adding
-  `os_baseline_linux_sbin = "/usr/sbin"` to the built-in catalog.)*
-  On Arch, Solus, openSUSE TW etc., `/usr/sbin` is a symlink to
-  `/usr/bin` and `which` reports `/usr/sbin/<cmd>`. The
-  `apt` / `pacman` / `dnf` / `os_baseline_linux` sources still
-  declare `linux = "/usr/bin"` only because that's where their
-  packages land on traditional distros; users on a symlinked
-  layout reference `os_baseline_linux_sbin` alongside the package
-  manager:
-
-  ```toml
-  [[expect]]
-  command = "ls"
-  prefer = ["pacman", "os_baseline_linux_sbin"]
-  ```
-
-  Path-canonicalize was rejected as an alternative because it
-  silently changes which source label appears in the output and
-  breaks shim-aware matching for mise / volta / asdf.
 - **[R1] `prefer` ordering.** Currently `prefer = ["mise", "volta"]`
   is treated as a set ("any of these is OK"). Should the order
   additionally express preference for `sort`? Tied to the post-MVP
@@ -1198,28 +1179,16 @@ Tagged with the role(s) each touches.
   revisit once we have field data on how often path-based matching
   falls short. R4 in particular benefits from this — uninstall
   hints get sharper when the package manager confirms ownership.
-- **[R1, R4] mise plugin attribution.** A binary installed via
-  mise's plugin system lives at `mise/installs/<plugin>/<ver>/bin/<bin>`,
-  where `<plugin>` often encodes the upstream installer.
-  *(Resolved in 0.0.5 — R4 emits a `provenance:` line and a
-  `mise uninstall <installer>:<rest>` hint when the segment starts
-  with `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-`. R1's catalog
-  is left untouched; this stays a pure provenance heuristic,
-  never a source label, so `prefer = ["cargo"]` does NOT match a
-  `mise/installs/cargo-foo/...` binary. Users who want such
-  matching can still write a custom `[source.X]` for the
-  `mise/installs/cargo-` substring.)*
-
 ### R3 — PATH hygiene
 
-- **[R3] mise activate vs shims.** `mise activate` can either
-  prepend `mise/shims/` to PATH or rewrite PATH with the
-  per-runtime `installs/<lang>/<ver>/bin/` directly. *(0.0.5
-  resolved the "warn when both layers coexist" half — `pathlint
-  doctor` now emits a `Kind::Conflict { diagnostic =
-  "mise_activate_both" }` diagnostic listing every shim group
-  alongside every install group. Users still pick a mode for
-  `[[expect]]` rules; pathlint does not auto-detect.)*
+- **[R3] mise activate mode auto-detection.** `mise activate` can
+  either prepend `mise/shims/` to PATH or rewrite PATH with the
+  per-runtime `installs/<lang>/<ver>/bin/` directly. pathlint
+  warns when both layers coexist (see §16 Resolved) but does not
+  auto-detect which mode the user intends — `[[expect]]` rules
+  still name `mise_shims` or `mise_installs` explicitly. Whether
+  auto-detection is worth the added tool-mode inference remains
+  open.
 - **[R3] DuplicateButShadowed.** Same command basename exists as
   a real executable in two or more PATH dirs. The earlier dir
   wins; later dirs are shadowed. Always reported — duplicates
@@ -1333,11 +1302,30 @@ Tagged with the role(s) each touches.
   / `require_catalog`.)*
 - **`pathlint where` vs `which`/`where.exe` confusion.**
   *(Resolved in 0.0.14 — `pathlint where` is renamed to
-  `pathlint trace`. `where` is kept as a clap visible alias
-  throughout the 0.0.x line.)*
-- **`/usr/sbin` first on Arch / openSUSE TW.** *(Resolved in
-  0.0.14 — built-in `os_baseline_linux_sbin` source. Add it to
-  `prefer` instead of writing your own `[source.usr_sbin]`.)*
+  `pathlint trace`. The `where` alias was removed in 0.0.22
+  after a deprecation-warning runway.)*
+- **`/usr/sbin` first on Arch / openSUSE TW (symlinked system
+  dirs).** *(Resolved in 0.0.14 — built-in
+  `os_baseline_linux_sbin` source. On Arch, Solus, openSUSE TW
+  etc., `/usr/sbin` is a symlink to `/usr/bin` and `which`
+  reports `/usr/sbin/<cmd>`; add `os_baseline_linux_sbin` to
+  `prefer` alongside the package manager. Path-canonicalize was
+  rejected as an alternative because it silently changes which
+  source label appears in output and breaks shim-aware matching
+  for mise / volta / asdf.)*
+- **[R1, R4] mise plugin attribution.** *(Resolved in 0.0.5 —
+  for a binary at `mise/installs/<plugin>/<ver>/bin/<bin>` whose
+  `<plugin>` segment starts with `cargo-` / `npm-` / `pipx-` /
+  `go-` / `aqua-`, R4 emits a `provenance:` line and a
+  `mise uninstall <installer>:<rest>` hint. This stays a pure
+  provenance heuristic, never a source label: `prefer = ["cargo"]`
+  does NOT match a `mise/installs/cargo-foo/...` binary; users
+  who want that write a custom `[source.X]` for the substring.)*
+- **[R3] Warn when mise shims and installs coexist.** *(Resolved
+  in 0.0.5 — a `Kind::Conflict { diagnostic =
+  "mise_activate_both" }` diagnostic lists every shim group
+  alongside every install group. Auto-detecting the intended
+  mode remains open, see §16 R3.)*
 
 ## 17. Change log
 

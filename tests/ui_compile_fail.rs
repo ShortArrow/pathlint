@@ -12,9 +12,10 @@
 //!
 //!     TRYBUILD=overwrite cargo test --test ui_compile_fail
 //!
-//! See [ADR-0026](../docs/decisions/0026-trybuild-for-negative-invariants.md)
-//! for the adoption rationale and the rejected alternatives
-//! (hand-rolled macro tricks, `compiletest_rs`, comment-only pins).
+//! trybuild is the pin mechanism because a comment-only invariant
+//! rots silently and a hand-rolled macro cannot assert
+//! non-compilation; a snippet that must fail to compile is the
+//! strongest guard available for a "this API must not exist" claim.
 
 #[test]
 fn negative_invariants_stay_uncompilable() {

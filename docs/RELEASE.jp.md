@@ -6,12 +6,11 @@
 tag を push する** ことで実行する。 tag push が workflow を
 trigger し、 ビルド、 schema 生成、 GitHub Release 作成、
 crates.io への publish までが自動で走る。 Actions タブの dispatch
-は使わず、 version 入力もない。 tag そのものがリリース指示。 設計
-変更の経緯は
-[ADR-0029](decisions/0029-release-trigger-tag-push.md) を参照
-(ADR-0029 は
-[ADR-0010](decisions/0010-release-workflow-bump-skip.md) を
-supersede している)。
+は使わず、 version 入力もない。 tag そのものがリリース指示。
+この形は以前の dispatch 駆動 workflow を置き換えたもの — CI が
+tag を管理する旧 flow は partial release を同一 version で安全に
+retry できなかった。 人間が push する tag を唯一の trigger に
+することで、 その recovery 経路ごと不要にした。
 
 ## 手順
 
@@ -30,8 +29,9 @@ supersede している)。
 - (release が `doctor` selfcheck / `lint` 検出器 / 組み込み catalog
   / `/etc/os-release` 読み取り / `expand_env` のどれかに触る場合)
   `scripts/e2e/run.sh` を走らせて Ubuntu / Arch / Fedora container
-  で smoke する。 意図的に local-only — 詳細は
-  [ADR-0030](decisions/0030-container-e2e-for-linux-portability.md)。
+  で smoke する。 意図的に local-only — CI runner 上の container
+  は遅く flaky で、 この harness が gate するのは merge ではなく
+  release だから。
 - **英日 parity check。** 以下 3 ペアそれぞれについて、 前回
   リリース以降の差分を diff し、 両ファイルが同時に更新されたか
   確認する：

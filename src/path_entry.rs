@@ -27,8 +27,7 @@
 //! Windows registry) is *not* a property of `PathEntry`. That
 //! information lives on [`crate::Attribution`], which wraps a
 //! `PathEntry` together with an optional `provenance_raw` recovered
-//! from cross-source matching. See ADR-0008 for the type-split
-//! rationale.
+//! from cross-source matching.
 //!
 //! # Examples
 //!
@@ -59,7 +58,7 @@ use crate::expand;
 /// `raw` is the on-source form, `expanded` is `expand::expand_env`
 /// applied once at the boundary. 0.0.28 restored `PathEntry` to
 /// this two-field shape — cross-source overlay moved to
-/// [`crate::Attribution`] (see ADR-0008).
+/// [`crate::Attribution`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathEntry {
     /// As stored at the source this entry came from. Preserves

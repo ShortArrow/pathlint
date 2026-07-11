@@ -1,5 +1,5 @@
 //! `pathlint lint` end-to-end tests (formerly `pathlint doctor`
-//! through 0.0.33; renamed in 0.0.34 per ADR-0028).
+//! through 0.0.33; renamed in 0.0.34).
 
 use std::fs;
 use std::path::{Path, PathBuf};

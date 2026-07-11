@@ -11,9 +11,9 @@ detector の種類、catalog エントリの形を決める。原則は 4 つの
 
 これらは *不変の* プロダクト原則。0.0.x の最初から効力を持ち、
 0.0.x → 0.1.0 の graduation を越えても変わらない。原則を裏付ける
-scope の境界 — pathlint が把握するもの、明示的にモデル化しないもの —
-は [ADR-0032](decisions/0032-scope-os-knowledge-tool-meta-declaration.md)
-に記録されている。
+scope の境界も同様に固定 — pathlint は OS が PATH をどう構成するか
+と、各ツールがファイルをどこに置くと宣言しているかを把握し、
+ツールが runtime に何をするかは意図的にモデル化しない。
 
 ## 原則
 
@@ -51,9 +51,6 @@ scope の境界 — pathlint が把握するもの、明示的にモデル化し
   マネージャ問い合わせ、インストール予測、PATH 書き換え、「document
   モデルがないので LSP サーバは持たない」 line。提案された機能が
   原則に合うか判断するときは §4 と本ファイルを並べて読む。
-- **ADR-0009**（読み取り専用 stance）が原則 7 の load-bearing ADR。
-  ADR-0014 / 0015 / 0023 / 0031 はそれぞれ原則 2-3（catalog が拡張面）
-  の一部を anchor する。ADR-0032 が境界全体を 1 本にまとめる。
 
 PR review、issue triage、ADR で原則を引用するときは、本ファイルの
 番号で link する。原則は release 間で安定。PRD の section 番号は

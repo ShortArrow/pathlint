@@ -393,7 +393,7 @@ pub enum Kind {
     WriteablePathDir,
     /// Selfcheck: the running pathlint binary's absolute path was
     /// not found anywhere on PATH. Either invoked by absolute path
-    /// or PATH was unset. 0.0.34+ (ADR-0028).
+    /// or PATH was unset. 0.0.34+.
     BinaryNotInPath {
         running: String,
     },
@@ -1298,7 +1298,7 @@ fn add_case_variant_diagnostics(entries: &[Attribution], out: &mut Vec<Diagnosti
 
 /// Selfcheck: does pathlint itself work in this environment?
 ///
-/// Three checks (ADR-0028, 0.0.34+):
+/// Three checks (0.0.34+):
 /// 1. Binary self-locate — is the running pathlint binary on PATH?
 /// 2. `pathlint.toml` discovery + parse — the caller resolves the
 ///    config location through whichever helper every other subcommand

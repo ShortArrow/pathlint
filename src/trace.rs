@@ -134,8 +134,7 @@ pub struct LocateDeps<'a> {
     pub common: crate::CommonDeps<'a>,
     /// PATH resolver. Same shape as
     /// [`crate::lint::EvaluateDeps::resolver`]; type-erased through
-    /// `Box<dyn>` for the same closure-HRTB reason
-    /// (ADR-0007 §Alternatives).
+    /// `Box<dyn>` for the same closure-HRTB reason.
     pub resolver: crate::lint::ResolverFn<'a>,
 }
 

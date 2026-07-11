@@ -162,8 +162,7 @@ pub struct CommonDeps<'a> {
     /// The env oracle every `source_match::*_with` call inside the
     /// lib eventually consults. Type-erased through a trait object so
     /// each per-function `*Deps` can embed it without leaking another
-    /// generic parameter — see ADR-0007 §Alternatives for why Box<dyn>
-    /// beat the generic-closure variants.
+    /// generic parameter into every signature that carries the deps.
     pub env_lookup: EnvLookupFn<'a>,
 }
 
@@ -184,13 +183,13 @@ impl CommonDeps<'static> {
 /// `provenance_raw` today is
 /// [`crate::path_source::reconcile_process_with_registry`], which
 /// recovers the registry `%VAR%` form for entries the OS expanded
-/// on its way into `getenv("PATH")` (the `--target process` overlay,
-/// see ADR-0004).
+/// on its way into `getenv("PATH")` (the `--target process`
+/// overlay).
 ///
 /// 0.0.28 split this out of `PathEntry` so the carrier inside the
 /// lib has one clean concept per type: `PathEntry` is "what one
 /// source said this entry is"; `Attribution` is "that observation
-/// plus whatever cross-source hint we have". See ADR-0008.
+/// plus whatever cross-source hint we have".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribution {
     /// The entry as observed at the source that originally

@@ -1,4 +1,4 @@
-//! `pathlint doctor` (selfcheck) end-to-end tests (ADR-0028, 0.0.34).
+//! `pathlint doctor` (selfcheck) end-to-end tests (0.0.34+).
 //!
 //! 0.0.34 redefines doctor: it answers "is pathlint itself functional
 //! in this environment?" — binary self-locate, pathlint.toml discovery
@@ -113,7 +113,7 @@ fn doctor_json_emits_top_level_array() {
     let v: serde_json::Value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|_| panic!("doctor --json not valid JSON: {stdout}"));
     // 0.0.34 doctor JSON shape mirrors 0.0.33's: top-level array.
-    // Kind enum is the selfcheck subset (ADR-0028).
+    // Kind enum is the selfcheck subset.
     assert!(v.is_array(), "expected array, got: {stdout}");
 }
 
@@ -121,7 +121,7 @@ fn doctor_json_emits_top_level_array() {
 fn doctor_emits_selfcheck_kinds_only() {
     // The kind enum doctor emits must be a small selfcheck set:
     // { binary_not_in_path, config_not_found, config_parse_error,
-    //   env_lookup_failed }. No PATH-anomaly kinds (ADR-0028).
+    //   env_lookup_failed }. No PATH-anomaly kinds.
     let tmp = tempfile::tempdir().unwrap();
     let out = Command::new(BIN)
         .args(["doctor", "--json"])

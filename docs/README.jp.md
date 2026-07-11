@@ -278,10 +278,11 @@ unix = "/data/tools/mise/installs"
 
 0.0.x ラインで 7 サブコマンドが動きます: `check`（デフォルト）/
 `lint`（0.0.34 で新設）/ `doctor` / `trace` / `sort` / `init` /
-`catalog`（`list` と `relations`）。`pathlint where` は `pathlint trace` の visible
-alias、`--rules` は `--config` の visible alias として 0.0.x
-線では残します。両 alias は将来のリリースで削除予定（時期未定、
-破壊リリース前に告知）。TOML スキーマと CLI 表面は引き続き動き
+`catalog`（`list` と `relations`）。旧 spelling の `pathlint
+where`（`pathlint trace` の alias）と `--rules`（`--config` の
+alias）は deprecation warning の移行期間を経て 0.0.22 で削除
+済みです。`pathlint trace` と `--config` を使ってください。
+TOML スキーマと CLI 表面は引き続き動き
 ますが、解決 / マッチ / レポートの一連は実装済みでテストもあり
 ます。
 
@@ -302,7 +303,7 @@ alias、`--rules` は `--config` の visible alias として 0.0.x
 ```
 
 特定リリースに固定したい場合は (`<TAG>` を使いたいバージョン
-に置換、例: `v0.0.21`)：
+に置換、例: `v0.0.40`)：
 
 ```toml
 #:schema https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json

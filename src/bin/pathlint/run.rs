@@ -156,10 +156,10 @@ pub fn execute(cli: Cli) -> Result<u8> {
 /// 0.0.34: `pathlint doctor` is now a selfcheck — does pathlint
 /// itself work in this environment? Three checks: binary self-locate,
 /// pathlint.toml discovery + parse, and env_lookup operational.
-/// PATH anomaly detection moved to `pathlint lint` (ADR-0028).
+/// PATH anomaly detection moved to `pathlint lint`.
 fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
     // Reuse locate_rules so doctor reports the same config location
-    // every other subcommand would have found (ADR-0028 §discovery).
+    // every other subcommand would have found.
     // locate_rules errors only on an explicit --config that is not a
     // file; treat that as the "explicit config does not exist" case
     // and let selfcheck still emit other diagnostics.
@@ -185,7 +185,7 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
 
 /// 0.0.34: PATH anomaly detection + `pathlint.toml` semantic
 /// validation. Inherits the 12 detector kinds previously emitted by
-/// `pathlint doctor` (now selfcheck only) per ADR-0028.
+/// `pathlint doctor` (now selfcheck only).
 fn execute_lint(args: &LintArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
     let filter = Filter {
         include: args.include.clone(),

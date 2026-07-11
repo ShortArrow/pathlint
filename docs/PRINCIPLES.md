@@ -12,10 +12,10 @@ the feature gets reshaped, deferred, or rejected.
 
 These are the *invariant* product principles. They have been in
 force since 0.0.x began, and they survive the 0.0.x → 0.1.0
-graduation unchanged. The scope boundary that anchors them — what
-pathlint commits to knowing and what it deliberately refuses to
-model — is recorded in
-[ADR-0032](decisions/0032-scope-os-knowledge-tool-meta-declaration.md).
+graduation unchanged. The scope boundary behind them is equally
+fixed: pathlint commits to knowing how OSes lay out PATH and
+where each tool declares its files land, and it deliberately does
+not model what any tool does at runtime.
 
 ## The principles
 
@@ -57,10 +57,6 @@ model — is recorded in
   — package-manager queries, install simulation, PATH rewriting, and
   the "no document model, so no LSP server" line. Read §4 alongside
   this file when deciding whether a proposed feature fits.
-- **ADR-0009** (read-only stance) is the load-bearing ADR behind
-  principle 7. ADR-0014 / 0015 / 0023 / 0031 each anchor a slice of
-  principles 2-3 (the catalog as the extension surface). ADR-0032
-  ties the whole boundary together.
 
 When you reach for one of these — to cite it in a PR review, an
 issue triage decision, or an ADR — link to the principle number in

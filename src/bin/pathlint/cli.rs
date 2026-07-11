@@ -34,14 +34,13 @@ pub enum Command {
     /// shortening candidates, Windows 8.3 short names, malformed
     /// entries) plus semantic validation of `pathlint.toml` against
     /// the catalog. Independent of `[[expect]]` rules. New in 0.0.34;
-    /// inherits the detector kinds previously emitted by `doctor`
-    /// (see ADR-0028).
+    /// inherits the detector kinds previously emitted by `doctor`.
     Lint(LintArgs),
 
     /// Check that pathlint itself is functional in this environment:
     /// the running binary's PATH placement, `pathlint.toml` discovery
     /// and parse, and `env_lookup` operational. Does NOT inspect PATH
-    /// for anomalies — that moved to `lint` in 0.0.34 (ADR-0028).
+    /// for anomalies — that moved to `lint` in 0.0.34.
     Doctor(DoctorArgs),
 
     /// Show where a command resolves from, which sources it matches,
@@ -117,8 +116,8 @@ pub struct DoctorArgs {
     /// `env_lookup_failed`). Schema: `schemas/doctor.schema.json`
     /// (shared with `pathlint lint --json` — the schema lists all 16
     /// variants, doctor only emits the 4 selfcheck ones). Replaced
-    /// the 0.0.33 PATH-anomaly output (ADR-0028); the old behaviour
-    /// is now `pathlint lint --json`.
+    /// the 0.0.33 PATH-anomaly output; the old behaviour is now
+    /// `pathlint lint --json`.
     #[arg(long)]
     pub json: bool,
 }
@@ -129,7 +128,7 @@ pub struct LintArgs {
     /// values. Mutually exclusive with `--exclude`. Accepts a comma
     /// or repeated flag form: `--include duplicate,missing` or
     /// `--include duplicate --include missing`. Inherited from the
-    /// 0.0.33 doctor surface (ADR-0028).
+    /// 0.0.33 doctor surface.
     #[arg(long, value_delimiter = ',', conflicts_with = "exclude")]
     pub include: Vec<String>,
 
@@ -145,9 +144,9 @@ pub struct LintArgs {
     /// payload fields (`suggestion`, `canonical`, `first_index`,
     /// `reason`, or `diagnostic` + `groups` for the `conflict` kind).
     /// Schema: `schemas/doctor.schema.json` (shared with
-    /// `pathlint doctor --json` since 0.0.34, see ADR-0028 —
-    /// the schema lists all 16 variants, lint only emits the 12
-    /// PATH-anomaly ones). The include / exclude filters still apply;
+    /// `pathlint doctor --json` since 0.0.34 — the schema lists
+    /// all 16 variants, lint only emits the 12 PATH-anomaly
+    /// ones). The include / exclude filters still apply;
     /// `--quiet` is ignored in JSON mode (the output is intended
     /// to be complete).
     #[arg(long)]
