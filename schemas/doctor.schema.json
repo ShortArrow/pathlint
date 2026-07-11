@@ -230,7 +230,7 @@
       }
     },
     {
-      "description": "Selfcheck: the running pathlint binary's absolute path was not found anywhere on PATH. Either invoked by absolute path or PATH was unset. 0.0.34+ (ADR-0028).",
+      "description": "Selfcheck: the running pathlint binary's absolute path was not found anywhere on PATH. Either invoked by absolute path or PATH was unset. 0.0.34+.",
       "type": "object",
       "required": [
         "kind",

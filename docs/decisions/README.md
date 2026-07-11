@@ -17,10 +17,10 @@ directory belongs to one or more of those categories.
 | ADR | Title | Category | Status | Shipped in |
 |---|---|---|---|---|
 | [0000](0000-adr-categories.md) | ADR categories and when to write one | 8 (self) | Accepted | 0.0.25 |
-| [0001](0001-pathentry-as-tenth-public-module.md) | PathEntry as the 10th public module | 1 (+4) | Accepted (partially superseded by 0004) | 0.0.23 |
+| [0001](0001-pathentry-as-tenth-public-module.md) | PathEntry as the 10th public module | 1 (+4) | Accepted (partially superseded by 0004, then by 0008 for the type split) | 0.0.23 |
 | [0002](0002-from-raw-closure-injection.md) | `PathEntry::from_raw` takes a closure | 3 (+1) | Accepted | 0.0.23 |
 | [0003](0003-reg-expand-sz-raw-decode.md) | Decode `REG_EXPAND_SZ` ourselves | 4 | Accepted | 0.0.23 |
-| [0004](0004-process-target-registry-provenance-overlay.md) | Process-target registry provenance overlay | 1 (+5) | Accepted (supersedes part of 0001) | 0.0.24 |
+| [0004](0004-process-target-registry-provenance-overlay.md) | Process-target registry provenance overlay | 1 (+5) | Accepted (supersedes part of 0001; overlay carrier later superseded by 0008) | 0.0.24 |
 | [0005](0005-pre-1-0-breaking-policy.md) | 0.0.x line allows MAJOR-equivalent BREAKING | 8 | Accepted | 0.0.x |
 | [0006](0006-source-match-env-closure-injection.md) | `_with` env-lookup closures on `expand_and_normalize` and `source_match` | 3 (+1) | Accepted | 0.0.26 |
 | [0007](0007-deps-bag-layered.md) | layered `*Deps` carriers + per-function production wrappers | 2 (+1) | Accepted | 0.0.27 |

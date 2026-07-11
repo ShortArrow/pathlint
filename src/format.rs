@@ -137,7 +137,7 @@ pub fn doctor_line(d: &Diagnostic, entries: &[Attribution], style: Style) -> Str
     )
 }
 
-/// Render a selfcheck diagnostic (0.0.34+, ADR-0028). Selfcheck
+/// Render a selfcheck diagnostic (0.0.34+). Selfcheck
 /// findings are not bound to a PATH entry, so the leading "#NNN
 /// entry" segment of `doctor_line` is omitted.
 pub fn selfcheck_line(d: &Diagnostic, _style: Style) -> String {

@@ -7,10 +7,11 @@ From 0.0.36 onward, releases are cut from `main` by **pushing a
 automatically on the tag, builds binaries, generates schemas,
 publishes a GitHub Release, and publishes to crates.io. There is
 no Actions tab dispatch and no version input — the tag itself is
-the authoritative trigger. See
-[ADR-0029](decisions/0029-release-trigger-tag-push.md) for why
-the shape changed (it supersedes
-[ADR-0010](decisions/0010-release-workflow-bump-skip.md)).
+the authoritative trigger. This shape replaced the earlier
+dispatch-driven workflow, whose CI-managed tagging could wedge a
+partial release with no safe way to retry the same version;
+making the human-pushed tag the only trigger removed that
+recovery branch outright.
 
 ## How to release
 
@@ -30,8 +31,8 @@ the shape changed (it supersedes
   detectors, the built-in catalog, or anything that reads
   `/etc/os-release` / uses `expand_env`) Run `scripts/e2e/run.sh`
   to smoke pathlint inside Ubuntu / Arch / Fedora containers.
-  Local-only on purpose — see
-  [ADR-0030](decisions/0030-container-e2e-for-linux-portability.md).
+  Local-only on purpose — container runtimes on CI runners are
+  slow and flaky, and this harness gates releases, not merges.
 - **English / Japanese parity check.** For each of the three pairs
   below, diff the change set since the last release and confirm
   both files were updated together:

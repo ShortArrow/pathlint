@@ -53,9 +53,9 @@ fn check_rejects_user_source_pointing_at_root() {
 
 #[test]
 fn lint_rejects_user_source_pointing_at_root() {
-    // 0.0.34 (ADR-0028): the source-validation gate moved from
-    // doctor (now selfcheck) to lint, since lint is the command
-    // that consumes the merged catalog.
+    // 0.0.34: the source-validation gate moved from doctor (now
+    // selfcheck) to lint, since lint is the command that consumes
+    // the merged catalog.
     let tmp = tempfile::tempdir().unwrap();
     let key = if cfg!(windows) { "windows" } else { "unix" };
     let body = format!(
@@ -313,7 +313,7 @@ later = "a"
 
 #[test]
 fn lint_rejects_user_relation_cycle() {
-    // 0.0.34 (ADR-0028): relation acyclicity is enforced by every
+    // 0.0.34: relation acyclicity is enforced by every
     // command that consumes the merged relation graph (check / lint
     // / trace / sort). doctor is now selfcheck and does not read
     // user relations.

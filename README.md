@@ -292,12 +292,10 @@ unix = "/data/tools/mise/installs"
 
 The 0.0.x line ships seven subcommands: `check` (default), `lint`
 (new in 0.0.34), `doctor`, `trace`, `sort`, `init`, and `catalog`
-(with `list` and `relations`). `pathlint where` is kept as a
-visible alias of `pathlint trace`, and `--rules` is kept as a
-visible alias of `--config`. Both aliases are slated for removal
-in a future
-release; the exact timing is undecided and will be announced
-ahead of the breaking version. The TOML schema and CLI surface
+(with `list` and `relations`). The legacy `pathlint where`
+(alias of `pathlint trace`) and `--rules` (alias of `--config`)
+spellings were removed in 0.0.22 after a deprecation-warning
+runway; use `pathlint trace` and `--config`. The TOML schema and CLI surface
 are still moving, but the resolve / match / report pipeline is
 in place and covered by tests.
 
@@ -318,7 +316,7 @@ LSP) and the [Even Better TOML][ebt] VS Code extension:
 ```
 
 Pin to a specific release for reproducibility (replace `<TAG>`
-with the version you want, e.g. `v0.0.21`):
+with the version you want, e.g. `v0.0.40`):
 
 ```toml
 #:schema https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json
@@ -352,8 +350,8 @@ stdout is a terminal.
 
 A SARIF 2.1.0 output mode (`pathlint lint --sarif`) for GitHub
 Code Scanning and other static-analysis aggregators is planned
-for a future release — see
-[ADR-0031](docs/decisions/0031-ecosystem-integration-via-sarif-and-schemastore.md).
+for a future release, so pathlint findings can appear in the
+same PR-annotation surface as clippy and cargo-audit.
 
 ### Pinning the catalog version
 

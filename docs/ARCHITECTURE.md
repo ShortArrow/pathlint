@@ -173,17 +173,13 @@ CI runs `cargo test` on Ubuntu + macOS + Windows. The
 
 ## Release pipeline
 
-`.github/workflows/release.yml` is `workflow_dispatch`-triggered
-(version + publish_crates inputs):
+`.github/workflows/release.yml` triggers on pushing a `vX.Y.Z`
+tag to `main` (0.0.36+). The version bump rides in a normal PR
+before the tag is pushed; CI never writes to `main`:
 
-1. **prepare**: bump `Cargo.toml` + `Cargo.lock`, commit
-   `chore: release X.Y.Z`, tag `vX.Y.Z`, push to `main`. The
-   bump is idempotent — if `Cargo.toml` is already at the
-   requested version (e.g. a feature PR pre-bumped it to pin
-   `tests/help_contract.rs`), `cargo set-version` is a no-op
-   and the `chore: release` commit is skipped, but `HEAD` still
-   gets tagged. See
-   [ADR-0010](decisions/0010-release-workflow-bump-skip.md).
+1. **guard**: asserts that `Cargo.toml` at the tagged commit
+   reads `version = "X.Y.Z"` — catches a tag pushed against the
+   wrong commit before any expensive job runs.
 2. **build × 4 archs**: `x86_64-unknown-linux-gnu`,
    `x86_64-pc-windows-msvc`, `x86_64-apple-darwin`,
    `aarch64-apple-darwin`. Each produces an archive uploaded as
@@ -191,8 +187,10 @@ CI runs `cargo test` on Ubuntu + macOS + Windows. The
 3. **publish-github**: regenerate the 5 schemas from the tagged
    commit, build SHA256SUMS, create the GitHub Release with the
    archives + 5 `*.schema.json` files attached.
-4. **publish-crates** *(opt-in)*: OIDC-trusted publish to
-   crates.io.
+4. **publish-gate → publish-crates** *(opt-out)*: the gate scans
+   the tagged commit's message for a standalone `[skip publish]`
+   line; unless present, an OIDC-trusted `cargo publish` runs.
+   The default is to publish.
 
 Every release is `prerelease = true` while the tag prefix is
 `v0.` (set explicitly by `release.yml`). Schema asset URLs are

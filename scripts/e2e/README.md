@@ -58,7 +58,7 @@ exact human output:
 1. `pathlint --version` mentions `pathlint`
 2. `--help` works on every subcommand (including `lint`, added in 0.0.34)
 3. `pathlint catalog list` produces non-trivial output
-4. `pathlint doctor` selfcheck (0.0.34 split, ADR-0028): exits 0 or 1 and `--json` is a JSON array
+4. `pathlint doctor` selfcheck (0.0.34 split): exits 0 or 1 and `--json` is a JSON array
 5. `pathlint lint --json` PATH analysis (0.0.34 split): exits 0 or 1 and produces a JSON array
 6. `pathlint trace ls` resolves and emits a `kind` field in JSON
 7. `pathlint check` (no rules) exits 0 and `--json` is a JSON array

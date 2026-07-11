@@ -132,7 +132,7 @@ fn path_entry_from_raw_takes_env_lookup_closure() {
 fn analyze_signature_pinned_with_attribution_slice() {
     // 0.0.23 BREAKING: doctor::analyze takes a typed entry slice.
     // 0.0.28 swapped that slice from `&[PathEntry]` to
-    // `&[Attribution]` (ADR-0008). A bare `&[]` would still
+    // `&[Attribution]`. A bare `&[]` would still
     // type-check via inference, so pin the slice type explicitly
     // here.
     use std::collections::BTreeMap;
@@ -169,7 +169,7 @@ fn expand_env_with_pinned_on_public_surface() {
 #[test]
 fn path_entry_is_pure_observation() {
     // 0.0.28 BREAKING: PathEntry no longer carries provenance.
-    // After ADR-0008 split, PathEntry is a pure (raw, expanded)
+    // After the type split, PathEntry is a pure (raw, expanded)
     // observation. Cross-source overlay moved to `Attribution`.
     let pe = PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None });
     assert_eq!(pe.raw, "/usr/bin");
@@ -182,7 +182,7 @@ fn path_entry_is_pure_observation() {
 fn attribution_pinned_on_public_surface() {
     // 0.0.28 BREAKING: Attribution lives at the crate root next to
     // CommonDeps. It carries the cross-source overlay that used to
-    // be a PathEntry field. See ADR-0008.
+    // be a PathEntry field.
     let pe = PathEntry::from_raw("/usr/bin", |_| -> Option<String> { None });
     let attrib = Attribution::new(pe.clone());
     assert_eq!(attrib.observed.raw, "/usr/bin");
@@ -191,7 +191,7 @@ fn attribution_pinned_on_public_surface() {
     assert_eq!(attrib.effective_raw_for_user_intent(), "/usr/bin");
 
     // with_provenance attaches the registry raw form (Windows
-    // process-target overlay; see ADR-0004).
+    // process-target overlay).
     let with_prov = attrib.with_provenance("%CUSTOM%/bin".to_string());
     assert_eq!(with_prov.provenance_raw.as_deref(), Some("%CUSTOM%/bin"));
     assert_eq!(with_prov.effective_raw_for_user_intent(), "%CUSTOM%/bin");
@@ -263,9 +263,8 @@ fn source_match_with_variants_pinned_on_public_surface() {
 fn common_deps_production_pinned_on_public_surface() {
     // 0.0.27: the shared CommonDeps carrier lives at the crate
     // root so every *Deps variant can embed it. Pin both the type
-    // and the production() constructor (ADR-0007: closures are
-    // type-erased through Box<dyn> so the carrier itself is not
-    // generic).
+    // and the production() constructor (closures are type-erased
+    // through Box<dyn> so the carrier itself is not generic).
     let _common: CommonDeps = CommonDeps::production();
 }
 

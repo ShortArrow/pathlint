@@ -26,7 +26,7 @@ pathlint がチェックする。元来の用途であり、ツールの背骨�
 **R3 — PATH 衛生 + selfcheck。** expectation を 1 つも評価する前
 に、PATH 自体が 散らかっている — 重複、不在ディレクトリ、8.3 短縮
 名、より簡潔に 書ける エントリ。`pathlint lint` が PATH 単体で lint
-する（0.0.34 で `pathlint doctor` から改名、ADR-0028）。
+する（0.0.34 で `pathlint doctor` から改名）。
 `pathlint doctor` は別の問いに答える — pathlint 自身がこの環境で
 動くか?（バイナリが PATH 上にあるか、`pathlint.toml` が parse でき
 るか、env 変数が読めるか）。
@@ -127,8 +127,8 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 
 0.0.x → 0.1.0 への昇格は以下 7 項目を満たした時点で行う。「十分
 できた」 ではなく、 reviewer が機械的に / 文書的に検証できる
-具体的 pin として定義する。 ADR-0005 は pre-1.0 で BREAKING を
-許す方針を記録しており、 この gate がその方針を retire する。
+具体的 pin として定義する。 pre-1.0 で BREAKING を許す方針は
+decision log に記録されており、 この gate がその方針を retire する。
 
 1. **lib 公開 API の凍結。** `tests/public_api.rs` で pin された
    10 module の surface が、 2 release 連続で `CHANGELOG.md` に
@@ -151,10 +151,8 @@ Termux** 横断でカバーする。source は OS 別の場所を宣言、各
 
 1, 2, 5, 6, 7 は機械的 (countable) gate、 3 と 4 は narrative
 gate。 graduation criteria の audit を通った瞬間の verification は
-ADR (planned) として記録する。 番号はその時点で他に何が
-shipped 済かに依存する (ADR-0009 から ADR-0011 は 0.0.30 で別件
-backlog drainage に割当済、 verification record は後の番号に
-なる)。
+ADR (planned) として記録する。 番号はその時点の decision log の
+末尾になる。
 
 ## 4. 非ゴール
 
@@ -192,11 +190,11 @@ backlog drainage に割当済、 verification record は後の番号に
 
 §3 / §4 の境界 — OS レイアウト知識を first-class に持ち、ツールメタは
 宣言的なカタログエントリのみで、ツールの runtime 挙動はモデル化しない
-— は
-[ADR-0032](decisions/0032-scope-os-knowledge-tool-meta-declaration.md)
-に明文化されている。「mise / asdf / volta が今アクティブにしている
-ものを pathlint が知るべきでは？」型の将来 request に対する canonical
-な reject 先がこの ADR。
+— は、それ自体が恒久的なコミットメント。「mise / asdf / volta が今
+アクティブにしているものを pathlint が知るべきでは？」型の将来
+request は、個別に検討するのではなくこの境界に照らして reject する。
+ツール状態の問い合わせは side effect であり、拡張点はカタログの
+宣言的 vocabulary の側にある。
 
 ## 5. ターゲットユーザー
 
@@ -229,7 +227,7 @@ backlog drainage に割当済、 verification record は後の番号に
 |---|---|---|
 | R1 — 解決順 | `pathlint check`（デフォルト） | 実装ずみ（0.0.2） |
 | R2 — 存在と形状 | `[[expect]] kind = "..."` を `check` に拡張 | 実装ずみ（0.0.4） |
-| R3 — PATH 衛生 | `pathlint lint`（旧 `pathlint doctor`） | 実装ずみ（0.0.3）、 0.0.34 で 改名（ADR-0028） |
+| R3 — PATH 衛生 | `pathlint lint`（旧 `pathlint doctor`） | 実装ずみ（0.0.3）、 0.0.34 で 改名 |
 | R3' — selfcheck | `pathlint doctor` | 実装ずみ（0.0.34） |
 | R4 — 出自 | `pathlint trace <command>` | 実装ずみ（0.0.4） |
 
@@ -305,7 +303,7 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 - デフォルトは現 OS のパスのみ。`--all` で全 OS のフィールドを縦
   展開。`--names-only` で名前だけ（シェル連携用）。
 
-### 7.5 `pathlint lint` と `pathlint doctor`（0.0.34+、ADR-0028）
+### 7.5 `pathlint lint` と `pathlint doctor`（0.0.34+）
 
 R3 は 0.0.34 で 2 つの兄弟コマンドに分離した。背景: Round 1 で
 dotfiles dogfooding を 行った結果、0.0.33 の `doctor` が PATH 衛生
@@ -322,7 +320,7 @@ filter UX、`--json` 出力配列、schema（`schemas/doctor.schema.json`
 
 #### `pathlint doctor`（selfcheck）
 
-3 つの確認 だけ（ADR-0028）:
+3 つの確認 だけ:
 1. binary 自己発見 — 動作中の pathlint binary が PATH 上にあるか。
 2. `pathlint.toml` 発見 + parse — `locate_rules` と同じ探索
    （cwd → `$XDG_CONFIG_HOME` → `$HOME/.config` → `$USERPROFILE/.config`）
@@ -637,7 +635,7 @@ VS Code の "Even Better TOML" にも同梱）は JSON Schema を読める。
 - **main の最新**（merge ごとに更新）:
   `https://raw.githubusercontent.com/ShortArrow/pathlint/main/schemas/pathlint.schema.json`
 - **特定リリース**（tag で凍結 — `<TAG>` は固定したいバージョン
-  に置き換える、例: `v0.0.13`）:
+  に置き換える、例: `v0.0.40`）:
   `https://github.com/ShortArrow/pathlint/releases/download/<TAG>/pathlint.schema.json`
 
 `pathlint.toml` の先頭 1 行で opt-in：
@@ -858,7 +856,7 @@ test は決定論的 closure を inject することで、 host 環境に
 にも流れる (これが従来の `expand::expand_env` の公開 form、
 `expand_env` 自体は process env を読む薄い wrapper として残る)。
 
-0.0.26+ で公開 matching surface にも同 pattern を展開 (ADR-0006)。
+0.0.26+ で公開 matching surface にも同 pattern を展開。
 `expand` 層は `expand_and_normalize_with(input, env_lookup)` を、
 `source_match` 層は `find_with(...)` / `validate_sources_with(...)` /
 `names_only_with(...)` を公開し、 既存 4 関数 (`expand_and_normalize`,
@@ -867,7 +865,7 @@ embedder が `_with` 系のみを呼べば、 catalog source path の
 展開でも `std::env::var` を一切経由せずに pathlint を動かせる
 — lib 公開境界で injection は完成。
 
-0.0.27+ で内部 call-graph の threading も完了 (ADR-0007)。
+0.0.27+ で内部 call-graph の threading も完了。
 4 つの公開 entry point — `doctor::analyze` / `lint::evaluate` /
 `trace::locate` / `sort::sort_path` — はそれぞれ typed `*Deps<'_>`
 carrier (`AnalyzeDeps` / `EvaluateDeps` / `LocateDeps` /
@@ -892,8 +890,8 @@ process target からは展開後の literal しか見えない。 0.0.23 の
 raw 保持 fix は `--target user` / `--target machine` (registry
 直読) には効くが、 default の `--target process` には効かない。
 
-0.0.24 で cross-source overlay を導入、 0.0.28 (ADR-0008) で
-`PathEntry` から専用 carrier `pathlint::Attribution` に切り出した:
+0.0.24 で cross-source overlay を導入、 0.0.28 で `PathEntry`
+から専用 carrier `pathlint::Attribution` に切り出した:
 
 ```rust
 pub struct Attribution {
@@ -972,7 +970,9 @@ Options（global）:
   -V, --version
 ```
 
-`pathlint sort` は読み取り専用の提案（§7.8 参照）。`--apply` モード
+`pathlint sort` は読み取り専用の提案（§7.8 参照）で、`--dry-run`
+が必須。`--dry-run` なしで `sort` を実行すると説明メッセージと
+共に exit 2 になる（意図的な speed bump）。`--apply` モード
 は PRD §4 の「PATH を書き換えない」方針により未実装。検討は
 post-1.0 議題。
 
@@ -1081,23 +1081,6 @@ trace` の alias) と `--rules` (`--config` の alias) は 0.0.14 から
 
 ### R1 — 解決順
 
-- **[R1] シンボリックリンクされたシステムディレクトリ。** *(0.0.14
-  でカタログに `os_baseline_linux_sbin = "/usr/sbin"` を追加して解決
-  済み。)* Arch / Solus / openSUSE TW などで `/usr/sbin → /usr/bin`、
-  `which` は `/usr/sbin/<cmd>` を返す。`apt` / `pacman` / `dnf` /
-  `os_baseline_linux` は伝統的ディストロ用に `linux = "/usr/bin"`
-  のままで、symlinked レイアウトを使うユーザーは
-  `os_baseline_linux_sbin` を package manager と並べて参照する：
-
-  ```toml
-  [[expect]]
-  command = "ls"
-  prefer = ["pacman", "os_baseline_linux_sbin"]
-  ```
-
-  path canonicalize は採用しない方針：レポート上に出る source
-  ラベルを silent に変える上、mise / volta / asdf の shim ベース
-  マッチを壊す。
 - **[R1] `prefer` の順序。** 現状 `prefer = ["mise", "volta"]` は
   集合扱い（「どれか満たせば OK」）。`sort` のとき優先順位として
   使うか。post-MVP の `pathlint sort` 設計と一体。
@@ -1114,28 +1097,15 @@ trace` の alias) と `--rules` (`--config` の alias) は 0.0.14 から
   どれだけ取りこぼすかのフィールドデータ次第。R4 は特にここから
   恩恵を受ける（パッケージマネージャが所有者を確認すれば
   uninstall ヒントが鋭くなる）。
-- **[R1, R4] mise プラグイン経由のバイナリの帰属。** mise の
-  プラグイン経由のバイナリは `mise/installs/<plugin>/<ver>/bin/<bin>`
-  に置かれ、`<plugin>` が上流インストーラ名を含む。
-  *(0.0.5 で解決 — R4 が segment が `cargo-` / `npm-` / `pipx-` /
-  `go-` / `aqua-` で始まるときに `provenance:` 行と
-  `mise uninstall <installer>:<rest>` ヒントを出す。R1 のカタログ
-  には触らず、これは純粋な provenance heuristic — source label
-  ではない。なので `prefer = ["cargo"]` は
-  `mise/installs/cargo-foo/...` のバイナリに**マッチしない**。
-  マッチさせたいユーザーは `mise/installs/cargo-` 部分一致の
-  `[source.X]` を自分で書く。)*
-
 ### R3 — PATH 衛生
 
-- **[R3] mise activate vs shims モード。** `mise activate` は PATH
+- **[R3] mise activate モードの自動判別。** `mise activate` は PATH
   先頭に `mise/shims/` を前置する形と、`installs/<lang>/<ver>/bin/`
-  を直接 PATH 書き換えする形の 2 通り。*(0.0.5 で「両層が同時存在
-  したら警告」の半分を解決 — `pathlint doctor` が `Kind::Conflict {
-  diagnostic = "mise_activate_both" }` diagnostic を出して shim /
-  install 両 group を列挙する。
-  expect ルール側でどちらを選ぶかはユーザーが決める、pathlint は
-  自動判別しない。)*
+  を直接 PATH 書き換えする形の 2 通り。両層が同時に存在するときの
+  警告は実装済み（§16 解決済み参照）が、ユーザーがどちらのモードを
+  意図しているかの自動判別はしない — `[[expect]]` ルールは
+  `mise_shims` / `mise_installs` を明示で書く。ツールのモード推定を
+  持ち込んでまで自動判別する価値があるかは未解決。
 - **[R3] DuplicateButShadowed。** 同じ command basename が PATH の
   異なる dir に実体として 2 つ以上存在し、後ろの dir が shadow
   される状況。常に報告する — 重複は事実であって noise ではない。
@@ -1239,10 +1209,30 @@ trace` の alias) と `--rules` (`--config` の alias) は 0.0.14 から
   / `require_catalog`。)*
 - **`pathlint where` と `which` / `where.exe` の混同。**
   *(0.0.14 で解決 — `pathlint where` を `pathlint trace` に rename。
-  `where` は 0.0.x 線で clap visible alias として残す。)*
-- **Arch / openSUSE TW における `/usr/sbin` 先行レイアウト。**
+  `where` alias 自体は deprecation warning の移行期間を経て 0.0.22
+  で削除。)*
+- **Arch / openSUSE TW における `/usr/sbin` 先行レイアウト
+  （シンボリックリンクされたシステムディレクトリ）。**
   *(0.0.14 で解決 — built-in `os_baseline_linux_sbin` source を追加。
-  自前で `[source.usr_sbin]` を書く代わりに `prefer` に入れる。)*
+  Arch / Solus / openSUSE TW などで `/usr/sbin → /usr/bin` の
+  symlink 構成のとき `which` は `/usr/sbin/<cmd>` を返すので、
+  `os_baseline_linux_sbin` を package manager と並べて `prefer` に
+  入れる。path canonicalize は不採用 — レポート上の source ラベルを
+  silent に変える上、mise / volta / asdf の shim ベースマッチを
+  壊すため。)*
+- **[R1, R4] mise プラグイン経由のバイナリの帰属。** *(0.0.5 で
+  解決 — `mise/installs/<plugin>/<ver>/bin/<bin>` の `<plugin>`
+  segment が `cargo-` / `npm-` / `pipx-` / `go-` / `aqua-` で
+  始まるとき、R4 が `provenance:` 行と
+  `mise uninstall <installer>:<rest>` ヒントを出す。これは純粋な
+  provenance heuristic であって source label ではない —
+  `prefer = ["cargo"]` は `mise/installs/cargo-foo/...` のバイナリに
+  **マッチしない**。マッチさせたいユーザーは `mise/installs/cargo-`
+  部分一致の `[source.X]` を自分で書く。)*
+- **[R3] mise の shims と installs の同時存在を警告。** *(0.0.5 で
+  解決 — `Kind::Conflict { diagnostic = "mise_activate_both" }`
+  diagnostic が shim / install 両 group を列挙する。意図している
+  モードの自動判別は未解決のまま、§16 R3 参照。)*
 
 ## 17. 0.0.x 変更履歴（累積）
 
@@ -1253,7 +1243,7 @@ trace` の alias) と `--rules` (`--config` の alias) は 0.0.14 から
 `### Changed` 下に逆時系列で並ぶ。
 
 0.0.x 線は各 `0.0.x → 0.0.(x+1)` の bump を MAJOR 相当として
-扱う (Cargo の pre-1.0 慣例。ADR-0005 参照)。Breaking change は
+扱う (Cargo の pre-1.0 慣例)。Breaking change は
 0.0.x 内で許容され、`CHANGELOG.md` の `### Breaking` で告知する。
 0.0.x が 0.1.0 に上がる時期は未定 (PRD §3 の graduation 基準を
 満たした時点で切る)。

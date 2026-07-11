@@ -14,7 +14,7 @@
 #   - subcommand availability
 #   - presence of structured fields in --json output
 #
-# Since 0.0.34 (ADR-0028) `doctor` is selfcheck only (binary
+# Since 0.0.34 `doctor` is selfcheck only (binary
 # self-locate / config parse / env_lookup) and `lint` carries the
 # PATH detectors. The script exercises both: `doctor --json` should
 # be a (usually empty) JSON array confirming pathlint runs cleanly

@@ -346,7 +346,7 @@ pub struct EvaluateDeps<'a> {
     /// [`crate::resolve::resolve`] with the slice of `PathEntry`
     /// values from `path_source::read_path`. Type-erased through
     /// `Box<dyn>` so closure HRTB inference doesn't get in the
-    /// way of constructing the struct (ADR-0007 §Alternatives).
+    /// way of constructing the struct.
     pub resolver: ResolverFn<'a>,
     /// Filesystem shape check. Production wiring uses
     /// [`check_shape_filesystem`].

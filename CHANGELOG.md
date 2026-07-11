@@ -33,6 +33,41 @@ Design decisions behind BREAKING entries accumulate in
     commands (`lint` + `doctor` selfcheck) matching the EN PRD;
     it was the last JP paragraph still describing the merged
     pre-0.0.34 `doctor`.
+- **Documentation dependency-direction sweep.** Living documents
+  (README EN/JP, PRD EN/JP, PRINCIPLES EN/JP, RELEASE EN/JP,
+  SECURITY, ARCHITECTURE, the e2e README, `release.yml`'s header
+  comment, source docstrings, and test comments) no longer cite
+  decision records by number. Each former "see ADR-NNNN" either
+  became redundant (the surrounding text already carried the
+  fact) or was replaced by the rationale stated inline. The
+  decision journal (`docs/decisions/`, this CHANGELOG) remains
+  the only layer that cites ADRs — references flow journal →
+  living document, never the reverse. ~70 citations removed
+  across 20 files; `schemas/doctor.schema.json` regenerated
+  because one `Kind` variant docstring feeds its `description`.
+- `docs/ARCHITECTURE.md`'s release-pipeline section described the
+  pre-0.0.36 `workflow_dispatch` flow (CI-side version bump, the
+  `prepare` job); rewritten to the current tag-push shape
+  (guard → build matrix → publish-github → publish-gate/
+  publish-crates, opt-out via a standalone `[skip publish]`
+  line).
+- Both READMEs' operational-details paragraphs claimed the
+  `where` / `--rules` aliases were still shipped as visible
+  aliases; they were removed in 0.0.22. The same stale claim in
+  PRD §16's Resolved list is fixed too.
+- README (EN/JP) schema-pin examples updated `v0.0.21` →
+  `v0.0.40`; PRD (EN/JP) examples updated `v0.0.13` → `v0.0.40`.
+- Three PRD §16 open questions whose text already said
+  "(Resolved in 0.0.x)" moved into the `### Resolved` subsection
+  (symlinked system dirs, mise plugin attribution, the
+  warn-when-both half of mise activate vs shims); the genuinely
+  open remainder (mise activate mode auto-detection) stays as an
+  open question. EN and JP restructured identically.
+- PRD §11 (EN + JP) now states that `sort` requires `--dry-run`
+  (running without it exits 2).
+- The ADR index's Status column for ADR-0001 / ADR-0004 now
+  records their partial supersession by ADR-0008, matching what
+  the ADR files themselves already said.
 
 ## [0.0.40] — 2026-06-27
 

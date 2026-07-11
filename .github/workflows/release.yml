@@ -6,9 +6,7 @@ name: release
 # happens in a normal PR before the tag is pushed; the workflow
 # only builds, publishes, and verifies.
 #
-# See docs/decisions/0029-release-trigger-tag-push.md for the
-# decision record (supersedes ADR-0010), and docs/RELEASE.md for
-# the human-facing release procedure.
+# See docs/RELEASE.md for the human-facing release procedure.
 #
 # Job sequence:
 #
@@ -249,9 +247,10 @@ jobs:
     name: publish to crates.io (OIDC)
     # Opt-out via `[skip publish]` on its own line in the head
     # commit's message. The default for a tagged release is
-    # "publish everywhere". See ADR-0029 for why the default
-    # flipped from opt-in; the standalone-line gate logic lives
-    # in `publish-gate` above.
+    # "publish everywhere" — cutting a release means shipping it;
+    # skipping crates.io is the exception that must be spelled
+    # out. The standalone-line gate logic lives in `publish-gate`
+    # above.
     if: ${{ needs.publish-gate.outputs.publish == 'true' }}
     needs: [guard, publish-github, publish-gate]
     runs-on: ubuntu-latest
