@@ -211,12 +211,26 @@ pub struct GlobalOpts {
     #[arg(long, value_enum, default_value_t = TargetArg::Process)]
     pub target: TargetArg,
 
-    /// Path to pathlint.toml. Default search: ./pathlint.toml then
+    /// Path to pathlint.toml. Default search: ./pathlint.toml, then
+    /// parent directories up to the enclosing `.git`, then
     /// $XDG_CONFIG_HOME/pathlint/pathlint.toml. Renamed from
     /// `--rules` in 0.0.14; the legacy `--rules` alias was removed
     /// in 0.0.22 after a deprecation-warning runway in 0.0.20–0.0.21.
     #[arg(long = "config")]
     pub config: Option<PathBuf>,
+
+    /// Which configuration layers to search for pathlint.toml.
+    /// `auto` (default) searches the current directory, then parent
+    /// directories up to the enclosing `.git`, then the user-global
+    /// `$XDG_CONFIG_HOME/pathlint/` location. `local` stops after
+    /// the repo-local layers and never falls through to the
+    /// user-global file; `global` reads only the user-global
+    /// location. An explicit `--config <path>` always wins over
+    /// this flag. `init --scope=global` writes the starter file
+    /// into the user-global location instead of the current
+    /// directory. New in 0.0.41.
+    #[arg(long, value_enum, default_value_t = ScopeArg::Auto)]
+    pub scope: ScopeArg,
 
     /// Print every expectation incl. n/a, plus the resolved PATH.
     #[arg(short, long)]
@@ -233,6 +247,19 @@ pub struct GlobalOpts {
     /// ASCII-only output.
     #[arg(long)]
     pub no_glyphs: bool,
+}
+
+/// Which configuration layers `pathlint.toml` discovery may read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ScopeArg {
+    /// Repo-local layers first (cwd, then parents up to the
+    /// enclosing `.git`), then the user-global XDG location.
+    Auto,
+    /// Repo-local layers only; never fall through to the
+    /// user-global file.
+    Local,
+    /// User-global XDG location only; ignore repo-local files.
+    Global,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

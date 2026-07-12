@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::cli::{
     CatalogCommand, CatalogListArgs, CatalogRelationsArgs, CheckArgs, Cli, Command, DoctorArgs,
-    InitArgs, LintArgs, SortArgs, TraceArgs,
+    InitArgs, LintArgs, ScopeArg, SortArgs, TraceArgs,
 };
 use pathlint::Attribution;
 use pathlint::catalog;
@@ -91,10 +91,10 @@ fn enforce_relation_acyclic(relations: &[pathlint::config::Relation]) -> Result<
 /// 2 = config / I/O error (returned as `Err` from `main`).
 pub fn execute(cli: Cli) -> Result<u8> {
     let check_args = match cli.command {
-        Some(Command::Init(args)) => return execute_init(&args),
+        Some(Command::Init(args)) => return execute_init(&args, &cli.global),
         Some(Command::Catalog {
             action: CatalogCommand::List(args),
-        }) => return execute_catalog_list(&args, cli.global.config.as_deref()),
+        }) => return execute_catalog_list(&args, &cli.global),
         Some(Command::Catalog {
             action: CatalogCommand::Relations(args),
         }) => return execute_catalog_relations(&args, &cli.global),
@@ -105,7 +105,7 @@ pub fn execute(cli: Cli) -> Result<u8> {
         Some(Command::Check(args)) => args,
         None => CheckArgs::default(),
     };
-    let rules_path = locate_rules(cli.global.config.as_deref())?;
+    let rules_path = locate_rules(cli.global.config.as_deref(), cli.global.scope)?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -163,7 +163,9 @@ fn execute_doctor(args: &DoctorArgs, global: &crate::cli::GlobalOpts) -> Result<
     // locate_rules errors only on an explicit --config that is not a
     // file; treat that as the "explicit config does not exist" case
     // and let selfcheck still emit other diagnostics.
-    let located = locate_rules(global.config.as_deref()).ok().flatten();
+    let located = locate_rules(global.config.as_deref(), global.scope)
+        .ok()
+        .flatten();
     let diags = doctor::selfcheck(located.as_deref(), global.config.is_some());
     if args.json {
         let json = format::doctor_json(&diags.iter().collect::<Vec<_>>())?;
@@ -192,7 +194,7 @@ fn execute_lint(args: &LintArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
         exclude: args.exclude.clone(),
     };
 
-    let rules_path = locate_rules(global.config.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref(), global.scope)?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -234,8 +236,8 @@ fn execute_lint(args: &LintArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     Ok(if doctor::has_error(&kept) { 1 } else { 0 })
 }
 
-fn execute_catalog_list(args: &CatalogListArgs, explicit_rules: Option<&Path>) -> Result<u8> {
-    let cfg = match locate_rules(explicit_rules)? {
+fn execute_catalog_list(args: &CatalogListArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+    let cfg = match locate_rules(global.config.as_deref(), global.scope)? {
         Some(p) => Config::from_path(&p)?,
         None => Config::default(),
     };
@@ -255,7 +257,7 @@ fn execute_catalog_relations(
     args: &CatalogRelationsArgs,
     global: &crate::cli::GlobalOpts,
 ) -> Result<u8> {
-    let cfg = match locate_rules(global.config.as_deref())? {
+    let cfg = match locate_rules(global.config.as_deref(), global.scope)? {
         Some(p) => Config::from_path(&p)?,
         None => Config::default(),
     };
@@ -283,7 +285,7 @@ fn execute_trace(args: &TraceArgs, global: &crate::cli::GlobalOpts) -> Result<u8
     // R4 reads the same merged catalog `check` does so user
     // overrides apply; the rules file's `[[expect]]` block is
     // ignored — `where` is per-command, not rule-driven.
-    let rules_path = locate_rules(global.config.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref(), global.scope)?;
     let cfg = match rules_path.as_ref() {
         Some(p) => Config::from_path(p)?,
         None => Config::default(),
@@ -342,7 +344,7 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     // its proposal aligns with the rules the user is already
     // running against. The rules-file `[[expect]]` block is the
     // input — `prefer` rules drive the reordering.
-    let rules_path = locate_rules(global.config.as_deref())?;
+    let rules_path = locate_rules(global.config.as_deref(), global.scope)?;
     let cfg = match rules_path.as_ref() {
         Some(p) => pathlint::config::Config::from_path(p)?,
         None => pathlint::config::Config::default(),
@@ -377,13 +379,29 @@ fn execute_sort(args: &SortArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     Ok(0)
 }
 
-fn execute_init(args: &InitArgs) -> Result<u8> {
-    let cwd = std::env::current_dir()?;
+fn execute_init(args: &InitArgs, global: &crate::cli::GlobalOpts) -> Result<u8> {
+    let target_dir = match global.scope {
+        ScopeArg::Global => {
+            let xdg = xdg_config_path().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "cannot resolve the user-global config directory \
+                     (none of XDG_CONFIG_HOME / HOME / USERPROFILE is set)"
+                )
+            })?;
+            let dir = xdg
+                .parent()
+                .expect("the user-global config path always has a parent directory")
+                .to_path_buf();
+            std::fs::create_dir_all(&dir)?;
+            dir
+        }
+        ScopeArg::Auto | ScopeArg::Local => std::env::current_dir()?,
+    };
     let opts = InitOptions {
         emit_defaults: args.emit_defaults,
         force: args.force,
     };
-    match init::run(&cwd, &opts, Os::current())? {
+    match init::run(&target_dir, &opts, Os::current())? {
         InitOutcome::Wrote(p) => {
             println!("pathlint: wrote {}", p.display());
             Ok(0)
@@ -398,23 +416,59 @@ fn execute_init(args: &InitArgs) -> Result<u8> {
     }
 }
 
-fn locate_rules(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
+fn locate_rules(explicit: Option<&Path>, scope: ScopeArg) -> Result<Option<PathBuf>> {
     if let Some(p) = explicit {
         if !p.is_file() {
             anyhow::bail!("--config path not found: {}", p.display());
         }
         return Ok(Some(p.to_path_buf()));
     }
-    let local = PathBuf::from("pathlint.toml");
-    if local.is_file() {
-        return Ok(Some(local));
+    if matches!(scope, ScopeArg::Auto | ScopeArg::Local) {
+        let local = PathBuf::from("pathlint.toml");
+        if local.is_file() {
+            return Ok(Some(local));
+        }
+        if let Some(walked) = walk_to_git_boundary() {
+            return Ok(Some(walked));
+        }
     }
-    if let Some(xdg) = xdg_config_path() {
-        if xdg.is_file() {
-            return Ok(Some(xdg));
+    if matches!(scope, ScopeArg::Auto | ScopeArg::Global) {
+        if let Some(xdg) = xdg_config_path() {
+            if xdg.is_file() {
+                return Ok(Some(xdg));
+            }
         }
     }
     Ok(None)
+}
+
+/// Search `pathlint.toml` in the parents of the cwd, stopping at
+/// the directory that contains `.git` (a directory for a normal
+/// checkout, a file for a linked worktree). Without a `.git`
+/// boundary anywhere above the cwd no parent is searched at all,
+/// so a stray `pathlint.toml` sitting in e.g. the home directory
+/// can never win by accident. The cwd itself is the caller's
+/// responsibility (checked before this runs, and reported with
+/// its familiar relative spelling).
+fn walk_to_git_boundary() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let boundary = cwd
+        .ancestors()
+        .find(|dir| dir.join(".git").exists())?
+        .to_path_buf();
+    if boundary == cwd {
+        return None;
+    }
+    for dir in cwd.ancestors().skip(1) {
+        let candidate = dir.join("pathlint.toml");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if dir == boundary {
+            break;
+        }
+    }
+    None
 }
 
 fn xdg_config_path() -> Option<PathBuf> {

@@ -67,6 +67,7 @@ fn help_top_level_snapshot() {
         // Concrete option / flag presence.
         "--target",
         "--config",
+        "--scope",
         "--no-glyphs",
         // -V/--version is a load-bearing CLI surface.
         "-V, --version",

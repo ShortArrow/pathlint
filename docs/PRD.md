@@ -272,10 +272,22 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
   everywhere but only meaningful on Windows; on Unix they print a
   one-line warning and fall back to `process`.
 - `--config` default resolution order:
-  1. `--config <path>` if given.
+  1. `--config <path>` if given (always wins, `--scope` included).
   2. `./pathlint.toml` if present.
-  3. `$XDG_CONFIG_HOME/pathlint/pathlint.toml` (or
+  3. (0.0.41+) `pathlint.toml` in a parent directory, walking up
+     to and including the directory that contains `.git` (a
+     directory, or a worktree marker file). Without a `.git`
+     boundary anywhere above the cwd, no parent is searched — a
+     stray config in e.g. the home directory never wins by
+     accident.
+  4. `$XDG_CONFIG_HOME/pathlint/pathlint.toml` (or
      `$HOME/.config/pathlint/pathlint.toml`).
+- `--scope <auto|local|global>` (0.0.41+) narrows which of those
+  layers discovery may read: `auto` (default) searches 2-4 in
+  order and matches the pre-0.0.41 behaviour; `local` stops after
+  the repo-local layers (2-3) and runs with the empty config when
+  they yield nothing; `global` reads only layer 4. Applies to
+  every subcommand.
 - For each `[[expect]]`:
   1. If its `os` filter excludes the current OS → status `n/a`.
   2. Resolve `command` against the chosen PATH (using `PATHEXT` on
@@ -334,6 +346,9 @@ pathlint check --json                 # JSON array of every outcome (0.0.7+)
 
 - Emits a starter `pathlint.toml` in the current directory with a
   small set of example `[[expect]]` entries for the current OS.
+- `pathlint --scope=global init` (0.0.41+) writes the starter into
+  the user-global location (`$XDG_CONFIG_HOME/pathlint/`),
+  creating the directory if needed, instead of the cwd.
 - `pathlint init --emit-defaults` writes the entire built-in source
   catalog into the file as well, so the user can edit / remove any
   entry. Off by default to keep the file short.
@@ -369,8 +384,10 @@ are all preserved verbatim — only the CLI verb changes from
 
 Three checks only:
 1. Binary self-locate — running pathlint binary is on PATH.
-2. `pathlint.toml` discovery + parse — found via cwd or
-   `$XDG_CONFIG_HOME`, and the parser succeeds. Semantic
+2. `pathlint.toml` discovery + parse — found via cwd, the
+   parent-directory walk up to the enclosing `.git`, or
+   `$XDG_CONFIG_HOME` (subject to `--scope`), and the parser
+   succeeds. Semantic
    validation (does `[source.x] path` resolve? does
    `[[expect]] command` match a catalog entry?) is not checked
    here; that is scoped for a future release.
@@ -1037,7 +1054,8 @@ Commands:
 
 Options (global):
       --target <process|user|machine>  default: process
-      --config <path>                   default: search ./, then $XDG_CONFIG_HOME/pathlint/
+      --config <path>                   default: search ./, then parents up to .git, then $XDG_CONFIG_HOME/pathlint/
+      --scope <auto|local|global>      default: auto — which config layers discovery may read
   -v, --verbose                        print every expectation incl. n/a, plus the resolved PATH
   -q, --quiet                          only print failures
       --color <auto|always|never>      default: auto
