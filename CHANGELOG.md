@@ -16,6 +16,45 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.41] — 2026-07-12
+
+**Feature release** — config discovery becomes monorepo-aware and
+gains an explicit layer selector. Both are additive: the default
+`--scope=auto` reproduces the 0.0.40 precedence exactly, and the
+parent-directory walk only fires where discovery previously found
+nothing. No `### Breaking`; zero library-surface change (the walk,
+the flag, and the init wiring all live in the binary crate). The
+release also ships the two documentation batches that accumulated
+under `[Unreleased]` since 0.0.40 (see `### Documented` below).
+
+### Added
+
+- **Monorepo config discovery.** When the cwd has no
+  `pathlint.toml`, parent directories are searched up to and
+  including the directory that contains `.git` (a directory in a
+  normal checkout, a marker file in a linked worktree). Without a
+  `.git` boundary anywhere above the cwd no parent is searched at
+  all, so a stray config in e.g. the home directory can never win
+  by accident. Design and rejected alternatives in
+  [ADR-0033](docs/decisions/0033-config-discovery-walk-and-scope.md).
+- **`--scope <auto|local|global>` global option.** `auto`
+  (default) searches cwd → walk → user-global XDG, matching the
+  pre-0.0.41 behaviour; `local` stops after the repo-local layers
+  (running with the empty config when they yield nothing);
+  `global` reads only `$XDG_CONFIG_HOME/pathlint/pathlint.toml`.
+  An explicit `--config <path>` always wins over the flag.
+  `--scope=system` is deliberately reserved — pathlint has no
+  system-wide config location today, and inventing one is a new
+  trust boundary that waits for field demand (ADR-0033
+  §Alternatives).
+- **`pathlint --scope=global init`** writes the starter file into
+  the user-global location, creating `$XDG_CONFIG_HOME/pathlint/`
+  if needed, instead of the cwd.
+- New e2e suite `tests/config_discovery.rs` pins the walk
+  semantics (boundary stop, worktree marker files, no-`.git`
+  no-walk), the three scope values, `--config`-beats-`--scope`,
+  and the init target switch.
+
 ### Documented
 
 - Swept the last three leftovers of the 0.0.34 `doctor` / `lint`

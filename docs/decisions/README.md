@@ -49,6 +49,7 @@ directory belongs to one or more of those categories.
 | [0030](0030-container-e2e-for-linux-portability.md) | Container e2e for Linux portability (Ubuntu / Arch / Fedora), local-only, no Vagrant / no post-publish smoke | 8 (+6) | Accepted | 0.0.14 / 0.0.21 (recorded retroactively in 0.0.38) |
 | [0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) | Ecosystem integration via SARIF + json-schema-store, no LSP server / no bespoke RPC | 7 (+6) | Accepted | 0.0.38 (decision); implementation 0.0.40+ |
 | [0032](0032-scope-os-knowledge-tool-meta-declaration.md) | pathlint scope — OS knowledge + tool-meta declaration, no tool behavior | 5 (+7, +8) | Accepted | 0.0.39 |
+| [0033](0033-config-discovery-walk-and-scope.md) | Config discovery walks to the `.git` boundary; `--scope` selects the layer | 5 (+8) | Accepted | 0.0.41 |
 
 ## Index by category (topical view)
 
@@ -96,6 +97,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0019](0019-cli-alias-deprecation-runway.md) — 6-release deprecation runway for CLI renames
 - [ADR-0022](0022-depends-on-descriptive-only.md) — `depends_on` relation is descriptive-only
 - [ADR-0032](0032-scope-os-knowledge-tool-meta-declaration.md) — pathlint scope: OS knowledge + tool-meta declaration, no tool behavior
+- [ADR-0033](0033-config-discovery-walk-and-scope.md) — config discovery walks to the `.git` boundary; `--scope` selects the layer
 
 ### 6. External dependency
 
@@ -125,6 +127,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0029](0029-release-trigger-tag-push.md) — release trigger moves to `on: push: tags`; supersedes ADR-0010
 - [ADR-0030](0030-container-e2e-for-linux-portability.md) — container e2e for Linux portability, local-only, no Vagrant / no post-publish smoke
 - [ADR-0032](0032-scope-os-knowledge-tool-meta-declaration.md) — secondary (anchors the maintainer-side rejection criterion for "should pathlint know tool X's state?" requests)
+- [ADR-0033](0033-config-discovery-walk-and-scope.md) — secondary (`--scope=system` reserved with a written re-entry condition; additive-by-default flag policy)
 
 ## When to write an ADR
 

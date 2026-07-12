@@ -64,6 +64,14 @@ pathlint check --explain
 That's the loop. `[[expect]]` is the user-facing concept;
 everything else is convenience around it.
 
+Discovery is monorepo-aware (0.0.41+): when the current directory
+has no `pathlint.toml`, parent directories are searched up to the
+enclosing `.git`, so one config at the repo root covers every
+package. `--scope=local` / `--scope=global` pins discovery to the
+repo-local or the user-global (`$XDG_CONFIG_HOME/pathlint/`)
+layer, and `pathlint --scope=global init` writes the starter file
+there directly.
+
 ## `pathlint.toml` (minimal example)
 
 ```toml

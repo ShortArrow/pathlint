@@ -252,10 +252,19 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
   でも受け付けるが Windows でのみ意味を持つ。Unix では 1 行警告を
   出して `process` にフォールバック。
 - `--config` のデフォルト解決順：
-  1. `--config <path>` が指定されればそれ。
+  1. `--config <path>` が指定されればそれ（`--scope` 込みで常に最優先）。
   2. `./pathlint.toml` があればそれ。
-  3. `$XDG_CONFIG_HOME/pathlint/pathlint.toml`（または
+  3. （0.0.41+）親ディレクトリの `pathlint.toml`。`.git`
+     （ディレクトリ、または worktree marker ファイル）を含む階層
+     まで遡って探索。cwd の上に `.git` がどこにもなければ親は
+     一切探索しない — home 直下などの野良 config が偶然勝つことは
+     ない。
+  4. `$XDG_CONFIG_HOME/pathlint/pathlint.toml`（または
      `$HOME/.config/pathlint/pathlint.toml`）。
+- `--scope <auto|local|global>`（0.0.41+）は探索してよい層を絞る：
+  `auto`（デフォルト）は 2-4 を順に探索し 0.0.41 以前の挙動と一致。
+  `local` は repo-local 層（2-3）で打ち切り、見つからなければ空
+  config で動く。`global` は層 4 のみを読む。全 subcommand に効く。
 - 各 `[[expect]]` について：
   1. `os` フィルタが現在 OS を除外していたら → ステータス `n/a`。
   2. `command` を選択した PATH に対し resolve（Windows なら
@@ -292,6 +301,9 @@ pathlint check --json                 # 全 outcome の JSON 配列（0.0.7+）
 
 - 現ディレクトリに starter `pathlint.toml` を出力。現 OS 向けの少数
   の `[[expect]]` 例で埋める。
+- `pathlint --scope=global init`（0.0.41+）は cwd ではなく
+  user-global の置き場（`$XDG_CONFIG_HOME/pathlint/`）に starter を
+  書く（ディレクトリがなければ作る）。
 - `pathlint init --emit-defaults` で組み込み source カタログ全体を
   ファイルに書き出すこともできる（編集・削除しやすくするため）。
   デフォルトはオフ（ファイルを短く保つため）。
@@ -323,9 +335,10 @@ filter UX、`--json` 出力配列、schema（`schemas/doctor.schema.json`
 3 つの確認 だけ:
 1. binary 自己発見 — 動作中の pathlint binary が PATH 上にあるか。
 2. `pathlint.toml` 発見 + parse — `locate_rules` と同じ探索
-   （cwd → `$XDG_CONFIG_HOME` → `$HOME/.config` → `$USERPROFILE/.config`）
-   で見つかった config が parse できるか。意味検証は別件（lint
-   側、将来）。
+   （cwd → `.git` 境界までの親ディレクトリ →
+   `$XDG_CONFIG_HOME` → `$HOME/.config` → `$USERPROFILE/.config`、
+   `--scope` の絞り込みも同じに効く）で見つかった config が
+   parse できるか。意味検証は別件（lint 側、将来）。
 3. `env_lookup` 動作 — `PATH`、Windows なら `PATHEXT`、config
    検索用に `HOME` / `USERPROFILE`。
 
@@ -961,7 +974,8 @@ Commands:
 
 Options（global）:
       --target <process|user|machine>  デフォルト: process
-      --config <path>                   デフォルト: ./ → $XDG_CONFIG_HOME/pathlint/
+      --config <path>                   デフォルト: ./ → .git までの親 → $XDG_CONFIG_HOME/pathlint/
+      --scope <auto|local|global>      デフォルト: auto — 探索してよい config 層を選ぶ
   -v, --verbose                        n/a 含む全 expectation と解決後 PATH を表示
   -q, --quiet                          失敗のみ
       --color <auto|always|never>      デフォルト: auto

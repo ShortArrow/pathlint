@@ -64,6 +64,14 @@ pathlint check --explain
 これがループ。`[[expect]]` がユーザー視点の概念で、それ以外は
 すべて補助的な仕組み。
 
+探索は monorepo 対応（0.0.41+）: カレントに `pathlint.toml` が
+なければ `.git` を含む階層まで親ディレクトリを遡って探すので、
+repo root の config 1 枚で全パッケージをカバーできる。
+`--scope=local` / `--scope=global` で repo-local 層 / user-global
+層（`$XDG_CONFIG_HOME/pathlint/`）に探索を固定でき、
+`pathlint --scope=global init` は starter を user-global 側に直接
+書く。
+
 ## `pathlint.toml`（最小例）
 
 ```toml
