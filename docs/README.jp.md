@@ -324,6 +324,42 @@ schema は GitHub Release ごとに `pathlint.schema.json` として
 [Taplo]: https://taplo.tamasfe.dev/
 [ebt]: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml
 
+### findings をログシッパーに流す
+
+`pathlint lint --json` は findings の配列を出す。1 行 1 イベント
+形式を期待するログシッパー（Cloudflare Logpush、Loki、Datadog、
+Splunk HEC、ELK / Fluent Bit など）に食わせるには `jq` で
+配列をほどく：
+
+```sh
+pathlint lint --json | jq -c '.[]'
+```
+
+各行は `pathlint.schema.json` に文書化された 1 finding で、配列
+形式と同じ `kind` discriminator とフィールド shape を持つ。無人
+実行では `--no-glyphs` と `--color=never` を付けると、stdout が
+端末でも JSON が無色・ASCII であることを保証できる。
+
+### findings を GitHub Code Scanning に上げる
+
+`pathlint lint --sarif`（0.0.42+）は同じ findings を SARIF 2.1.0
+log として出すので、clippy や cargo-audit と同じ GitHub Code
+Scanning の PR annotation 面に pathlint の findings が並ぶ。rule
+id は JSON 出力と同じ snake_case の kind 名。alert は発見済み
+`pathlint.toml` に anchor し、問題の PATH entry は message で
+運ぶ。最小 workflow step：
+
+```yaml
+- run: pathlint lint --sarif > pathlint.sarif
+  continue-on-error: true   # error severity の finding で exit 1
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: pathlint.sarif
+```
+
+他の SARIF 消費側（SonarQube / SonarCloud、Azure DevOps Advanced
+Security、`*-sarif` converter 系）も同じファイルを食える。
+
 ### カタログバージョンを固定する
 
 組み込みソースカタログは進化する。新しい pathlint がソースの

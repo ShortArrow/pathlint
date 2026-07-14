@@ -151,6 +151,17 @@ pub struct LintArgs {
     /// to be complete).
     #[arg(long)]
     pub json: bool,
+
+    /// Emit the (already-filtered) diagnostics as a SARIF 2.1.0
+    /// log for GitHub Code Scanning and other static-analysis
+    /// aggregators. Rule ids are the same snake_case kind names
+    /// the --json output uses; severity maps to SARIF level
+    /// (error / warning / note). Each result anchors to the
+    /// discovered pathlint.toml and carries the PATH entry in its
+    /// message and logicalLocations. Mutually exclusive with
+    /// `--json`. New in 0.0.42.
+    #[arg(long, conflicts_with = "json")]
+    pub sarif: bool,
 }
 
 #[derive(Debug, Subcommand)]

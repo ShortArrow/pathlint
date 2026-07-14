@@ -50,6 +50,7 @@ directory belongs to one or more of those categories.
 | [0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) | Ecosystem integration via SARIF + json-schema-store, no LSP server / no bespoke RPC | 7 (+6) | Accepted | 0.0.38 (decision); implementation 0.0.40+ |
 | [0032](0032-scope-os-knowledge-tool-meta-declaration.md) | pathlint scope — OS knowledge + tool-meta declaration, no tool behavior | 5 (+7, +8) | Accepted | 0.0.39 |
 | [0033](0033-config-discovery-walk-and-scope.md) | Config discovery walks to the `.git` boundary; `--scope` selects the layer | 5 (+8) | Accepted | 0.0.41 |
+| [0034](0034-sarif-output-hand-rolled-emit.md) | `lint --sarif` is hand-rolled emit-only SARIF; rule ids are the kind names | 7 (+6, +1) | Accepted | 0.0.42 |
 
 ## Index by category (topical view)
 
@@ -104,6 +105,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0012](0012-schemars-1-0-deferred.md) — defer schemars 1.0 migration past 0.0.x graduation; trigger conditions for revisiting recorded.
 - [ADR-0026](0026-trybuild-for-negative-invariants.md) — adopt `trybuild` as dev-dependency for compile-fail negative tests
 - [ADR-0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) — secondary (SARIF crate dependency planned for 0.0.40+)
+- [ADR-0034](0034-sarif-output-hand-rolled-emit.md) — secondary (serde-sarif 0.8 / zizmor-sarif rejected; zero new dependencies)
 
 ### 7. Persistence / data format
 
@@ -112,6 +114,7 @@ is **not** a universal ADR hierarchy.
 - [ADR-0023](0023-catalog-version-reserved-for-embedded.md) — `catalog_version` reserved for embedded catalog (user TOML rejection)
 - [ADR-0031](0031-ecosystem-integration-via-sarif-and-schemastore.md) — ecosystem integration via SARIF + json-schema-store, no LSP server
 - [ADR-0032](0032-scope-os-knowledge-tool-meta-declaration.md) — secondary (the `[[relation]]` vocabulary + `[source.<name>]` TOML are the only persistence shape for tool meta)
+- [ADR-0034](0034-sarif-output-hand-rolled-emit.md) — `lint --sarif` hand-rolled emit-only SARIF; ruleId = kind names (stable contract)
 
 ### 8. Process / governance
 

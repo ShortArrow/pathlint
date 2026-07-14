@@ -1,6 +1,10 @@
 # ADR-0031: pathlint integrates via SARIF + json-schema-store, not via an LSP server
 
-- **Status**: Accepted
+- **Status**: Accepted. Update (0.0.42): the SARIF output mode
+  shipped as `pathlint lint --sarif` — see ADR-0034 for the
+  dependency choice (hand-rolled emit-only structs, no new crate),
+  the ruleId contract, and the drift-gating strategy. The
+  schemastore.org registration remains open.
 - **Date**: 2026-06-16
 - **Release**: 0.0.38 (decision); implementation deferred to 0.0.40 or later
 - **Category**: 7. Persistence / data format (+ 6. External dependency)
