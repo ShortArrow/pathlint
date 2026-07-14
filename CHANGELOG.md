@@ -16,6 +16,51 @@ Design decisions behind BREAKING entries accumulate in
 
 ## [Unreleased]
 
+## [0.0.42] — 2026-07-14
+
+**Feature release** — `pathlint lint --sarif` emits SARIF 2.1.0
+for GitHub Code Scanning and other static-analysis aggregators,
+implementing the output mode
+[ADR-0031](docs/decisions/0031-ecosystem-integration-via-sarif-and-schemastore.md)
+committed to in 0.0.38. Additive: no CLI, schema, or library
+surface changes beyond the new flag and one new lib formatter; no
+`### Breaking`; zero new dependencies. The schemastore.org
+registration promised by the same ADR remains open.
+
+### Added
+
+- **`pathlint lint --sarif`.** Emits the (already-filtered)
+  diagnostics as a SARIF 2.1.0 log. Rule ids are the snake_case
+  kind names the `--json` output uses — now a doubly published
+  contract (JSON `kind` + SARIF `ruleId`); renaming one is a
+  Breaking change. Severity maps to level (`error` / `warning` /
+  `note`); each result satisfies GitHub Code Scanning's ingestion
+  minimum (physical location anchored at the discovered
+  `pathlint.toml`, `startLine` 1) and carries the PATH entry in
+  its message and `logicalLocations`. Mutually exclusive with
+  `--json`; exit codes unchanged. Design and rejected
+  alternatives (serde-sarif 0.8, zizmor-sarif, an external
+  converter binary, a sixth published schema, `check --sarif`) in
+  [ADR-0034](docs/decisions/0034-sarif-output-hand-rolled-emit.md).
+- `format::doctor_sarif` joins the lib's formatter surface
+  (additive). The SARIF message wording reuses the same per-kind
+  detail sentences as the human renderer, extracted into a shared
+  helper so the two outputs never drift apart.
+- The container e2e smoke gains step 9: `lint --sarif` exits 0/1
+  and carries the SARIF envelope.
+
+### Documented
+
+- README (EN + JP) replace the "SARIF is planned" paragraph with
+  a "Uploading findings to GitHub Code Scanning" section carrying
+  a minimal `upload-sarif` workflow recipe.
+- `docs/README.jp.md` also gains the "streaming findings to a log
+  shipper" section that had been EN-only since 0.0.38 — a parity
+  gap the SARIF work surfaced.
+- PRD §7.5 (EN + JP) document the SARIF mode's contract: rule-id
+  stability, level mapping, and the config-anchored location
+  strategy.
+
 ## [0.0.41] — 2026-07-12
 
 **Feature release** — config discovery becomes monorepo-aware and

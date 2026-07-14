@@ -213,7 +213,11 @@ fn execute_lint(args: &LintArgs, global: &crate::cli::GlobalOpts) -> Result<u8> 
     let diags = doctor::analyze_real(&entries, &merged, &relations, Os::current());
     let kept = filter.apply(&diags);
 
-    if args.json {
+    if args.sarif {
+        let uri = rules_path.as_ref().map(|p| p.display().to_string());
+        let sarif = format::doctor_sarif(&kept, &entries, uri.as_deref())?;
+        println!("{sarif}");
+    } else if args.json {
         let json = format::doctor_json(&kept)?;
         println!("{json}");
     } else {

@@ -202,6 +202,32 @@ fi
 say "wrote pathlint.toml ($(wc -l <pathlint.toml) lines)"
 
 # ----------------------------------------------------------------
+# 9. lint --sarif (SARIF 2.1.0 envelope, 0.0.42+)
+# ----------------------------------------------------------------
+section "lint --sarif"
+set +e
+sarif_out="$(pathlint lint --sarif 2>&1)"
+sarif_code=$?
+set -e
+say "exit ${sarif_code}"
+if [[ ${sarif_code} -ne 0 && ${sarif_code} -ne 1 ]]; then
+    echo "smoke: lint --sarif exited ${sarif_code} (expected 0 or 1)" >&2
+    echo "${sarif_out}" >&2
+    exit 1
+fi
+if ! grep -q '"version": "2.1.0"' <<<"${sarif_out}"; then
+    echo "smoke: lint --sarif output missing SARIF version marker" >&2
+    echo "${sarif_out}" >&2
+    exit 1
+fi
+if ! grep -q '"name": "pathlint"' <<<"${sarif_out}"; then
+    echo "smoke: lint --sarif output missing tool.driver.name" >&2
+    echo "${sarif_out}" >&2
+    exit 1
+fi
+say "SARIF envelope present"
+
+# ----------------------------------------------------------------
 # Done
 # ----------------------------------------------------------------
 echo

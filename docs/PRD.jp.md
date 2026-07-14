@@ -330,6 +330,17 @@ filter UX、`--json` 出力配列、schema（`schemas/doctor.schema.json`
 を新 doctor と共有）、exit code 規約 — すべて そのまま、CLI 動詞だ
 け が `doctor` → `lint` に変わる。
 
+`lint --sarif`（0.0.42+）は同じ（filter 適用後の）diagnostics を
+GitHub Code Scanning ほか静的解析 aggregator 向けの SARIF 2.1.0
+log として出す。rule id は `--json` 出力と同じ snake_case の kind
+名（安定契約 — rename は Breaking change）。severity は SARIF の
+level（`error` / `warning` / `note`）に対応。各 result の physical
+location は発見済み `pathlint.toml`（1 行目、未発見時はリテラル
+`pathlint.toml`）に anchor し、PATH entry 自体は message と
+`logicalLocations` で運ぶ — PATH entry は GitHub が annotate
+できる repository artifact ではないため。`--json` とは排他。
+exit code 規約は不変。
+
 #### `pathlint doctor`（selfcheck）
 
 3 つの確認 だけ:

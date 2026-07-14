@@ -380,6 +380,18 @@ shared with the new doctor surface), and the exit-code semantics
 are all preserved verbatim — only the CLI verb changes from
 `doctor` to `lint`.
 
+`lint --sarif` (0.0.42+) emits the same (already-filtered)
+diagnostics as a SARIF 2.1.0 log for GitHub Code Scanning and
+other static-analysis aggregators. Rule ids are the snake_case
+kind names the `--json` output uses (a stable contract — renaming
+one is a Breaking change); severity maps to SARIF level
+(`error` / `warning` / `note`); each result anchors its physical
+location at the discovered `pathlint.toml` (line 1, falling back
+to the literal `pathlint.toml`) and carries the PATH entry in its
+message and `logicalLocations`, because a PATH entry is not a
+repository artifact GitHub could annotate. Mutually exclusive
+with `--json`; exit-code semantics are unchanged.
+
 #### `pathlint doctor` (selfcheck)
 
 Three checks only:

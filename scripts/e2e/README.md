@@ -63,6 +63,7 @@ exact human output:
 6. `pathlint trace ls` resolves and emits a `kind` field in JSON
 7. `pathlint check` (no rules) exits 0 and `--json` is a JSON array
 8. `pathlint init` writes `pathlint.toml` to a tempdir
+9. `pathlint lint --sarif` (0.0.42+): exits 0 or 1 and carries the SARIF 2.1.0 envelope (`version`, `tool.driver.name`)
 
 The aim is portability assertion (each distro's PATH does not
 crash pathlint), not output drift detection. Output drift is

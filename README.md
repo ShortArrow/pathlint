@@ -356,10 +356,26 @@ For unattended runs, set `--no-glyphs` and `--color=never` to
 guarantee the underlying JSON is uncoloured and ASCII even when
 stdout is a terminal.
 
-A SARIF 2.1.0 output mode (`pathlint lint --sarif`) for GitHub
-Code Scanning and other static-analysis aggregators is planned
-for a future release, so pathlint findings can appear in the
-same PR-annotation surface as clippy and cargo-audit.
+### Uploading findings to GitHub Code Scanning
+
+`pathlint lint --sarif` (0.0.42+) emits the same findings as a
+SARIF 2.1.0 log, so they appear in the PR-annotation surface
+GitHub Code Scanning shares with clippy and cargo-audit. Rule ids
+are the same snake_case kind names as the JSON output; alerts
+anchor to the discovered `pathlint.toml` and carry the offending
+PATH entry in the message. Minimal workflow step:
+
+```yaml
+- run: pathlint lint --sarif > pathlint.sarif
+  continue-on-error: true   # exit 1 on error-severity findings
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: pathlint.sarif
+```
+
+Other SARIF consumers (SonarQube / SonarCloud, Azure DevOps
+Advanced Security, and the `*-sarif` converter ecosystem) ingest
+the same file.
 
 ### Pinning the catalog version
 

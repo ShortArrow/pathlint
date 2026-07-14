@@ -48,11 +48,30 @@ pub fn doctor_line(d: &Diagnostic, entries: &[Attribution], style: Style) -> Str
         Severity::Warn => "[warn]",
         Severity::Info => "[info]",
     };
-    // Every PATH-derived string (entry text, suggestion, reason,
-    // canonical pointer for case variants) goes through
-    // strip_control_chars so a hostile PATH cannot inject ANSI
-    // escapes into doctor's human output (Z16-L1).
-    let detail = match &d.kind {
+    let detail = kind_detail(d, entries, style);
+    // Per-source diagnostics use usize::MAX as the "no PATH index"
+    // sentinel; render that as "(catalog)" instead of a number.
+    let idx_render = if d.index == usize::MAX {
+        "(catalog)".to_string()
+    } else {
+        format!("#{idx:>3}", idx = d.index)
+    };
+    format!(
+        "{tag} {idx_render} {entry}\n      {detail}",
+        entry = strip_control_chars(&d.entry)
+    )
+}
+
+/// The one-line explanation for a non-conflict diagnostic, shared
+/// by the human renderer (`doctor_line`) and the SARIF result
+/// message so the wording stays single-sourced.
+///
+/// Every PATH-derived string (entry text, suggestion, reason,
+/// canonical pointer for case variants) goes through
+/// strip_control_chars so a hostile PATH cannot inject ANSI
+/// escapes into the output (Z16-L1).
+fn kind_detail(d: &Diagnostic, entries: &[Attribution], style: Style) -> String {
+    match &d.kind {
         Kind::Duplicate { first_index } => {
             // Display the form the user authored — registry `%VAR%`
             // form on Windows process target (provenance overlay),
@@ -123,18 +142,7 @@ pub fn doctor_line(d: &Diagnostic, entries: &[Attribution], style: Style) -> Str
         Kind::EnvLookupFailed { var } => {
             format!("env_lookup failed for {}", strip_control_chars(var))
         }
-    };
-    // Per-source diagnostics use usize::MAX as the "no PATH index"
-    // sentinel; render that as "(catalog)" instead of a number.
-    let idx_render = if d.index == usize::MAX {
-        "(catalog)".to_string()
-    } else {
-        format!("#{idx:>3}", idx = d.index)
-    };
-    format!(
-        "{tag} {idx_render} {entry}\n      {detail}",
-        entry = strip_control_chars(&d.entry)
-    )
+    }
 }
 
 /// Render a selfcheck diagnostic (0.0.34+). Selfcheck
@@ -471,6 +479,307 @@ pub fn relations_json(relations: &[Relation]) -> Result<String, serde_json::Erro
 
 pub fn doctor_json(diags: &[&Diagnostic]) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(diags)
+}
+
+// ----------------------------------------------------------------
+// SARIF 2.1.0 emission (0.0.42+): `pathlint lint --sarif`.
+//
+// Emit-only subset of the SARIF object model — exactly the
+// properties GitHub Code Scanning requires (tool.driver with named
+// rules, one physical location with a startLine per result) plus
+// logicalLocations carrying the PATH entry itself. pathlint never
+// parses SARIF, so the full object model (and a dependency crate
+// carrying it) is deliberately not used.
+//
+// The rule ids are the same snake_case kind names `--json` uses.
+// They are a stable contract: renaming one breaks consumer
+// dashboards keyed on ruleId and requires a Breaking entry.
+
+#[derive(serde::Serialize)]
+struct SarifLog {
+    version: &'static str,
+    #[serde(rename = "$schema")]
+    schema: &'static str,
+    runs: Vec<SarifRun>,
+}
+
+#[derive(serde::Serialize)]
+struct SarifRun {
+    tool: SarifTool,
+    results: Vec<SarifResult>,
+}
+
+#[derive(serde::Serialize)]
+struct SarifTool {
+    driver: SarifDriver,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SarifDriver {
+    name: &'static str,
+    version: &'static str,
+    information_uri: &'static str,
+    rules: Vec<SarifRule>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SarifRule {
+    id: String,
+    short_description: SarifText,
+    full_description: SarifText,
+    help: SarifText,
+}
+
+#[derive(serde::Serialize)]
+struct SarifText {
+    text: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SarifResult {
+    rule_id: String,
+    level: &'static str,
+    message: SarifText,
+    locations: Vec<SarifLocation>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SarifLocation {
+    physical_location: SarifPhysicalLocation,
+    logical_locations: Vec<SarifLogicalLocation>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SarifPhysicalLocation {
+    artifact_location: SarifArtifactLocation,
+    region: SarifRegion,
+}
+
+#[derive(serde::Serialize)]
+struct SarifArtifactLocation {
+    uri: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SarifRegion {
+    start_line: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SarifLogicalLocation {
+    name: String,
+    kind: &'static str,
+    fully_qualified_name: String,
+}
+
+/// Rule metadata for a SARIF reportingDescriptor, keyed by the
+/// snake_case kind name. Unknown ids are the relation-declared
+/// conflict diagnostics (their names come from catalog / user TOML,
+/// e.g. `mise_activate_both`), which share one generic description.
+fn sarif_rule_meta(id: &str) -> (&'static str, &'static str, &'static str) {
+    match id {
+        "duplicate" => (
+            "Duplicate PATH entry",
+            "Two PATH entries normalize to the same directory; the first occurrence wins and the later one is dead weight.",
+            "Remove the later duplicate entry from PATH.",
+        ),
+        "missing" => (
+            "PATH entry does not exist",
+            "The directory a PATH entry points at does not exist on this host.",
+            "Remove the entry, or create the directory if a tool is expected to populate it.",
+        ),
+        "shortenable" => (
+            "PATH entry could be written more concisely",
+            "The entry spells out a path an environment variable already covers.",
+            "Rewrite the entry using the suggested variable form so it survives profile relocation.",
+        ),
+        "trailing_slash" => (
+            "PATH entry has a trailing slash",
+            "Some shells and tools treat a trailing slash inconsistently when comparing PATH entries.",
+            "Drop the trailing slash.",
+        ),
+        "case_variant" => (
+            "Case / slash variant of another PATH entry",
+            "Two entries differ only in letter case or slash direction; the OS treats them as one directory.",
+            "Keep one canonical spelling and remove the variant.",
+        ),
+        "short_name" => (
+            "Windows 8.3 short name in PATH",
+            "The entry uses a DOS 8.3 short name; the long-name form is more portable and readable.",
+            "Replace the entry with its long-name form.",
+        ),
+        "malformed" => (
+            "Malformed PATH entry",
+            "The entry contains bytes the OS can never use as a directory name (embedded NUL, NTFS-illegal characters).",
+            "Remove or fix the malformed entry; it can never resolve.",
+        ),
+        "per_source_missing_required" => (
+            "Declared source path missing on this host",
+            "A `[source.<name>]` declared in pathlint.toml points at a path that does not exist here.",
+            "Install the tool the source describes, or scope the source to the OSes where it exists.",
+        ),
+        "duplicate_but_shadowed" => (
+            "Command shadowed across PATH directories",
+            "The same command name exists as a real executable in two or more PATH directories; the earlier directory wins.",
+            "Confirm the winning directory is the intended one, or reorder / clean up PATH.",
+        ),
+        "relative_path_entry" => (
+            "Relative PATH entry",
+            "The entry stays relative after expansion, so it resolves against the current working directory at command time.",
+            "Replace it with an absolute path.",
+        ),
+        "writeable_path_dir" => (
+            "World-writable PATH directory",
+            "The directory is writable by other users, so a malicious binary could be dropped in front of legitimate commands.",
+            "Tighten the directory permissions or remove it from PATH.",
+        ),
+        "binary_not_in_path" => (
+            "pathlint binary not on PATH",
+            "The running pathlint binary's own directory is not on PATH.",
+            "Add the install directory to PATH, or invoke pathlint by absolute path intentionally.",
+        ),
+        "config_parse_error" => (
+            "pathlint.toml failed to parse",
+            "A pathlint.toml was located but the TOML parser rejected it.",
+            "Fix the syntax error the parser reported.",
+        ),
+        "config_not_found" => (
+            "No pathlint.toml found",
+            "Discovery found no configuration; pathlint runs with the empty config, which is legitimate.",
+            "Create a pathlint.toml with `pathlint init` if you want expectations checked.",
+        ),
+        "env_lookup_failed" => (
+            "Environment variable lookup failed",
+            "A variable pathlint needs (PATH, PATHEXT, HOME / USERPROFILE) could not be read.",
+            "Check the process environment pathlint runs under.",
+        ),
+        _ => (
+            "Conflicting sources on PATH",
+            "Two or more catalog sources that a declared relation says should not coexist are both present on PATH.",
+            "Keep only one of the conflicting source layers on PATH.",
+        ),
+    }
+}
+
+/// The single-line SARIF message for one diagnostic. Reuses
+/// `kind_detail` so the wording matches the human renderer.
+fn sarif_message(d: &Diagnostic, entries: &[Attribution]) -> String {
+    if let Kind::Conflict { diagnostic, groups } = &d.kind {
+        return format!(
+            "sources that should not coexist are both on PATH ({}, {} group(s))",
+            strip_control_chars(diagnostic),
+            groups.len()
+        );
+    }
+    let detail = kind_detail(d, entries, Style { no_glyphs: true });
+    if d.index == usize::MAX {
+        format!("{}: {detail}", strip_control_chars(&d.entry))
+    } else {
+        format!(
+            "PATH entry #{} `{}`: {detail}",
+            d.index,
+            strip_control_chars(&d.entry)
+        )
+    }
+}
+
+/// Render diagnostics as a SARIF 2.1.0 log for `pathlint lint
+/// --sarif`. `config_uri` anchors every result's physical location:
+/// PATH entries are not repository artifacts, so the alert points
+/// at the discovered pathlint.toml (the file that declares the
+/// intent), falling back to the literal `pathlint.toml` when
+/// discovery found nothing. The PATH entry itself travels in the
+/// message and in `logicalLocations`. Backslashes in the uri are
+/// normalized to forward slashes.
+pub fn doctor_sarif(
+    diags: &[&Diagnostic],
+    entries: &[Attribution],
+    config_uri: Option<&str>,
+) -> Result<String, serde_json::Error> {
+    let uri = config_uri.unwrap_or("pathlint.toml").replace('\\', "/");
+
+    let mut rule_ids: Vec<String> = Vec::new();
+    for d in diags {
+        let id = crate::doctor::kind_name(&d.kind).to_string();
+        if !rule_ids.contains(&id) {
+            rule_ids.push(id);
+        }
+    }
+    let rules = rule_ids
+        .into_iter()
+        .map(|id| {
+            let (short, full, help) = sarif_rule_meta(&id);
+            SarifRule {
+                id,
+                short_description: SarifText { text: short.into() },
+                full_description: SarifText { text: full.into() },
+                help: SarifText { text: help.into() },
+            }
+        })
+        .collect();
+
+    let results = diags
+        .iter()
+        .map(|d| {
+            let level = match d.severity {
+                Severity::Error => "error",
+                Severity::Warn => "warning",
+                Severity::Info => "note",
+            };
+            let fully_qualified_name = if d.index == usize::MAX {
+                match &d.kind {
+                    Kind::PerSourceMissingRequired { source } => {
+                        format!("source[{}]", strip_control_chars(source))
+                    }
+                    _ => "catalog".to_string(),
+                }
+            } else {
+                format!("PATH[{}]", d.index)
+            };
+            SarifResult {
+                rule_id: crate::doctor::kind_name(&d.kind).to_string(),
+                level,
+                message: SarifText {
+                    text: sarif_message(d, entries),
+                },
+                locations: vec![SarifLocation {
+                    physical_location: SarifPhysicalLocation {
+                        artifact_location: SarifArtifactLocation { uri: uri.clone() },
+                        region: SarifRegion { start_line: 1 },
+                    },
+                    logical_locations: vec![SarifLogicalLocation {
+                        name: strip_control_chars(&d.entry).to_string(),
+                        kind: "resource",
+                        fully_qualified_name,
+                    }],
+                }],
+            }
+        })
+        .collect();
+
+    let log = SarifLog {
+        version: "2.1.0",
+        schema: "https://json.schemastore.org/sarif-2.1.0.json",
+        runs: vec![SarifRun {
+            tool: SarifTool {
+                driver: SarifDriver {
+                    name: "pathlint",
+                    version: env!("CARGO_PKG_VERSION"),
+                    information_uri: "https://github.com/ShortArrow/pathlint",
+                    rules,
+                },
+            },
+            results,
+        }],
+    };
+    serde_json::to_string_pretty(&log)
 }
 
 /// Render `check` outcomes as a pretty-printed JSON array — the
@@ -1360,5 +1669,106 @@ mod tests {
         let out = where_human(&f, Style::default());
         assert!(!out.contains('\x1b'), "raw escape leaked: {out:?}");
         assert!(out.contains("rg?[31m"));
+    }
+
+    #[test]
+    fn sarif_severity_maps_to_level() {
+        // Malformed is the one Error-severity lint kind; a PATH
+        // entry with an embedded NUL cannot be injected through a
+        // process env var, so the mapping is pinned here instead of
+        // in the e2e suite.
+        let err = Diagnostic {
+            index: 0,
+            entry: "C:\\bad".into(),
+            severity: Severity::Error,
+            kind: Kind::Malformed {
+                reason: "embedded NUL".into(),
+            },
+        };
+        let warn = Diagnostic {
+            index: 1,
+            entry: "/dup".into(),
+            severity: Severity::Warn,
+            kind: Kind::Duplicate { first_index: 0 },
+        };
+        let info = Diagnostic {
+            index: usize::MAX,
+            entry: String::new(),
+            severity: Severity::Info,
+            kind: Kind::ConfigNotFound,
+        };
+        let out = doctor_sarif(&[&err, &warn, &info], &[], None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let levels: Vec<&str> = v["runs"][0]["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["level"].as_str().unwrap())
+            .collect();
+        assert_eq!(levels, ["error", "warning", "note"], "{out}");
+    }
+
+    #[test]
+    fn sarif_golden_structure_is_stable() {
+        // Drift gate for the SARIF wire shape: rule ids equal the
+        // --json kind names, results reference them, the physical
+        // location anchors at the fallback config uri, and the PATH
+        // entry rides in logicalLocations. Renaming a ruleId breaks
+        // consumer dashboards and needs a Breaking entry.
+        let d = Diagnostic {
+            index: 2,
+            entry: "/x/gone".into(),
+            severity: Severity::Warn,
+            kind: Kind::Missing,
+        };
+        let out = doctor_sarif(&[&d], &[], None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["version"], "2.1.0");
+        assert_eq!(v["runs"][0]["tool"]["driver"]["rules"][0]["id"], "missing");
+        let r = &v["runs"][0]["results"][0];
+        assert_eq!(r["ruleId"], "missing");
+        assert_eq!(
+            r.pointer("/locations/0/physicalLocation/artifactLocation/uri")
+                .unwrap(),
+            "pathlint.toml"
+        );
+        assert_eq!(
+            r.pointer("/locations/0/physicalLocation/region/startLine")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            r.pointer("/locations/0/logicalLocations/0/fullyQualifiedName")
+                .unwrap(),
+            "PATH[2]"
+        );
+        assert_eq!(
+            r.pointer("/locations/0/logicalLocations/0/name").unwrap(),
+            "/x/gone"
+        );
+        assert!(
+            r["message"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("directory does not exist"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn sarif_uri_normalizes_backslashes() {
+        let d = Diagnostic {
+            index: 0,
+            entry: "/dup".into(),
+            severity: Severity::Warn,
+            kind: Kind::Missing,
+        };
+        let out = doctor_sarif(&[&d], &[], Some("V:\\repo\\pathlint.toml")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            v.pointer("/runs/0/results/0/locations/0/physicalLocation/artifactLocation/uri")
+                .unwrap(),
+            "V:/repo/pathlint.toml"
+        );
     }
 }
